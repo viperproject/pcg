@@ -7,7 +7,7 @@ use super::{
     path_condition::{PathCondition, ValidityConditions},
     visitor::extract_regions,
 };
-use crate::utils::place::maybe_old::MaybeLabelledPlace;
+use crate::{borrow_pcg::edge::kind::BorrowPcgEdgeKind, utils::place::maybe_old::MaybeLabelledPlace};
 use crate::{
     action::BorrowPcgAction,
     borrow_pcg::{
@@ -100,12 +100,12 @@ pub(crate) trait BorrowsStateLike<'tcx> {
 
     fn remove(
         &mut self,
-        edge: &BorrowPcgEdge<'tcx>,
+        edge: &BorrowPcgEdgeKind<'tcx>,
         capabilities: &mut PlaceCapabilities<'tcx>,
         repacker: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         let state = self.as_mut_ref();
-        let removed = state.graph.remove(edge.kind()).is_some();
+        let removed = state.graph.remove(edge).is_some();
         if removed {
             for node in edge.blocked_by_nodes(repacker) {
                 if !state.graph.contains(node, repacker)

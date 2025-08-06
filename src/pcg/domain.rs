@@ -28,6 +28,7 @@ use crate::{
     r#loop::{LoopAnalysis, LoopPlaceUsageAnalysis},
     pcg::{
         dot_graphs::{PcgDotGraphsForBlock, ToGraph, generate_dot_graph},
+        place_capabilities::PlaceCapabilitiesInterface,
         triple::Triple,
     },
     rustc_interface::{
@@ -274,6 +275,17 @@ impl<'tcx> HasValidityCheck<'tcx> for PcgRef<'_, 'tcx> {
         self.owned.check_validity(self.capabilities, ctxt)?;
         if *CHECK_CYCLES && !self.is_acyclic(ctxt) {
             return Err("PCG is not acyclic".to_string());
+        }
+
+        let borrow_graph_places = self.borrow.graph.places(ctxt);
+        for place in self.owned.leaf_places(ctxt) {
+            if self.capabilities.get(place, ctxt).is_none() && !borrow_graph_places.contains(&place)
+            {
+                return Err(format!(
+                    "Leaf place {} does not have a capability and is not borrowed",
+                    place.to_short_string(ctxt)
+                ));
+            }
         }
 
         for borrow_edge in self.borrow.graph.edges().filter_map(|e| {

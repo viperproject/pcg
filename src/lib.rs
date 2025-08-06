@@ -337,6 +337,29 @@ pub fn run_pcg<'a, 'tcx, A: Allocator + Copy + std::fmt::Debug>(
     }
     let mut fpcs_analysis = free_pcs::PcgAnalysis::new(analysis.into_results_cursor(body));
 
+    if validity_checks_enabled() {
+        for (block, _data) in body.basic_blocks.iter_enumerated() {
+            let pcs_block_option = if let Ok(opt) = fpcs_analysis.get_all_for_bb(block) {
+                opt
+            } else {
+                continue;
+            };
+            if pcs_block_option.is_none() {
+                continue;
+            }
+            let pcs_block = pcs_block_option.unwrap();
+            for (statement_index, statement) in pcs_block.statements.iter().enumerate() {
+                statement.assert_validity_at_location(
+                    mir::Location {
+                        block,
+                        statement_index,
+                    },
+                    pcg_ctxt.compiler_ctxt,
+                );
+            }
+        }
+    }
+
     if let Some(dir_path) = visualization_output_path {
         let edge_legend_file_path = format!("{dir_path}/edge_legend.dot");
         let edge_legend_graph = crate::visualization::legend::generate_edge_legend().unwrap();
@@ -362,15 +385,6 @@ pub fn run_pcg<'a, 'tcx, A: Allocator + Copy + std::fmt::Debug>(
             }
             let pcs_block = pcs_block_option.unwrap();
             for (statement_index, statement) in pcs_block.statements.iter().enumerate() {
-                if validity_checks_enabled() {
-                    statement.assert_validity_at_location(
-                        mir::Location {
-                            block,
-                            statement_index,
-                        },
-                        pcg_ctxt.compiler_ctxt,
-                    );
-                }
                 let data = PCGStmtVisualizationData::new(statement);
                 let pcg_data_file_path = format!(
                     "{}/block_{}_stmt_{}_pcg_data.json",

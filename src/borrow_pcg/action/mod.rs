@@ -3,6 +3,7 @@
 use super::borrow_pcg_edge::BorrowPcgEdge;
 use crate::action::BorrowPcgAction;
 use crate::borrow_checker::BorrowCheckerInterface;
+use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::borrow_pcg::edge_data::{LabelEdgePlaces, LabelPlacePredicate};
 use crate::borrow_pcg::has_pcs_elem::{LabelLifetimeProjectionPredicate, PlaceLabeller};
 use crate::borrow_pcg::region_projection::{LifetimeProjection, LifetimeProjectionLabel};
@@ -39,7 +40,7 @@ impl<'tcx> BorrowPcgAction<'tcx> {
         }
     }
 
-    pub(crate) fn remove_edge(edge: BorrowPcgEdge<'tcx>, context: impl Into<String>) -> Self {
+    pub(crate) fn remove_edge(edge: BorrowPcgEdgeKind<'tcx>, context: impl Into<String>) -> Self {
         BorrowPcgAction {
             kind: BorrowPcgActionKind::RemoveEdge(edge),
             debug_context: Some(context.into()),
@@ -168,7 +169,7 @@ pub enum BorrowPcgActionKind<'tcx> {
     Weaken(Weaken<'tcx>),
     Restore(RestoreCapability<'tcx>),
     MakePlaceOld(LabelPlaceAction<'tcx>),
-    RemoveEdge(BorrowPcgEdge<'tcx>),
+    RemoveEdge(BorrowPcgEdgeKind<'tcx>),
     AddEdge {
         edge: BorrowPcgEdge<'tcx>,
     },

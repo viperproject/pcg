@@ -330,7 +330,10 @@ impl<'tcx> BorrowsGraph<'tcx> {
         self.render_debug_graph(ctxt, "Final graph");
         let self_places = self.places(ctxt);
         for place in to_cut.places(ctxt) {
-            if capabilities.get(place, ctxt).is_some() && !self_places.contains(&place) {
+            if !place.is_owned(ctxt)
+                && capabilities.get(place, ctxt).is_some()
+                && !self_places.contains(&place)
+            {
                 capabilities.remove(place, ctxt);
             }
         }

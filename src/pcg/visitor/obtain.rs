@@ -4,6 +4,7 @@ use crate::borrow_pcg::borrow_pcg_edge::BorrowPcgEdgeLike;
 use crate::borrow_pcg::borrow_pcg_expansion::{BorrowPcgExpansion, PlaceExpansion};
 use crate::borrow_pcg::edge::deref::DerefEdge;
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
+use crate::borrow_pcg::edge_data::EdgeData;
 use crate::borrow_pcg::has_pcs_elem::LabelLifetimeProjectionPredicate;
 use crate::borrow_pcg::state::{BorrowStateMutRef, BorrowsStateLike};
 use crate::free_pcs::{CapabilityKind, RepackOp};
@@ -18,6 +19,7 @@ use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::maybe_old::MaybeLabelledPlace;
 use crate::utils::{CompilerCtxt, HasPlace};
 use std::cmp::Ordering;
+use crate::utils::data_structures::HashSet;
 
 use crate::utils::{Place, SnapshotLocation};
 
@@ -71,9 +73,45 @@ impl<'state, 'mir: 'state, 'tcx> PlaceCollapser<'mir, 'tcx> for PlaceObtainer<'s
 }
 
 impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
+    fn restore_place(&mut self, place: Place<'tcx>, context: &str) -> Result<(), PcgError> {
+        let blocked_cap = self.pcg.capabilities.get(place, self.ctxt);
+
+        // TODO: If the place projects a shared ref, do we even need to restore a capability?
+        let restore_cap = if place.place().projects_shared_ref(self.ctxt) {
+            CapabilityKind::Read
+        } else {
+            CapabilityKind::Exclusive
+        };
+
+        // The blocked capability would be None if the place was mutably
+        // borrowed The capability would be Write if the place is a
+        // mutable reference (when dereferencing a mutable ref, the ref
+        // place retains write capability)
+        if blocked_cap.is_none() || matches!(blocked_cap, Some(CapabilityKind::Write)) {
+            self.record_and_apply_action(PcgAction::restore_capability(
+                place,
+                restore_cap,
+                "restore_capabilities_for_removed_edge",
+                self.ctxt,
+            ))?;
+        }
+        for rp in place.lifetime_projections(self.ctxt) {
+            self.record_and_apply_action(
+                        BorrowPcgAction::remove_lifetime_projection_label(
+                            rp.with_placeholder_label(self.ctxt).into(),
+                            format!(
+                                "Place {} unblocked: remove placeholder label of rps of newly unblocked nodes",
+                                place.to_short_string(self.ctxt)
+                            ),
+                        )
+                        .into(),
+                    )?;
+        }
+        Ok(())
+    }
     fn update_unblocked_node_capabilities_and_remove_placeholder_projections(
         &mut self,
-        edge: &impl BorrowPcgEdgeLike<'tcx>,
+        edge: &BorrowPcgEdgeKind<'tcx>,
     ) -> Result<(), PcgError> {
         let fg = self.pcg.borrow.graph.frozen_graph();
         let blocked_nodes = edge.blocked_nodes(self.ctxt);
@@ -86,39 +124,10 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
 
         for node in to_restore {
             if let Some(place) = node.as_current_place() {
-                let blocked_cap = self.pcg.capabilities.get(place, self.ctxt);
-
-                // TODO: If the place projects a shared ref, do we even need to restore a capability?
-                let restore_cap = if place.place().projects_shared_ref(self.ctxt) {
-                    CapabilityKind::Read
-                } else {
-                    CapabilityKind::Exclusive
-                };
-
-                // The blocked capability would be None if the place was mutably
-                // borrowed The capability would be Write if the place is a
-                // mutable reference (when dereferencing a mutable ref, the ref
-                // place retains write capability)
-                if blocked_cap.is_none() || matches!(blocked_cap, Some(CapabilityKind::Write)) {
-                    self.record_and_apply_action(PcgAction::restore_capability(
-                        place,
-                        restore_cap,
-                        "restore_capabilities_for_removed_edge",
-                        self.ctxt,
-                    ))?;
-                }
-                for rp in place.lifetime_projections(self.ctxt) {
-                    self.record_and_apply_action(
-                            BorrowPcgAction::remove_lifetime_projection_label(
-                                rp.with_placeholder_label(self.ctxt).into(),
-                                format!(
-                                    "Place {} unblocked: remove placeholder label of rps of newly unblocked nodes",
-                                    place.to_short_string(self.ctxt)
-                                ),
-                            )
-                            .into(),
-                        )?;
-                }
+                self.restore_place(
+                    place,
+                    "update_unblocked_node_capabilities_and_remove_placeholder_projections",
+                )?;
             }
         }
         Ok(())
@@ -160,15 +169,46 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
         }
     }
 
+    pub(crate) fn remove_deref_edges_to(
+        &mut self,
+        deref_place: MaybeLabelledPlace<'tcx>,
+        edges: HashSet<DerefEdge<'tcx>>,
+        context: &str,
+    ) -> Result<(), PcgError> {
+        for edge in edges {
+            self.record_and_apply_action(
+                BorrowPcgAction::remove_edge(edge.clone().into(), context).into(),
+            )?;
+            self.unlabel_blocked_region_projections_if_applicable(&edge, context)?;
+        }
+        if let Some(deref_place) = deref_place.as_current_place() {
+            self.restore_place(deref_place.parent_place().unwrap(), context)?;
+            self.apply_action(
+                BorrowPcgAction::label_place(
+                    deref_place,
+                    self.prev_snapshot_location().into(),
+                    LabelPlaceReason::Collapse,
+                )
+                .into(),
+            )?;
+        }
+        Ok(())
+    }
+
     #[tracing::instrument(skip(self, edge))]
     pub(crate) fn remove_edge_and_perform_associated_state_updates(
         &mut self,
-        edge: impl BorrowPcgEdgeLike<'tcx>,
+        edge: &BorrowPcgEdgeKind<'tcx>,
         context: &str,
     ) -> Result<(), PcgError> {
-        self.record_and_apply_action(
-            BorrowPcgAction::remove_edge(edge.clone().to_owned_edge(), context).into(),
-        )?;
+        if let BorrowPcgEdgeKind::Deref(deref) = edge {
+            return self.remove_deref_edges_to(
+                deref.deref_place,
+                vec![deref.clone()].into_iter().collect(),
+                context,
+            );
+        }
+        self.record_and_apply_action(BorrowPcgAction::remove_edge(edge.clone(), context).into())?;
 
         // This is true iff the expansion is for a place (not a region projection), and changes
         // could have been made to the root place via the expansion
@@ -176,7 +216,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
         // - The base has no capability, meaning it was previously expanded mutably
         // - The base has write capability, it is a mutable ref
         let is_mutable_place_expansion = if let BorrowPcgEdgeKind::BorrowPcgExpansion(expansion) =
-            edge.kind()
+            edge
             && let Some(place) = expansion.base.as_current_place()
         {
             matches!(
@@ -189,7 +229,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
 
         self.update_unblocked_node_capabilities_and_remove_placeholder_projections(&edge)?;
 
-        match edge.kind() {
+        match &edge {
             BorrowPcgEdgeKind::Deref(deref) => {
                 self.unlabel_blocked_region_projections_if_applicable(deref, context)?;
                 if deref.deref_place.is_current() {

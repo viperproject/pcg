@@ -81,6 +81,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
             let leaf_nodes = self.pcg.borrow.graph.frozen_graph().leaf_nodes(self.ctxt);
             for place in self.pcg.borrow.graph.places(self.ctxt) {
                 if prev != Some(place)
+                    && current.is_strict_prefix_of(place)
                     && leaf_nodes.contains(&place.into())
                     && self.pcg.capabilities.get(place, self.ctxt) == Some(CapabilityKind::Read)
                     && !place.projects_shared_ref(self.ctxt)
@@ -89,7 +90,11 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                         BorrowPcgAction::restore_capability(
                             place,
                             CapabilityKind::Exclusive,
-                            "remove_read_permission_upwards_and_label_rps",
+                            format!(
+                                "{}: remove_read_permission_upwards_and_label_rps: restore exclusive cap for leaf place {}",
+                                debug_ctxt,
+                                place.to_short_string(self.ctxt)
+                            ),
                         )
                         .into(),
                     )?;

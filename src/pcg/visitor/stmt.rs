@@ -99,7 +99,9 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                             !matches!(edge.kind(), BorrowPcgEdgeKind::BorrowPcgExpansion(_));
                         if should_remove {
                             self.place_obtainer()
-                                .remove_edge_and_perform_associated_state_updates(edge, "Assign")?;
+                                .remove_edge_and_perform_associated_state_updates(
+                                    &edge.kind, "Assign",
+                                )?;
                         }
                     }
                 }

@@ -433,7 +433,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                     .ctxt
                     .bc
                     .is_directly_blocked(place, self.location(), self.ctxt)
-                && self.pcg.capabilities.get(place, self.ctxt) != Some(CapabilityKind::Read)
+                && self.pcg.capabilities.get(place, self.ctxt).is_none()
             {
                 let action = PcgAction::restore_capability(
                     place,

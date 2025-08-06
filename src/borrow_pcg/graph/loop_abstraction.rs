@@ -474,7 +474,7 @@ impl<'mir, 'tcx> ActionApplier<'tcx> for AbsExpander<'_, 'mir, 'tcx> {
                 BorrowPcgActionKind::Restore(_) => todo!(),
                 BorrowPcgActionKind::MakePlaceOld(_) => todo!(),
                 BorrowPcgActionKind::RemoveEdge(borrow_pcg_edge) => {
-                    self.graph.remove(borrow_pcg_edge.kind());
+                    self.graph.remove(&borrow_pcg_edge);
                     Ok(true)
                 }
             },
