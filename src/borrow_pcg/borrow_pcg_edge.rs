@@ -7,7 +7,7 @@ use super::{
     edge::outlives::BorrowFlowEdge,
     edge_data::EdgeData,
     graph::Conditioned,
-    has_pcs_elem::{HasPcgElems, LabelLifetimeProjection, LabelPlace},
+    has_pcs_elem::{HasPcgElems, LabelLifetimeProjection},
     path_condition::ValidityConditions,
     region_projection::{
         LifetimeProjection, LifetimeProjectionLabel, LocalLifetimeProjection,
@@ -366,9 +366,6 @@ impl<'tcx> LocalNode<'tcx> {
             LocalNode::Place(MaybeLabelledPlace::Current(place)) => Some(place),
             _ => None,
         }
-    }
-    pub(crate) fn is_current_place(self) -> bool {
-        self.as_current_place().is_some()
     }
 }
 

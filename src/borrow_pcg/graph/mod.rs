@@ -8,7 +8,6 @@ mod mutate;
 
 use crate::{
     borrow_pcg::{
-        borrow_pcg_expansion::PlaceExpansion,
         has_pcs_elem::{LabelLifetimeProjection, LabelLifetimeProjectionPredicate},
         region_projection::LifetimeProjectionLabel,
     },

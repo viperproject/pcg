@@ -6,7 +6,7 @@ use crate::{
         edge_data::{EdgeData, LabelEdgePlaces, LabelPlacePredicate},
         has_pcs_elem::{
             HasPcgElems, LabelLifetimeProjection, LabelLifetimeProjectionPredicate,
-            LabelLifetimeProjectionResult, LabelNodeContext, LabelPlace, LabelPlaceWithContext,
+            LabelLifetimeProjectionResult, LabelNodeContext, LabelPlaceWithContext,
             PlaceLabeller,
         },
         region_projection::{LifetimeProjection, LifetimeProjectionLabel, LocalLifetimeProjection},

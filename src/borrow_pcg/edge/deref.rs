@@ -6,12 +6,12 @@ use crate::{
             LabelLifetimeProjection, LabelLifetimeProjectionPredicate,
             LabelLifetimeProjectionResult, LabelNodeContext, PlaceLabeller,
         },
-        region_projection::{LifetimeProjection, LifetimeProjectionLabel, LocalLifetimeProjection},
+        region_projection::{LifetimeProjectionLabel, LocalLifetimeProjection},
     },
     pcg::{LocalNodeLike, PCGNodeLike},
     rustc_interface::middle::mir,
     utils::{
-        CompilerCtxt, HasPlace, Place, SnapshotLocation, display::DisplayWithCompilerCtxt,
+        CompilerCtxt, Place, SnapshotLocation, display::DisplayWithCompilerCtxt,
         maybe_old::MaybeLabelledPlace, validity::HasValidityCheck,
     },
 };

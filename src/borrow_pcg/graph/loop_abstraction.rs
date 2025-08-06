@@ -6,9 +6,7 @@ use crate::{
     borrow_pcg::{
         action::BorrowPcgActionKind,
         borrow_pcg_edge::{BorrowPcgEdgeLike, BorrowPcgEdgeRef, LocalNode, ToBorrowsEdge},
-        edge::{
-            abstraction::{r#loop::LoopAbstraction, AbstractionBlockEdge}, deref::DerefEdge, kind::BorrowPcgEdgeKind
-        },
+        edge::abstraction::{AbstractionBlockEdge, r#loop::LoopAbstraction},
         edge_data::EdgeData,
         graph::BorrowsGraph,
         has_pcs_elem::LabelLifetimeProjectionPredicate,
@@ -18,14 +16,20 @@ use crate::{
         },
         state::BorrowStateMutRef,
     },
-    free_pcs::{CapabilityKind, OwnedPcg, RepackGuide, RepackOp},
+    free_pcs::{CapabilityKind, OwnedPcg, RepackOp},
     pcg::{
-        obtain::{ActionApplier, HasSnapshotLocation, ObtainType, PlaceExpander, PlaceObtainer}, place_capabilities::PlaceCapabilities, LocalNodeLike, PCGNodeLike, PcgMutRef, PcgNode, PcgRefLike
+        LocalNodeLike, PCGNodeLike, PcgMutRef, PcgNode, PcgRefLike,
+        obtain::{ActionApplier, HasSnapshotLocation, ObtainType, PlaceExpander, PlaceObtainer},
+        place_capabilities::PlaceCapabilities,
     },
     pcg_validity_assert,
     rustc_interface::middle::mir::{self},
     utils::{
-        data_structures::{HashMap, HashSet}, display::DisplayWithCompilerCtxt, maybe_old::MaybeLabelledPlace, remote::RemotePlace, CompilerCtxt, LocalMutationIsAllowed, Place, SnapshotLocation
+        CompilerCtxt, LocalMutationIsAllowed, Place, SnapshotLocation,
+        data_structures::{HashMap, HashSet},
+        display::DisplayWithCompilerCtxt,
+        maybe_old::MaybeLabelledPlace,
+        remote::RemotePlace,
     },
 };
 
@@ -368,26 +372,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             to_obtain.retain(|p| !p.is_prefix_of(*place));
             to_obtain.push(*place);
         }
-        let obtain_type = ObtainType::LoopInvariant;
         for place in to_obtain {
-            let obtain_cap = obtain_type.capability(place, ctxt);
-
-            // if !obtain_cap.is_read() {
-            //     tracing::debug!(
-            //         "Obtain {:?} to place {} in phase {:?}",
-            //         obtain_type,
-            //         place.to_short_string(ctxt),
-            //         obtain_type
-            //     );
-            //     obtainer
-            //         .upgrade_closest_read_ancestor_to_exclusive_and_update_rps(place)
-            //         .unwrap();
-            //     obtainer.pcg.borrows_graph().render_debug_graph(
-            //         ctxt,
-            //         &format!("After upgrade for {}", place.to_short_string(ctxt)),
-            //     );
-            // }
-
             obtainer.obtain(place, ObtainType::LoopInvariant).unwrap();
             obtainer.pcg.borrows_graph().render_debug_graph(
                 ctxt,
@@ -565,7 +550,6 @@ impl<'mir, 'tcx> PlaceExpander<'mir, 'tcx> for AbsExpander<'_, 'mir, 'tcx> {
     fn location(&self) -> mir::Location {
         self.loop_head_location()
     }
-
 }
 
 impl<'pcg, 'mir, 'tcx> HasSnapshotLocation for AbsExpander<'pcg, 'mir, 'tcx> {

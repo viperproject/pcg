@@ -1,9 +1,8 @@
 extern crate polonius_engine;
-use itertools::Itertools;
 use polonius_engine::Output;
 
 use crate::BodyAndBorrows;
-use crate::borrow_checker::{BorrowCheckerInterface, RustBorrowCheckerInterface};
+use crate::borrow_checker::RustBorrowCheckerInterface;
 use crate::borrow_pcg::region_projection::PcgRegion;
 use crate::pcg::PcgNode;
 use crate::rustc_interface::borrowck::{
@@ -15,8 +14,7 @@ use crate::rustc_interface::index::bit_set::BitSet;
 use crate::rustc_interface::middle::mir::{self, Location, RETURN_PLACE};
 use crate::rustc_interface::middle::ty;
 use crate::rustc_interface::mir_dataflow::{ResultsCursor, impls::MaybeLiveLocals};
-use crate::utils::maybe_remote::MaybeRemotePlace;
-use crate::utils::{CompilerCtxt, Place};
+use crate::utils::CompilerCtxt;
 #[cfg(feature = "visualization")]
 use crate::visualization::bc_facts_graph::RegionPrettyPrinter;
 use std::cell::{RefCell, RefMut};
@@ -298,43 +296,7 @@ impl<'tcx> NllBorrowCheckerImpl<'_, 'tcx> {
         cursor_contains_local(cursor, local)
     }
 
-    fn region_is_live_at(&self, region: PcgRegion, location: Location) -> bool
-    where
-        Self: BorrowCheckerInterface<'tcx>,
-    {
-        let ctxt = CompilerCtxt::new(
-            self.borrow_checker_data.body,
-            self.borrow_checker_data.tcx,
-            (),
-        );
-        let arg_lifetimes = self
-            .borrow_checker_data
-            .body
-            .args_iter()
-            .flat_map(|arg| {
-                let arg_place: Place<'tcx> = arg.into();
-                arg_place.regions(ctxt).into_iter()
-            })
-            .unique();
-        for arg_lifetime in arg_lifetimes {
-            if self.outlives(region, arg_lifetime, location) {
-                return true;
-            }
-        }
-        let location_map = self.borrow_checker_data.borrows.location_map();
-        for idx in 0..location_map.len() {
-            let borrow = &location_map[idx];
-            if self.borrow_in_scope_at(idx.into(), location) {
-                if self.outlives(borrow.region().into(), region, location) {
-                    return true;
-                }
-            }
-        }
-        false
-    }
 }
-
-impl NllBorrowCheckerImpl<'_, '_> {}
 
 impl<'tcx> RustBorrowCheckerInterface<'tcx> for NllBorrowCheckerImpl<'_, 'tcx> {
     #[cfg(feature = "visualization")]
@@ -383,11 +345,6 @@ impl<'tcx> RustBorrowCheckerInterface<'tcx> for NllBorrowCheckerImpl<'_, 'tcx> {
                 return false;
             }
         }
-        let ctxt = CompilerCtxt::new(
-            self.borrow_checker_data.body,
-            self.borrow_checker_data.tcx,
-            self,
-        );
         let Some(local) = node.related_maybe_labelled_place().map(|p| p.local()) else {
             return true;
         };

@@ -8,7 +8,7 @@ use serde_json::json;
 use super::{
     borrow_pcg_edge::{BlockedNode, BlockingNode, LocalNode},
     edge_data::EdgeData,
-    has_pcs_elem::{HasPcgElems, LabelLifetimeProjection, LabelPlace},
+    has_pcs_elem::{HasPcgElems, LabelLifetimeProjection},
     region_projection::{LifetimeProjection, LifetimeProjectionLabel},
 };
 use crate::{
@@ -19,7 +19,6 @@ use crate::{
             LabelLifetimeProjectionPredicate, LabelLifetimeProjectionResult, LabelNodeContext,
             LabelPlaceWithContext, PlaceLabeller,
         },
-        region_projection::LocalLifetimeProjection,
     },
     free_pcs::{CapabilityKind, RepackGuide},
     pcg::{
@@ -28,7 +27,7 @@ use crate::{
         place_capabilities::{BlockType, PlaceCapabilities, PlaceCapabilitiesInterface},
     },
     pcg_validity_assert,
-    utils::{ConstantIndex, SnapshotLocation, json::ToJsonWithCompilerCtxt},
+    utils::json::ToJsonWithCompilerCtxt,
 };
 use crate::{pcg::PcgError, utils::place::corrected::CorrectedPlace};
 use crate::{
@@ -259,7 +258,7 @@ impl<'tcx> EdgeData<'tcx> for BorrowPcgExpansion<'tcx> {
 
     fn blocked_nodes<'slf, BC: Copy>(
         &self,
-        ctxt: CompilerCtxt<'_, 'tcx, BC>,
+        _ctxt: CompilerCtxt<'_, 'tcx, BC>,
     ) -> Box<dyn std::iter::Iterator<Item = PcgNode<'tcx>> + 'slf>
     where
         'tcx: 'slf,
@@ -343,19 +342,7 @@ impl<'tcx> BorrowPcgExpansion<'tcx> {
                         && p.location() == base_place.location()
                 })
             }
-            PcgNode::LifetimeProjection(base_rp) => false,
-            // self.expansion.iter().all(|p| {
-            //     if let PcgNode::LifetimeProjection(p_rp) = p {
-            //         p_rp.place().location() == base_rp.place().location()
-            //             && base_rp
-            //                 .place()
-            //                 .place()
-            //                 .is_prefix_exact(p_rp.place().place())
-            //             && p_rp.label() == base_rp.label()
-            //     } else {
-            //         false
-            //     }
-            // }),
+            PcgNode::LifetimeProjection(_) => false,
         }
     }
 }
