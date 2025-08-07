@@ -53,7 +53,7 @@ impl PlaceObtainer<'_, '_, '_> {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ObtainType {
     Capability(CapabilityKind),
     TwoPhaseExpand,
