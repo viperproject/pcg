@@ -121,21 +121,21 @@ fn test_selected_crates() {
 
     let test_cases = vec![
         SelectedCrateTestCase::new(
-            "winnow",
-            "0.7.4",
-            Some("2025-03-13"),
-            TestCrateType::function(
-                "<stream::token::TokenSlice<'_, T> as stream::UpdateSlice>::update_slice",
-                Some(3),
-            ),
-        ),
-        SelectedCrateTestCase::new(
             "pyo3",
             "0.24.0",
             Some("2025-03-13"),
             TestCrateType::function(
                 "pyclass::create_type_object::GetSetDefBuilder::add_getter",
                 Some(6),
+            ),
+        ),
+        SelectedCrateTestCase::new(
+            "winnow",
+            "0.7.4",
+            Some("2025-03-13"),
+            TestCrateType::function(
+                "<stream::token::TokenSlice<'_, T> as stream::UpdateSlice>::update_slice",
+                Some(3),
             ),
         ),
         SelectedCrateTestCase::new(

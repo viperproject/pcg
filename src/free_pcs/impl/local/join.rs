@@ -194,77 +194,88 @@ impl<'pcg: 'exp, 'exp, 'tcx> JoinOwnedData<'pcg, 'tcx, &'exp mut LocalExpansions
         return Ok(actions);
     }
 
+    fn join_other_expansions_iteration<'other>(
+        &mut self,
+        other: &mut JoinOwnedData<'pcg, 'tcx, &'other mut LocalExpansions<'tcx>>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> Result<Vec<RepackOp<'tcx>>, PcgError>
+    where
+        'pcg: 'other,
+    {
+        tracing::info!("Joining other expansions");
+        let mut actions: Vec<RepackOp<'tcx>> = vec![];
+        // We get by longest expansions first but then use `pop`, so in
+        // practice we observe the shortest expansions first
+        let mut other_expansions = other
+            .owned
+            .expansions_longest_first()
+            .cloned()
+            .collect::<Vec<_>>();
+        while let Some(other_expansion) = other_expansions.pop() {
+            let self_expansions = self
+                .owned
+                .expansions_from(other_expansion.place)
+                .cloned()
+                .collect::<HashSet<_>>();
+            if self_expansions.contains(&other_expansion) {
+                tracing::debug!(
+                    "Skipping expansion {:?} because it is already in the local expansions",
+                    other_expansion
+                );
+                continue;
+            } else if self_expansions.is_empty() {
+                tracing::debug!("Expansion {:?} is not in self", other_expansion);
+                let other_expansion_guide = other_expansion.guide();
+                if self.owned.is_leaf(other_expansion.place, ctxt) {
+                    if let Some(cap) = self.capabilities.get(other_expansion.place, ctxt) {
+                        let expand_cap = if let Some(other_cap) =
+                            other.capabilities.get(other_expansion.place, ctxt)
+                        {
+                            cap.minimum(other_cap).unwrap()
+                        } else {
+                            cap
+                        };
+                        let expand_action = RepackExpand::new(
+                            other_expansion.place,
+                            other_expansion_guide,
+                            expand_cap,
+                        );
+                        tracing::info!("Expanding {:?} with cap {:?}", other_expansion.place, cap);
+                        self.owned
+                            .perform_expand_action(expand_action, self.capabilities, ctxt)?;
+                        actions.push(RepackOp::Expand(expand_action).into());
+                    }
+                }
+            } else {
+                actions.extend(self.join_expansions_from_place(
+                    other,
+                    other_expansion.clone(),
+                    ctxt,
+                )?);
+                return Ok(actions);
+            }
+        }
+        Ok(actions)
+    }
+
     fn join_other_expansions<'other>(
         &mut self,
-        mut other: &mut JoinOwnedData<'pcg, 'tcx, &'other mut LocalExpansions<'tcx>>,
+        other: &mut JoinOwnedData<'pcg, 'tcx, &'other mut LocalExpansions<'tcx>>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> Result<Vec<RepackOp<'tcx>>, PcgError>
     where
         'pcg: 'other,
     {
         let mut actions = vec![];
-        'outer: loop {
-            // We get by longest expansions first but then use `pop`, so in
-            // practice we observe the shortest expansions first
-            let mut other_expansions = other
-                .owned
-                .expansions_longest_first()
-                .cloned()
-                .collect::<Vec<_>>();
-            while let Some(other_expansion) = other_expansions.pop() {
-                let self_expansions = self
-                    .owned
-                    .expansions_from(other_expansion.place)
-                    .cloned()
-                    .collect::<HashSet<_>>();
-                if self_expansions.contains(&other_expansion) {
-                    tracing::debug!(
-                        "Skipping expansion {:?} because it is already in the local expansions",
-                        other_expansion
-                    );
-                    continue;
-                } else if self_expansions.is_empty() {
-                    tracing::debug!("Expansion {:?} is not in self", other_expansion);
-                    let other_expansion_guide = other_expansion.guide();
-                    if self.owned.is_leaf(other_expansion.place, ctxt) {
-                        if let Some(cap) = self.capabilities.get(other_expansion.place, ctxt) {
-                            let expand_cap = if let Some(other_cap) =
-                                other.capabilities.get(other_expansion.place, ctxt)
-                            {
-                                cap.minimum(other_cap).unwrap()
-                            } else {
-                                cap
-                            };
-                            let expand_action = RepackExpand::new(
-                                other_expansion.place,
-                                other_expansion_guide,
-                                expand_cap,
-                            );
-                            tracing::info!(
-                                "Expanding {:?} with cap {:?}",
-                                other_expansion.place,
-                                cap
-                            );
-                            self.owned.perform_expand_action(
-                                expand_action,
-                                self.capabilities,
-                                ctxt,
-                            )?;
-                            actions.push(RepackOp::Expand(expand_action).into());
-                        }
-                    }
-                } else {
-                    actions.extend(self.join_expansions_from_place(
-                        &mut other,
-                        other_expansion.clone(),
-                        ctxt,
-                    )?);
-                    continue 'outer;
-                }
+        loop {
+            let iteration_actions = self.join_other_expansions_iteration(other, ctxt)?;
+            if iteration_actions.is_empty() {
+                break;
+            } else {
+                actions.extend(iteration_actions);
             }
-            break;
         }
-        Ok(actions)
+        return Ok(actions);
     }
 
     pub(crate) fn join<'mir>(
@@ -272,6 +283,7 @@ impl<'pcg: 'exp, 'exp, 'tcx> JoinOwnedData<'pcg, 'tcx, &'exp mut LocalExpansions
         mut other: JoinOwnedData<'pcg, 'tcx, &'exp mut LocalExpansions<'tcx>>,
         ctxt: CompilerCtxt<'mir, 'tcx>,
     ) -> Result<Vec<RepackOp<'tcx>>, PcgError> {
+        tracing::info!("Joining local expansions");
         let mut actions: Vec<RepackOp<'tcx>> = Vec::new();
         if self.owned.has_expansions() || other.owned.has_expansions() {
             actions.extend(self.join_other_expansions(&mut other, ctxt)?);
@@ -280,34 +292,56 @@ impl<'pcg: 'exp, 'exp, 'tcx> JoinOwnedData<'pcg, 'tcx, &'exp mut LocalExpansions
             let local_place = Place::from(self.owned.get_local());
             if let Some(self_cap) = self.capabilities.get(local_place, ctxt)
                 && let Some(other_cap) = other.capabilities.get(local_place, ctxt)
-                && self_cap.minimum(other_cap).is_none()
+                && self_cap != other_cap
             {
-                // One of these has read cap and the other has write cap
-                // We want to mark the read place as "old" and then set it to write
-                let mut join_obtainer: JoinObtainer<'pcg, '_, '_, 'mir, 'tcx> =
-                    if self_cap.is_read() {
-                        JoinObtainer {
-                            ctxt,
-                            data: self,
-                            actions: vec![],
+                match self_cap.minimum(other_cap) {
+                    Some(CapabilityKind::Read) => {
+                        if other_cap.is_read() {
+                            // We have exclusive, other place has read We want
+                            // to downgrade our cap to read and then propagate
+                            // the read cap to all places (by definition in the
+                            // borrow PCG) that are read in `other`
+                            self.capabilities
+                                .insert(local_place, CapabilityKind::Read, ctxt);
+                            for (p, c) in other
+                                .capabilities
+                                .capabilities_for_strict_postfixes_of(local_place.into())
+                            {
+                                self.capabilities.insert(p, c, ctxt);
+                            }
                         }
-                    } else {
-                        JoinObtainer {
+                    }
+                    None => {
+                        // One of these has read cap and the other has write cap
+                        // We want to mark the read place as "old" and then set it to write
+                        let mut join_obtainer: JoinObtainer<'pcg, '_, '_, 'mir, 'tcx> =
+                            if self_cap.is_read() {
+                                JoinObtainer {
+                                    ctxt,
+                                    data: self,
+                                    actions: vec![],
+                                }
+                            } else {
+                                JoinObtainer {
+                                    ctxt,
+                                    data: &mut other,
+                                    actions: vec![],
+                                }
+                            };
+                        let action = BorrowPcgAction::label_place(
+                            local_place,
+                            join_obtainer.prev_snapshot_location(),
+                            LabelPlaceReason::MoveOut,
+                        );
+                        join_obtainer.apply_action(PcgAction::Borrow(action))?;
+                        join_obtainer.data.capabilities.insert(
+                            local_place,
+                            CapabilityKind::Write,
                             ctxt,
-                            data: &mut other,
-                            actions: vec![],
-                        }
-                    };
-                let action = BorrowPcgAction::label_place(
-                    local_place,
-                    join_obtainer.prev_snapshot_location(),
-                    LabelPlaceReason::MoveOut,
-                );
-                join_obtainer.apply_action(PcgAction::Borrow(action))?;
-                join_obtainer
-                    .data
-                    .capabilities
-                    .insert(local_place, CapabilityKind::Write, ctxt);
+                        );
+                    }
+                    _ => {}
+                }
             }
         }
         tracing::debug!(
