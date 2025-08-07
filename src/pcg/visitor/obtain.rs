@@ -546,13 +546,41 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
             self.pack_old_and_dead_borrow_leaves(Some(place))?;
         }
 
-        // self.pcg.borrows_graph().render_debug_graph(
-        //     self.ctxt,
-        //     &format!(
-        //         "After label and remove for {}",
-        //         place.to_short_string(self.ctxt)
-        //     ),
-        // );
+        let current_cap = self.pcg.capabilities.get(place, self.ctxt);
+        tracing::info!(
+            "Obtain {:?} to place {} in phase {:?}: Current cap: {:?}, Obtain cap: {:?}",
+            obtain_type,
+            place.to_short_string(self.ctxt),
+            self.phase(),
+            current_cap,
+            obtain_cap
+        );
+
+        if current_cap.is_none()
+            || matches!(
+                current_cap.unwrap().partial_cmp(&obtain_cap),
+                Some(Ordering::Less) | None
+            )
+        {
+            // If we want to get e.g. write permission but we currently have
+            // read permission, we will obtain read with the collpase and then
+            // upgrade in the subsequent step
+            let collapse_cap = if current_cap == Some(CapabilityKind::Read) {
+                CapabilityKind::Read
+            } else {
+                obtain_cap
+            };
+            tracing::info!(
+                "Collapsing owned places to {}",
+                place.to_short_string(self.ctxt)
+            );
+            self.collapse_owned_places_to(
+                place,
+                collapse_cap,
+                format!("Obtain {}", place.to_short_string(self.ctxt)),
+                self.ctxt,
+            )?;
+        }
 
         if !obtain_cap.is_read() {
             tracing::debug!(
@@ -570,30 +598,14 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
             // Then, we want to create a mutable borrow of (*c).f2
             // This requires obtaining exclusive permission to (*c).f2
             //
-            // We can upgrade capability of (*c).f2 from R to E by downgrading all
-            // other pre-and postfix places of (*c).f2 to None (in this case c and
-            // *c). In the example, (*c).f2 is actually the closest read ancestor,
-            // but this is not always the case (e.g. if we wanted to obtain
-            // (*c).f2.f3 instead)
+            // We can upgrade capability of (*c).f2 from R to E by downgrading
+            // all other pre-and postfix places of (*c).f2 (in this case c will
+            // be downgraded to W and *c to None). In the example, (*c).f2 is
+            // actually the closest read ancestor, but this is not always the
+            // case (e.g. if we wanted to obtain (*c).f2.f3 instead)
             //
             // This also labels rps and adds placeholder projections
             self.upgrade_closest_read_ancestor_to_exclusive_and_update_rps(place)?;
-        }
-
-        let current_cap = self.pcg.capabilities.get(place, self.ctxt);
-
-        if current_cap.is_none()
-            || matches!(
-                current_cap.unwrap().partial_cmp(&obtain_cap),
-                Some(Ordering::Less) | None
-            )
-        {
-            self.collapse_owned_places_to(
-                place,
-                obtain_cap,
-                format!("Obtain {}", place.to_short_string(self.ctxt)),
-                self.ctxt,
-            )?;
         }
 
         if obtain_cap.is_write() {

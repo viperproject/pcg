@@ -24,30 +24,28 @@ fn test_selected_crates() {
         ("PCG_VISUALIZATION".to_string(), "true".to_string()),
     ];
 
-    // 4 basic blocks, <= 60 nodes
+    // 5 basic blocks, <= 60 nodes
     common::ensure_successful_run_on_crate(
-        "miniz_oxide",
-        "0.8.5",
+        "sharded-slab",
+        "0.1.7",
         Some("2025-03-13"),
         common::RunOnCrateOptions::RunPCG {
             target: common::Target::Debug,
             validity_checks: true,
-            function: Some("inflate::output_buffer::InputWrapper::<'a>::read_byte"),
-            extra_env_vars: visualization_env_vars,
+            function: Some("pool::RefMut::<'a, T, C>::downgrade"),
+            extra_env_vars: vec![],
         },
     );
 
-    return;
-
-    // 4 basic blocks, <= 60 nodes
+    // <= 13 basic blocks, <= 60 nodes
     common::ensure_successful_run_on_crate(
-        "async-trait",
-        "0.1.87",
+        "tinytemplate",
+        "1.2.1",
         Some("2025-03-13"),
         common::RunOnCrateOptions::RunPCG {
             target: common::Target::Debug,
             validity_checks: true,
-            function: Some("<lifetime::CollectLifetimes as syn::visit_mut::VisitMut>::visit_type_reference_mut"),
+            function: Some("compiler::TemplateCompiler::<'template>::consume_text"),
             extra_env_vars: vec![],
         },
     );
@@ -61,6 +59,34 @@ fn test_selected_crates() {
             target: common::Target::Debug,
             validity_checks: true,
             function: Some("<spooled::SpooledTempFile as std::io::Write>::write"),
+            extra_env_vars: vec![],
+        },
+    );
+
+    // 4 basic blocks, <= 60 nodes
+    common::ensure_successful_run_on_crate(
+        "miniz_oxide",
+        "0.8.5",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some("inflate::output_buffer::InputWrapper::<'a>::read_byte"),
+            extra_env_vars: vec![],
+        },
+    );
+
+    // 4 basic blocks, <= 60 nodes
+    common::ensure_successful_run_on_crate(
+        "async-trait",
+        "0.1.87",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some(
+                "<lifetime::CollectLifetimes as syn::visit_mut::VisitMut>::visit_type_reference_mut",
+            ),
             extra_env_vars: vec![],
         },
     );
