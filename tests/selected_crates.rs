@@ -1,3 +1,4 @@
+#![allow(dead_code)]
 use itertools::Itertools;
 
 mod common;
@@ -130,6 +131,15 @@ fn test_selected_crates() {
     ];
 
     let test_cases = vec![
+        SelectedCrateTestCase::new(
+            "h2",
+            "0.4.8",
+            Some("2025-03-13"),
+            TestCrateType::function(
+                "<error::Error as std::convert::From<proto::error::Error>>::from",
+                Some(20),
+            ),
+        ),
         SelectedCrateTestCase::new(
             "combine",
             "4.6.7",
@@ -880,7 +890,7 @@ fn test_selected_crates() {
 
     for test_case in test_cases
         .into_iter()
-        .sorted_by_key(|tc| tc.num_bbs().unwrap_or(usize::MAX))
+        // .sorted_by_key(|tc| tc.num_bbs().unwrap_or(usize::MAX))
     {
         test_case.run();
     }
