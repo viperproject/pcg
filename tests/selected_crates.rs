@@ -132,6 +132,15 @@ fn test_selected_crates() {
 
     let test_cases = vec![
         SelectedCrateTestCase::new(
+            "rayon",
+            "1.10.0",
+            Some("2025-03-13"),
+            TestCrateType::function(
+                "<str::CharIndicesProducer<'ch> as iter::plumbing::UnindexedProducer>::split",
+                Some(10),
+            ),
+        ),
+        SelectedCrateTestCase::new(
             "h2",
             "0.4.8",
             Some("2025-03-13"),
@@ -890,7 +899,7 @@ fn test_selected_crates() {
 
     for test_case in test_cases
         .into_iter()
-        // .sorted_by_key(|tc| tc.num_bbs().unwrap_or(usize::MAX))
+        .sorted_by_key(|tc| tc.num_bbs().unwrap_or(usize::MAX))
     {
         test_case.run();
     }

@@ -99,18 +99,15 @@ impl<'pcg: 'exp, 'exp, 'tcx> JoinOwnedData<'pcg, 'tcx, &'exp mut LocalExpansions
         }
     }
 
-    fn expand_from_place_with_caps<'other>(
+    fn expand_from_place_with_caps(
         &mut self,
-        other: &mut JoinOwnedData<'pcg, 'tcx, &'other mut LocalExpansions<'tcx>>,
+        other: &mut JoinOwnedData<'pcg, 'tcx, &'exp mut LocalExpansions<'tcx>>,
         place: Place<'tcx>,
         guide: Option<RepackGuide>,
         self_cap: CapabilityKind,
         other_cap: CapabilityKind,
         ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> Result<Vec<RepackOp<'tcx>>, PcgError>
-    where
-        'pcg: 'other,
-    {
+    ) -> Result<Vec<RepackOp<'tcx>>, PcgError> {
         let mut actions = vec![];
         if let Some(expand_cap) = self_cap.minimum(other_cap) {
             let expand_action = RepackExpand::new(place, guide, expand_cap);
@@ -123,34 +120,44 @@ impl<'pcg: 'exp, 'exp, 'tcx> JoinOwnedData<'pcg, 'tcx, &'exp mut LocalExpansions
             }
             return Ok(actions);
         } else {
+            // One has read, the other has write
+            // We want to remove everything from the one with read
+            let to_modify = if self_cap == CapabilityKind::Read {
+                &mut *self
+            } else {
+                other
+            };
             let mut join_obtainer = JoinObtainer {
                 ctxt,
-                data: self,
+                data: to_modify,
                 actions: vec![],
             };
             join_obtainer.label_and_remove_capabilities_for_deref_projections_of_postfix_places(
                 place, false, ctxt,
             )?;
-            join_obtainer.restore_capability_to_leaf_places(Some(place), ctxt)?;
             join_obtainer.collapse_owned_places_to(
                 place,
-                CapabilityKind::Write,
+                CapabilityKind::Read,
                 "join".to_string(),
                 ctxt,
             )?;
-            pcg_validity_assert!(!join_obtainer.actions.is_empty());
-            return Ok(join_obtainer.actions);
+            join_obtainer.data.capabilities.insert(
+                place,
+                CapabilityKind::Write,
+                ctxt,
+            );
+            actions.extend(join_obtainer.actions);
+            pcg_validity_assert!(self.capabilities.get(place, ctxt) == Some(CapabilityKind::Write));
+            pcg_validity_assert!(!actions.is_empty());
+            return Ok(actions);
         }
     }
 
-    fn join_expansions_iteration<'other>(
+    fn join_expansions_iteration(
         &mut self,
-        other: &mut JoinOwnedData<'pcg, 'tcx, &'other mut LocalExpansions<'tcx>>,
+        other: &mut JoinOwnedData<'pcg, 'tcx, &'exp mut LocalExpansions<'tcx>>,
         ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> Result<Vec<RepackOp<'tcx>>, PcgError>
-    where
-        'pcg: 'other,
-    {
+    ) -> Result<Vec<RepackOp<'tcx>>, PcgError> {
         let expansions_shortest_first = other
             .owned
             .expansions_shortest_first()
@@ -185,11 +192,8 @@ impl<'pcg: 'exp, 'exp, 'tcx> JoinOwnedData<'pcg, 'tcx, &'exp mut LocalExpansions
                     } else {
                         let expand_action =
                             RepackExpand::new(place, other_expansion.guide(), self_cap);
-                        self.owned.perform_expand_action(
-                            expand_action,
-                            self.capabilities,
-                            ctxt,
-                        )?;
+                        self.owned
+                            .perform_expand_action(expand_action, self.capabilities, ctxt)?;
                         actions.push(RepackOp::Expand(expand_action).into());
                     }
                 }
@@ -203,14 +207,11 @@ impl<'pcg: 'exp, 'exp, 'tcx> JoinOwnedData<'pcg, 'tcx, &'exp mut LocalExpansions
         Ok(vec![])
     }
 
-    fn join_expansions<'other>(
+    fn join_expansions(
         &mut self,
-        other: &mut JoinOwnedData<'pcg, 'tcx, &'other mut LocalExpansions<'tcx>>,
+        other: &mut JoinOwnedData<'pcg, 'tcx, &'exp mut LocalExpansions<'tcx>>,
         ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> Result<Vec<RepackOp<'tcx>>, PcgError>
-    where
-        'pcg: 'other,
-    {
+    ) -> Result<Vec<RepackOp<'tcx>>, PcgError> {
         let mut actions = vec![];
         loop {
             let iteration_actions = self.join_expansions_iteration(other, ctxt)?;
