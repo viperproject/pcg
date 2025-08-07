@@ -292,24 +292,22 @@ impl<'pcg: 'exp, 'exp, 'tcx> JoinOwnedData<'pcg, 'tcx, &'exp mut LocalExpansions
             let local_place = Place::from(self.owned.get_local());
             if let Some(self_cap) = self.capabilities.get(local_place, ctxt)
                 && let Some(other_cap) = other.capabilities.get(local_place, ctxt)
-                && self_cap != other_cap
             {
                 match self_cap.minimum(other_cap) {
                     Some(CapabilityKind::Read) => {
-                        if other_cap.is_read() {
-                            // We have exclusive, other place has read We want
-                            // to downgrade our cap to read and then propagate
-                            // the read cap to all places (by definition in the
-                            // borrow PCG) that are read in `other`
-                            self.capabilities
-                                .insert(local_place, CapabilityKind::Read, ctxt);
-                            for (p, c) in other
-                                .capabilities
-                                .capabilities_for_strict_postfixes_of(local_place.into())
-                            {
-                                self.capabilities.insert(p, c, ctxt);
-                            }
-                        }
+                        // One or both has read cap, have all of the expansions be read
+                        merge_to_read(
+                            &mut self.capabilities,
+                            &mut other.capabilities,
+                            local_place,
+                            ctxt,
+                        );
+                        merge_to_read(
+                            &mut other.capabilities,
+                            &mut self.capabilities,
+                            local_place,
+                            ctxt,
+                        );
                     }
                     None => {
                         // One of these has read cap and the other has write cap
@@ -340,7 +338,10 @@ impl<'pcg: 'exp, 'exp, 'tcx> JoinOwnedData<'pcg, 'tcx, &'exp mut LocalExpansions
                             ctxt,
                         );
                     }
-                    _ => {}
+                    _ => {
+                        // Both are either W or E, in either case, neither will
+                        // have any owned expansions
+                    }
                 }
             }
         }
@@ -375,5 +376,17 @@ impl<'tcx> LocalExpansions<'tcx> {
                 false
             }
         })
+    }
+}
+
+fn merge_to_read<'tcx>(
+    cap_source: &mut PlaceCapabilities<'tcx>,
+    cap_target: &mut PlaceCapabilities<'tcx>,
+    place: Place<'tcx>,
+    ctxt: CompilerCtxt<'_, 'tcx>,
+) {
+    cap_target.insert(place, CapabilityKind::Read, ctxt);
+    for (p, c) in cap_source.capabilities_for_strict_postfixes_of(place.into()) {
+        cap_target.insert(p, c, ctxt);
     }
 }

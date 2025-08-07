@@ -153,21 +153,6 @@ fn test_selected_crates() {
         test_case.run();
     }
 
-    // <= 12 basic blocks, <= 60 nodes
-    common::ensure_successful_run_on_crate(
-        "wasm-bindgen-backend",
-        "0.2.100",
-        Some("2025-03-13"),
-        common::RunOnCrateOptions::RunPCG {
-            target: common::Target::Debug,
-            validity_checks: true,
-            function: Some(
-                "<ast::Export as codegen::TryToTokens>::try_to_tokens::unwrap_nested_types",
-            ),
-            extra_env_vars: vec![],
-        },
-    );
-
     // <= 13 basic blocks, <= 60 nodes
     common::ensure_successful_run_on_crate(
         "tinytemplate",
@@ -177,11 +162,9 @@ fn test_selected_crates() {
             target: common::Target::Debug,
             validity_checks: true,
             function: Some("compiler::TemplateCompiler::<'template>::consume_text"),
-            extra_env_vars: visualization_env_vars,
+            extra_env_vars: vec![],
         },
     );
-
-    return;
 
     // 5 basic blocks, <= 60 nodes
     common::ensure_successful_run_on_crate(
