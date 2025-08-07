@@ -242,7 +242,6 @@ impl<'pcg: 'exp, 'exp, 'tcx> JoinOwnedData<'pcg, 'tcx, &'exp mut LocalExpansions
         mut other: JoinOwnedData<'pcg, 'tcx, &'exp mut LocalExpansions<'tcx>>,
         ctxt: CompilerCtxt<'mir, 'tcx>,
     ) -> Result<Vec<RepackOp<'tcx>>, PcgError> {
-        tracing::info!("Joining local expansions");
         let mut actions: Vec<RepackOp<'tcx>> = Vec::new();
         if self.owned.has_expansions() || other.owned.has_expansions() {
             actions.extend(other.join_expansions(self, ctxt)?);

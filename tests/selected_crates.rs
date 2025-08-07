@@ -132,6 +132,15 @@ fn test_selected_crates() {
 
     let test_cases = vec![
         SelectedCrateTestCase::new(
+            "dashmap",
+            "6.1.0",
+            Some("2025-03-13"),
+            TestCrateType::function(
+                "DashMap::<K, V, S>::try_reserve",
+                Some(26),
+            ),
+        ),
+        SelectedCrateTestCase::new(
             "gimli",
             "0.31.1",
             Some("2025-03-13"),
@@ -898,7 +907,7 @@ fn test_selected_crates() {
 
     for test_case in test_cases
         .into_iter()
-        .sorted_by_key(|tc| tc.num_bbs().unwrap_or(usize::MAX))
+        // .sorted_by_key(|tc| tc.num_bbs().unwrap_or(usize::MAX))
     {
         test_case.run();
     }

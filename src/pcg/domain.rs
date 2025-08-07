@@ -292,14 +292,15 @@ impl<'tcx> HasValidityCheck<'tcx> for PcgRef<'_, 'tcx> {
                 BorrowPcgEdgeKind::Deref(deref_edge) => {
                     if let MaybeLabelledPlace::Current(blocked_place) = deref_edge.blocked_place
                         && let MaybeLabelledPlace::Current(deref_place) = deref_edge.deref_place
-                        && let Some(CapabilityKind::Read) =
+                        && let Some(c @ (CapabilityKind::Read | CapabilityKind::Exclusive)) =
                             self.capabilities.get(blocked_place, ctxt)
                         && self.capabilities.get(deref_place, ctxt).is_none()
                     {
                         return Err(format!(
-                            "Deref edge {} blocked place {} has read capability but deref place {} has no capability",
+                            "Deref edge {} blocked place {} has capability {:?} but deref place {} has no capability",
                             deref_edge.to_short_string(ctxt),
                             blocked_place.to_short_string(ctxt),
+                            c,
                             deref_place.to_short_string(ctxt)
                         ));
                     }
