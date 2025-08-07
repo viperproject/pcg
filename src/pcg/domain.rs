@@ -23,7 +23,7 @@ use crate::{
         state::{BorrowStateMutRef, BorrowStateRef, BorrowsState, BorrowsStateLike},
     },
     borrows_imgcat_debug,
-    free_pcs::join::data::JoinOwnedData,
+    free_pcs::{CapabilityKind, join::data::JoinOwnedData},
     r#loop::{LoopAnalysis, LoopPlaceUsageAnalysis},
     pcg::{
         dot_graphs::{PcgDotGraphsForBlock, ToGraph, generate_dot_graph},
@@ -287,23 +287,37 @@ impl<'tcx> HasValidityCheck<'tcx> for PcgRef<'_, 'tcx> {
             }
         }
 
-        for borrow_edge in self.borrow.graph.edges().filter_map(|e| {
-            if let BorrowPcgEdgeKind::Borrow(BorrowEdge::Local(borrow)) = e.kind {
-                Some(borrow)
-            } else {
-                None
-            }
-        }) {
-            if let MaybeLabelledPlace::Current(blocked_place) = borrow_edge.blocked_place
-                && blocked_place.is_owned(ctxt)
-            {
-                if !self.owned.contains_place(blocked_place, ctxt) {
-                    return Err(format!(
-                        "Borrow edge {} blocks owned place {}, which is not in the owned PCG",
-                        borrow_edge.to_short_string(ctxt),
-                        blocked_place.to_short_string(ctxt)
-                    ));
+        for edge in self.borrow.graph.edges() {
+            match edge.kind {
+                BorrowPcgEdgeKind::Deref(deref_edge) => {
+                    if let MaybeLabelledPlace::Current(blocked_place) = deref_edge.blocked_place
+                        && let MaybeLabelledPlace::Current(deref_place) = deref_edge.deref_place
+                        && let Some(CapabilityKind::Read) =
+                            self.capabilities.get(blocked_place, ctxt)
+                        && self.capabilities.get(deref_place, ctxt).is_none()
+                    {
+                        return Err(format!(
+                            "Deref edge {} blocked place {} has read capability but deref place {} has no capability",
+                            deref_edge.to_short_string(ctxt),
+                            blocked_place.to_short_string(ctxt),
+                            deref_place.to_short_string(ctxt)
+                        ));
+                    }
                 }
+                BorrowPcgEdgeKind::Borrow(BorrowEdge::Local(borrow_edge)) => {
+                    if let MaybeLabelledPlace::Current(blocked_place) = borrow_edge.blocked_place
+                        && blocked_place.is_owned(ctxt)
+                    {
+                        if !self.owned.contains_place(blocked_place, ctxt) {
+                            return Err(format!(
+                                "Borrow edge {} blocks owned place {}, which is not in the owned PCG",
+                                borrow_edge.to_short_string(ctxt),
+                                blocked_place.to_short_string(ctxt)
+                            ));
+                        }
+                    }
+                }
+                _ => {}
             }
         }
         Ok(())
