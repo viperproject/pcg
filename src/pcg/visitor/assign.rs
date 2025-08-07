@@ -193,14 +193,14 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                     &mut self.pcg.capabilities,
                     self.ctxt,
                 );
-                self.label_region_projections_for_borrow(blocked_place, target, *kind)?;
+                self.label_lifetime_projections_for_borrow(blocked_place, target, *kind)?;
             }
             _ => {}
         }
         Ok(())
     }
 
-    fn label_region_projections_for_borrow(
+    fn label_lifetime_projections_for_borrow(
         &mut self,
         blocked_place: utils::Place<'tcx>,
         target: utils::Place<'tcx>,
@@ -222,7 +222,9 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 source_proj.with_label(Some(label.into()), self.ctxt)
             } else {
                 source_proj.with_label(
-                    obtainer.label_for_shared_expansion_of_rp(source_proj, obtainer.ctxt),
+                    obtainer
+                        .label_for_shared_expansion_of_rp(source_proj, obtainer.ctxt)
+                        .map(|l| l.into()),
                     self.ctxt,
                 )
             };

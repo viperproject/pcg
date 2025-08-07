@@ -26,24 +26,14 @@ pub struct DerefEdge<'tcx> {
 impl<'tcx> DerefEdge<'tcx> {
     pub(crate) fn new(
         place: Place<'tcx>,
-        location: SnapshotLocation,
+        blocked_lifetime_projection_label: Option<SnapshotLocation>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> Self {
-        let blocked_lifetime_projection_label = if place.is_shared_ref(ctxt) {
-            None
-        } else {
-            Some(location.into())
-        };
         let blocked_lifetime_projection = place
             .base_lifetime_projection(ctxt)
             .unwrap()
-            .with_label(blocked_lifetime_projection_label, ctxt)
+            .with_label(blocked_lifetime_projection_label.map(|l| l.into()), ctxt)
             .into();
-        // let blocked_place_label: Option<SnapshotLocation> = if place.is_shared_ref(ctxt) {
-        //     Some(location.into())
-        // } else {
-        //     None
-        // };
         let blocked_place_label: Option<SnapshotLocation> = None;
         DerefEdge {
             blocked_place: MaybeLabelledPlace::new(place, blocked_place_label),

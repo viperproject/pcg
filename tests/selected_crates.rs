@@ -131,6 +131,15 @@ fn test_selected_crates() {
 
     let test_cases = vec![
         SelectedCrateTestCase::new(
+            "combine",
+            "4.6.7",
+            Some("2025-03-13"),
+            TestCrateType::function(
+                "<&'a str as stream::RangeStreamOnce>::uncons_while",
+                Some(7),
+            ),
+        ),
+        SelectedCrateTestCase::new(
             "indexmap",
             "2.8.0",
             Some("2025-03-13"),
@@ -557,16 +566,6 @@ fn test_selected_crates() {
             "0.17.14",
             Some("2025-03-13"),
             TestCrateType::function("ec::suite_b::ops::p384::p384_scalar_inv_to_mont", None),
-        ),
-        // 7 basic blocks, <= 20 nodes
-        SelectedCrateTestCase::new(
-            "combine",
-            "4.6.7",
-            Some("2025-03-13"),
-            TestCrateType::function(
-                "<&'a str as stream::RangeStreamOnce>::uncons_while",
-                Some(7),
-            ),
         ),
         // 8 basic blocks, <= 20 nodes
         SelectedCrateTestCase::new(

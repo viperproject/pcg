@@ -109,14 +109,14 @@ impl ObtainType {
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum LabelForLifetimeProjection {
-    NewLabelAtCurrentLocation(LifetimeProjectionLabel),
-    ExistingLabelOfTwoPhaseReservation(LifetimeProjectionLabel),
+    NewLabelAtCurrentLocation(SnapshotLocation),
+    ExistingLabelOfTwoPhaseReservation(SnapshotLocation),
     NoLabel,
 }
 
 use LabelForLifetimeProjection::*;
 impl LabelForLifetimeProjection {
-    fn label(self) -> Option<LifetimeProjectionLabel> {
+    fn label(self) -> Option<SnapshotLocation> {
         match self {
             NewLabelAtCurrentLocation(label) | ExistingLabelOfTwoPhaseReservation(label) => {
                 Some(label)
@@ -417,11 +417,13 @@ pub(crate) trait PlaceExpander<'mir, 'tcx>:
         }
     }
 
+    /// If the base of `rp` is blocked by a two-phase borrow, we want to use the
+    /// existing label of its expansion
     fn label_for_shared_expansion_of_rp(
         &self,
         rp: LifetimeProjection<'tcx, Place<'tcx>>,
         ctxt: CompilerCtxt<'mir, 'tcx>,
-    ) -> Option<LifetimeProjectionLabel> {
+    ) -> Option<SnapshotLocation> {
         ctxt.bc
             .borrows_blocking(rp.base, self.location(), ctxt)
             .first()
@@ -429,7 +431,7 @@ pub(crate) trait PlaceExpander<'mir, 'tcx>:
                 let borrow_reserve_location = get_reserve_location(borrow);
                 let snapshot_location =
                     SnapshotLocation::after_statement_at(borrow_reserve_location, ctxt);
-                snapshot_location.into()
+                snapshot_location
             })
     }
 
@@ -490,7 +492,15 @@ pub(crate) trait PlaceExpander<'mir, 'tcx>:
             {
                 return Ok(false);
             }
-            let deref = DerefEdge::new(base, self.prev_snapshot_location(), ctxt);
+            let blocked_lifetime_projection_label = if base.is_mut_ref(ctxt) {
+                Some(self.prev_snapshot_location())
+            } else {
+                self.label_for_shared_expansion_of_rp(
+                    base.base_lifetime_projection(ctxt).unwrap(),
+                    ctxt,
+                )
+            };
+            let deref = DerefEdge::new(base, blocked_lifetime_projection_label, ctxt);
             let action = BorrowPcgAction::add_edge(
                 BorrowPcgEdge::new(deref.clone().into(), self.path_conditions()),
                 "expand_place_one_level: add deref edge",
@@ -582,7 +592,7 @@ pub(crate) trait PlaceExpander<'mir, 'tcx>:
                 if let Some(label) = expansion_label.label() {
                     expansion.label_lifetime_projection(
                         &LabelLifetimeProjectionPredicate::Equals(base_rp.into()),
-                        Some(label),
+                        Some(label.into()),
                         ctxt,
                     );
                 }
@@ -601,7 +611,7 @@ pub(crate) trait PlaceExpander<'mir, 'tcx>:
                     self.apply_action(
                         BorrowPcgAction::label_lifetime_projection(
                             LabelLifetimeProjectionPredicate::Equals(base_rp.into()),
-                            Some(label),
+                            Some(label.into()),
                             "expand_region_projections_one_level: create new RP label",
                         )
                         .into(),
@@ -609,7 +619,7 @@ pub(crate) trait PlaceExpander<'mir, 'tcx>:
 
                     // Don't add placeholder edges for owned expansions, unless its a deref
                     if !base.is_owned(ctxt) || base.is_mut_ref(ctxt) {
-                        let old_rp_base = base_rp.with_label(Some(label), ctxt);
+                        let old_rp_base = base_rp.with_label(Some(label.into()), ctxt);
                         let expansion_rps = expansion
                             .expansion()
                             .iter()
