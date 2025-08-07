@@ -132,6 +132,15 @@ fn test_selected_crates() {
 
     let test_cases = vec![
         SelectedCrateTestCase::new(
+            "gimli",
+            "0.31.1",
+            Some("2025-03-13"),
+            TestCrateType::function(
+                "read::cfi::UnwindTable::<'a, 'ctx, R, S>::into_current_row",
+                Some(8),
+            ),
+        ),
+        SelectedCrateTestCase::new(
             "rayon",
             "1.10.0",
             Some("2025-03-13"),
@@ -363,16 +372,6 @@ fn test_selected_crates() {
             TestCrateType::function(
                 "map::OccupiedEntry::<'a, K, V, S, A>::replace_entry_with",
                 Some(18),
-            ),
-        ),
-        // <= 8 basic blocks, <= 30 nodes
-        SelectedCrateTestCase::new(
-            "gimli",
-            "0.31.1",
-            Some("2025-03-13"),
-            TestCrateType::function(
-                "read::cfi::UnwindTable::<'a, 'ctx, R, S>::into_current_row",
-                Some(8),
             ),
         ),
         // 22 basic blocks, <= 30 nodes

@@ -110,13 +110,27 @@ impl<'pcg: 'exp, 'exp, 'tcx> JoinOwnedData<'pcg, 'tcx, &'exp mut LocalExpansions
     ) -> Result<Vec<RepackOp<'tcx>>, PcgError> {
         let mut actions = vec![];
         if let Some(expand_cap) = self_cap.minimum(other_cap) {
+            tracing::info!(
+                "Expanding from place {} with cap {:?}",
+                place.to_short_string(ctxt),
+                expand_cap
+            );
             let expand_action = RepackExpand::new(place, guide, expand_cap);
             self.owned
-                .perform_expand_action(expand_action, other.capabilities, ctxt)?;
+                .perform_expand_action(expand_action, self.capabilities, ctxt)?;
             actions.push(RepackOp::Expand(expand_action).into());
-            if other.owned.leaf_places(ctxt).contains(&place) && expand_cap == CapabilityKind::Read
-            {
-                copy_read_capabilities(&other.capabilities, &mut self.capabilities, place, ctxt);
+            let place_expansion = place.expansion(guide, ctxt);
+            for expansion_place in place.expansion_places(&place_expansion, ctxt).unwrap() {
+                if other.owned.leaf_places(ctxt).contains(&expansion_place)
+                    && expand_cap == CapabilityKind::Read
+                {
+                    copy_read_capabilities(
+                        &other.capabilities,
+                        &mut self.capabilities,
+                        expansion_place,
+                        ctxt,
+                    );
+                }
             }
             return Ok(actions);
         } else {
@@ -141,11 +155,10 @@ impl<'pcg: 'exp, 'exp, 'tcx> JoinOwnedData<'pcg, 'tcx, &'exp mut LocalExpansions
                 "join".to_string(),
                 ctxt,
             )?;
-            join_obtainer.data.capabilities.insert(
-                place,
-                CapabilityKind::Write,
-                ctxt,
-            );
+            join_obtainer
+                .data
+                .capabilities
+                .insert(place, CapabilityKind::Write, ctxt);
             actions.extend(join_obtainer.actions);
             pcg_validity_assert!(self.capabilities.get(place, ctxt) == Some(CapabilityKind::Write));
             pcg_validity_assert!(!actions.is_empty());
@@ -333,6 +346,7 @@ fn copy_read_capabilities<'tcx>(
 ) {
     cap_target.insert(place, CapabilityKind::Read, ctxt);
     for (p, c) in cap_source.capabilities_for_strict_postfixes_of(place.into()) {
+        pcg_validity_assert!(c.is_read());
         cap_target.insert(p, c, ctxt);
     }
 }
