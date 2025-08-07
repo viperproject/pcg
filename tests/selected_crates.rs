@@ -5,6 +5,101 @@ fn pcg_max_nodes(n: usize) -> Vec<(String, String)> {
     vec![("PCG_MAX_NODES".to_string(), n.to_string())]
 }
 
+#[derive(Debug)]
+enum TestCrateType {
+    EntireCrate,
+    Function {
+        function_name: &'static str,
+        metadata: TestFunctionMetadata,
+    },
+}
+
+impl TestCrateType {
+    fn function(function_name: &'static str, num_bbs: Option<usize>) -> Self {
+        Self::Function {
+            function_name,
+            metadata: TestFunctionMetadata { num_bbs },
+        }
+    }
+}
+
+#[derive(Debug)]
+struct TestFunctionMetadata {
+    num_bbs: Option<usize>,
+}
+
+#[derive(Debug)]
+struct SelectedCrateTestCase {
+    crate_name: &'static str,
+    crate_version: &'static str,
+    crate_download_date: Option<&'static str>,
+    test_type: TestCrateType,
+}
+
+impl SelectedCrateTestCase {
+    fn new(
+        crate_name: &'static str,
+        crate_version: &'static str,
+        crate_download_date: Option<&'static str>,
+        test_type: TestCrateType,
+    ) -> Self {
+        Self {
+            crate_name,
+            crate_version,
+            crate_download_date,
+            test_type,
+        }
+    }
+    fn run(&self) {
+        let function = match self.test_type {
+            TestCrateType::EntireCrate => None,
+            TestCrateType::Function { function_name, .. } => Some(function_name),
+        };
+        let result = common::run_on_crate(
+            self.crate_name,
+            self.crate_version,
+            self.crate_download_date,
+            common::RunOnCrateOptions::RunPCG {
+                target: common::Target::Debug,
+                validity_checks: true,
+                function,
+                extra_env_vars: vec![],
+            },
+        );
+        if matches!(result, common::RunOnCrateResult::Failed) {
+            tracing::error!("Test case failed: {:?}", self);
+            if function.is_some() {
+                tracing::info!("Will re-run with visualization");
+                let visualization_env_vars = vec![
+                    (
+                        "PCG_VISUALIZATION_DATA_DIR".to_string(),
+                        "../../visualization/data".to_string(),
+                    ),
+                    (
+                        "PCG_VALIDITY_CHECKS_WARN_ONLY".to_string(),
+                        "true".to_string(),
+                    ),
+                    ("PCG_VISUALIZATION".to_string(), "true".to_string()),
+                ];
+                common::ensure_successful_run_on_crate(
+                    self.crate_name,
+                    self.crate_version,
+                    self.crate_download_date,
+                    common::RunOnCrateOptions::RunPCG {
+                        target: common::Target::Debug,
+                        validity_checks: true,
+                        function,
+                        extra_env_vars: visualization_env_vars,
+                    },
+                );
+                panic!("Test failed (produced debug visualization)");
+            } else {
+                panic!("Test failed");
+            }
+        }
+    }
+}
+
 #[allow(unused)]
 #[test]
 fn test_selected_crates() {
@@ -23,6 +118,55 @@ fn test_selected_crates() {
         ),
         ("PCG_VISUALIZATION".to_string(), "true".to_string()),
     ];
+
+    let test_cases = vec![
+        SelectedCrateTestCase::new(
+            "winnow",
+            "0.7.4",
+            Some("2025-03-13"),
+            TestCrateType::function(
+                "<stream::token::TokenSlice<'_, T> as stream::UpdateSlice>::update_slice",
+                Some(3),
+            ),
+        ),
+        SelectedCrateTestCase::new(
+            "pyo3",
+            "0.24.0",
+            Some("2025-03-13"),
+            TestCrateType::function(
+                "pyclass::create_type_object::GetSetDefBuilder::add_getter",
+                Some(6),
+            ),
+        ),
+        SelectedCrateTestCase::new(
+            "wasm-bindgen-backend",
+            "0.2.100",
+            Some("2025-03-13"),
+            TestCrateType::function(
+                "<ast::Export as codegen::TryToTokens>::try_to_tokens::unwrap_nested_types",
+                Some(12),
+            ),
+        ),
+    ];
+
+    for test_case in test_cases {
+        test_case.run();
+    }
+
+    // <= 12 basic blocks, <= 60 nodes
+    common::ensure_successful_run_on_crate(
+        "wasm-bindgen-backend",
+        "0.2.100",
+        Some("2025-03-13"),
+        common::RunOnCrateOptions::RunPCG {
+            target: common::Target::Debug,
+            validity_checks: true,
+            function: Some(
+                "<ast::Export as codegen::TryToTokens>::try_to_tokens::unwrap_nested_types",
+            ),
+            extra_env_vars: vec![],
+        },
+    );
 
     // <= 13 basic blocks, <= 60 nodes
     common::ensure_successful_run_on_crate(
@@ -51,7 +195,6 @@ fn test_selected_crates() {
             extra_env_vars: vec![],
         },
     );
-
 
     // 36 basic blocks, <= 60 nodes
     common::ensure_successful_run_on_crate(
@@ -992,19 +1135,6 @@ fn test_selected_crates() {
         },
     );
 
-    common::ensure_successful_run_on_crate(
-        "winnow",
-        "0.7.4",
-        Some("2025-03-13"),
-        common::RunOnCrateOptions::RunPCG {
-            target: common::Target::Debug,
-            validity_checks: true,
-            function: Some(
-                "<stream::token::TokenSlice<'_, T> as stream::UpdateSlice>::update_slice",
-            ),
-            extra_env_vars: vec![],
-        },
-    );
 
     common::ensure_successful_run_on_crate(
         "matchit",

@@ -122,7 +122,6 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                 if !edges_blocking_current_rp.is_empty() {
                     let labelled_rp = current_rp
                         .with_label(Some(self.prev_snapshot_location().into()), self.ctxt);
-                    let future_rp = current_rp.with_placeholder_label(self.ctxt);
                     let expansion_nodes = edges_blocking_current_rp
                         .iter()
                         .flat_map(|e| {
@@ -147,41 +146,24 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                         BorrowPcgAction::label_lifetime_projection(
                             LabelLifetimeProjectionPredicate::Equals(current_rp.into()),
                             Some(self.prev_snapshot_location().into()),
-                            "remove_read_permission_upwards_and_label_rps",
-                        )
-                        .into(),
-                    )?;
-                    self.record_and_apply_action(
-                        BorrowPcgAction::add_edge(
-                            BorrowPcgEdge::new(
-                                BorrowFlowEdge::new(
-                                    labelled_rp.into(),
-                                    future_rp.into(),
-                                    BorrowFlowEdgeKind::Future,
-                                    self.ctxt,
-                                )
-                                .into(),
-                                self.pcg.borrow.path_conditions.clone(),
+                            format!(
+                                "{}: remove_read_permission_upwards_and_label_rps: label current lifetime projection {} with previous snapshot location {:?}",
+                                debug_ctxt,
+                                current_rp.to_short_string(self.ctxt),
+                                self.prev_snapshot_location()
                             ),
-                            "remove_read_permission_upwards_and_label_rps",
-                            self.ctxt,
                         )
                         .into(),
                     )?;
-                    for expansion_node in expansion_nodes {
-                        // If the expansion isn't labelled, it is likely a sibling RO of the place gaining exclusive capability
-                        // so we connect to its current version
-                        // Otherwise if its labelled we connect to its placeholder version
-                        let to_connect = if expansion_node.label().is_none() {
-                            expansion_node.into()
-                        } else {
-                            expansion_node.with_placeholder_label(self.ctxt).into()
-                        };
+                    // If the place is owned, we will never regain access to it,
+                    // therefore future nodes aren't necessary
+                    if !current.is_owned(self.ctxt) {
+                        let future_rp = current_rp.with_placeholder_label(self.ctxt);
                         self.record_and_apply_action(
                             BorrowPcgAction::add_edge(
                                 BorrowPcgEdge::new(
                                     BorrowFlowEdge::new(
-                                        to_connect,
+                                        labelled_rp.into(),
                                         future_rp.into(),
                                         BorrowFlowEdgeKind::Future,
                                         self.ctxt,
@@ -194,6 +176,33 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                             )
                             .into(),
                         )?;
+                        for expansion_node in expansion_nodes {
+                            // If the expansion isn't labelled, it is likely a sibling RO of the place gaining exclusive capability
+                            // so we connect to its current version
+                            // Otherwise if its labelled we connect to its placeholder version
+                            let to_connect = if expansion_node.label().is_none() {
+                                expansion_node.into()
+                            } else {
+                                expansion_node.with_placeholder_label(self.ctxt).into()
+                            };
+                            self.record_and_apply_action(
+                                BorrowPcgAction::add_edge(
+                                    BorrowPcgEdge::new(
+                                        BorrowFlowEdge::new(
+                                            to_connect,
+                                            future_rp.into(),
+                                            BorrowFlowEdgeKind::Future,
+                                            self.ctxt,
+                                        )
+                                        .into(),
+                                        self.pcg.borrow.path_conditions.clone(),
+                                    ),
+                                    "remove_read_permission_upwards_and_label_rps",
+                                    self.ctxt,
+                                )
+                                .into(),
+                            )?;
+                        }
                     }
                 }
             }
