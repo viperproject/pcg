@@ -931,8 +931,9 @@ fn test_selected_crates() {
         SelectedCrateTestCase::new("rustls", "0.23.23", None, TestCrateType::EntireCrate),
     ];
 
-    for test_case in test_cases.into_iter()
-    // .sorted_by_key(|tc| tc.num_bbs().unwrap_or(usize::MAX))
+    for test_case in test_cases
+        .into_iter()
+        .sorted_by_key(|tc| tc.num_bbs().unwrap_or(usize::MAX))
     {
         test_case.run();
     }
