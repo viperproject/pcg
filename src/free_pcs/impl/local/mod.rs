@@ -133,7 +133,7 @@ impl<'tcx> LocalExpansions<'tcx> {
         place: Place<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) {
-        tracing::info!(
+        tracing::debug!(
             "Removing all expansions from {}",
             place.to_short_string(ctxt)
         );

@@ -548,7 +548,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
         }
 
         let current_cap = self.pcg.capabilities.get(place, self.ctxt);
-        tracing::info!(
+        tracing::debug!(
             "Obtain {:?} to place {} in phase {:?}: Current cap: {:?}, Obtain cap: {:?}",
             obtain_type,
             place.to_short_string(self.ctxt),

@@ -941,7 +941,7 @@ fn test_selected_crates() {
     ];
 
     for test_case in test_cases.into_iter()
-    // .sorted_by_key(|tc| tc.num_bbs().unwrap_or(usize::MAX))
+    .sorted_by_key(|tc| tc.num_bbs().unwrap_or(usize::MAX))
     {
         test_case.run();
     }

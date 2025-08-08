@@ -110,7 +110,7 @@ impl<'pcg: 'exp, 'exp, 'tcx> JoinOwnedData<'pcg, 'tcx, &'exp mut LocalExpansions
     ) -> Result<Vec<RepackOp<'tcx>>, PcgError> {
         let mut actions = vec![];
         if let Some(expand_cap) = self_cap.minimum(other_cap) {
-            tracing::info!(
+            tracing::debug!(
                 "Expanding from place {} with cap {:?}",
                 place.to_short_string(ctxt),
                 expand_cap
