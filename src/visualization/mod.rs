@@ -17,7 +17,7 @@ mod node;
 use crate::{
     borrow_pcg::{edge::outlives::BorrowFlowEdgeKind, graph::BorrowsGraph},
     free_pcs::CapabilityKind,
-    pcg::PcgRef,
+    pcg::{place_capabilities::PlaceCapabilities, PcgRef},
     rustc_interface::middle::mir::Location,
     utils::{CompilerCtxt, Place, SnapshotLocation},
 };
@@ -357,9 +357,10 @@ impl Graph {
 
 pub(crate) fn generate_borrows_dot_graph<'a, 'tcx: 'a, 'bc>(
     repacker: CompilerCtxt<'a, 'tcx>,
+    capabilities: &PlaceCapabilities<'tcx>,
     borrows_domain: &BorrowsGraph<'tcx>,
 ) -> io::Result<String> {
-    let constructor = BorrowsGraphConstructor::new(borrows_domain, repacker);
+    let constructor = BorrowsGraphConstructor::new(borrows_domain, capabilities, repacker);
     let graph = constructor.construct_graph();
     let mut buf = vec![];
     let drawer = GraphDrawer::new(&mut buf);

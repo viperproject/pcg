@@ -1,3 +1,4 @@
+#![feature(let_chains)]
 #![allow(dead_code)]
 use itertools::Itertools;
 
@@ -9,20 +10,35 @@ fn pcg_max_nodes(n: usize) -> Vec<(String, String)> {
 }
 
 #[derive(Debug)]
+struct TestCrateFunction {
+    function_name: &'static str,
+    debug_failure: bool,
+    metadata: TestFunctionMetadata,
+}
+
+impl TestCrateFunction {
+    fn new(function_name: &'static str, debug_failure: bool, num_bbs: Option<usize>) -> Self {
+        Self {
+            function_name,
+            debug_failure,
+            metadata: TestFunctionMetadata { num_bbs },
+        }
+    }
+}
+
+#[derive(Debug)]
 enum TestCrateType {
     EntireCrate,
-    Function {
-        function_name: &'static str,
-        metadata: TestFunctionMetadata,
-    },
+    Function(TestCrateFunction),
 }
 
 impl TestCrateType {
     fn function(function_name: &'static str, num_bbs: Option<usize>) -> Self {
-        Self::Function {
-            function_name,
-            metadata: TestFunctionMetadata { num_bbs },
-        }
+        Self::Function(TestCrateFunction::new(function_name, false, num_bbs))
+    }
+
+    fn function_debug_failure(function_name: &'static str, num_bbs: Option<usize>) -> Self {
+        Self::Function(TestCrateFunction::new(function_name, true, num_bbs))
     }
 }
 
@@ -57,15 +73,49 @@ impl SelectedCrateTestCase {
     fn num_bbs(&self) -> Option<usize> {
         match &self.test_type {
             TestCrateType::EntireCrate => None,
-            TestCrateType::Function { metadata, .. } => metadata.num_bbs,
+            TestCrateType::Function(function) => function.metadata.num_bbs,
         }
     }
 
-    fn run(&self) {
-        let function = match self.test_type {
+    fn function_name(&self) -> Option<&'static str> {
+        match &self.test_type {
             TestCrateType::EntireCrate => None,
-            TestCrateType::Function { function_name, .. } => Some(function_name),
-        };
+            TestCrateType::Function(function) => Some(function.function_name),
+        }
+    }
+
+    fn debug_failure(&self) {
+        let visualization_env_vars = vec![
+            (
+                "PCG_VISUALIZATION_DATA_DIR".to_string(),
+                "../../visualization/data".to_string(),
+            ),
+            (
+                "PCG_VALIDITY_CHECKS_WARN_ONLY".to_string(),
+                "true".to_string(),
+            ),
+            ("PCG_VISUALIZATION".to_string(), "true".to_string()),
+        ];
+        common::ensure_successful_run_on_crate(
+            self.crate_name,
+            self.crate_version,
+            self.crate_download_date,
+            common::RunOnCrateOptions::RunPCG {
+                target: common::Target::Debug,
+                validity_checks: true,
+                function: self.function_name(),
+                extra_env_vars: visualization_env_vars,
+            },
+        );
+    }
+
+    fn run(&self) {
+        if let TestCrateType::Function(function) = &self.test_type
+            && function.debug_failure
+        {
+            self.debug_failure();
+            panic!("Stop for failure debugging");
+        }
         let result = common::run_on_crate(
             self.crate_name,
             self.crate_version,
@@ -73,36 +123,15 @@ impl SelectedCrateTestCase {
             common::RunOnCrateOptions::RunPCG {
                 target: common::Target::Debug,
                 validity_checks: true,
-                function,
+                function: self.function_name(),
                 extra_env_vars: vec![],
             },
         );
         if matches!(result, common::RunOnCrateResult::Failed) {
             tracing::error!("Test case failed: {:?}", self);
-            if function.is_some() {
+            if self.function_name().is_some() {
                 tracing::info!("Will re-run with visualization");
-                let visualization_env_vars = vec![
-                    (
-                        "PCG_VISUALIZATION_DATA_DIR".to_string(),
-                        "../../visualization/data".to_string(),
-                    ),
-                    (
-                        "PCG_VALIDITY_CHECKS_WARN_ONLY".to_string(),
-                        "true".to_string(),
-                    ),
-                    ("PCG_VISUALIZATION".to_string(), "true".to_string()),
-                ];
-                common::ensure_successful_run_on_crate(
-                    self.crate_name,
-                    self.crate_version,
-                    self.crate_download_date,
-                    common::RunOnCrateOptions::RunPCG {
-                        target: common::Target::Debug,
-                        validity_checks: true,
-                        function,
-                        extra_env_vars: visualization_env_vars,
-                    },
-                );
+                self.debug_failure();
                 panic!("Test failed (produced debug visualization)");
             } else {
                 panic!("Test failed");
@@ -135,10 +164,7 @@ fn test_selected_crates() {
             "dashmap",
             "6.1.0",
             Some("2025-03-13"),
-            TestCrateType::function(
-                "DashMap::<K, V, S>::try_reserve",
-                Some(26),
-            ),
+            TestCrateType::function("DashMap::<K, V, S>::try_reserve", Some(26)),
         ),
         SelectedCrateTestCase::new(
             "gimli",
@@ -905,9 +931,8 @@ fn test_selected_crates() {
         SelectedCrateTestCase::new("rustls", "0.23.23", None, TestCrateType::EntireCrate),
     ];
 
-    for test_case in test_cases
-        .into_iter()
-        // .sorted_by_key(|tc| tc.num_bbs().unwrap_or(usize::MAX))
+    for test_case in test_cases.into_iter()
+    // .sorted_by_key(|tc| tc.num_bbs().unwrap_or(usize::MAX))
     {
         test_case.run();
     }

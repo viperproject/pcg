@@ -15,39 +15,20 @@ use derive_more::TryInto;
 use serde::{Serialize, Serializer};
 
 use crate::{
-    AnalysisEngine, DebugLines,
-    action::PcgActions,
-    borrow_pcg::{
+    action::PcgActions, borrow_pcg::{
         edge::{borrow::BorrowEdge, kind::BorrowPcgEdgeKind},
         graph::BorrowsGraph,
         state::{BorrowStateMutRef, BorrowStateRef, BorrowsState, BorrowsStateLike},
-    },
-    borrows_imgcat_debug,
-    free_pcs::{CapabilityKind, join::data::JoinOwnedData},
-    r#loop::{LoopAnalysis, LoopPlaceUsageAnalysis},
-    pcg::{
-        dot_graphs::{PcgDotGraphsForBlock, ToGraph, generate_dot_graph},
+    }, borrows_imgcat_debug, free_pcs::{join::data::JoinOwnedData, CapabilityKind}, r#loop::{LoopAnalysis, LoopPlaceUsageAnalysis, PlaceUsages}, pcg::{
+        dot_graphs::{generate_dot_graph, PcgDotGraphsForBlock, ToGraph},
         place_capabilities::PlaceCapabilitiesInterface,
         triple::Triple,
-    },
-    rustc_interface::{
+    }, rustc_interface::{
         middle::mir::{self, BasicBlock},
-        mir_dataflow::{JoinSemiLattice, fmt::DebugWithContext, move_paths::MoveData},
-    },
-    utils::{
-        CHECK_CYCLES, CompilerCtxt, PANIC_ON_ERROR, Place,
-        arena::ArenaRef,
-        data_structures::HashSet,
-        display::DisplayWithCompilerCtxt,
-        domain_data::{DomainData, DomainDataIndex},
-        eval_stmt_data::EvalStmtData,
-        incoming_states::IncomingStates,
-        initialized::DefinitelyInitialized,
-        liveness::PlaceLiveness,
-        maybe_old::MaybeLabelledPlace,
-        validity::HasValidityCheck,
-    },
-    visualization::{dot_graph::DotGraph, generate_pcg_dot_graph},
+        mir_dataflow::{fmt::DebugWithContext, move_paths::MoveData, JoinSemiLattice},
+    }, utils::{
+        arena::ArenaRef, data_structures::HashSet, display::DisplayWithCompilerCtxt, domain_data::{DomainData, DomainDataIndex}, eval_stmt_data::EvalStmtData, incoming_states::IncomingStates, initialized::DefinitelyInitialized, liveness::PlaceLiveness, maybe_old::MaybeLabelledPlace, validity::HasValidityCheck, CompilerCtxt, Place, CHECK_CYCLES, PANIC_ON_ERROR
+    }, visualization::{dot_graph::DotGraph, generate_pcg_dot_graph}, AnalysisEngine, DebugLines
 };
 
 use super::{PcgEngine, place_capabilities::PlaceCapabilities};
@@ -483,7 +464,7 @@ impl<'a, 'tcx> BodyAnalysis<'a, 'tcx> {
     pub(crate) fn get_places_used_in_loop(
         &self,
         loop_head: BasicBlock,
-    ) -> Option<&HashSet<Place<'tcx>>> {
+    ) -> Option<&PlaceUsages<'tcx>> {
         self.loop_analysis.get_used_places(loop_head)
     }
 

@@ -21,6 +21,7 @@ use crate::{
         state::BorrowStateMutRef,
     },
     free_pcs::{CapabilityKind, ExpandedPlace, LocalExpansions, RepackCollapse, RepackOp},
+    r#loop::PlaceUsageType,
     pcg::{
         PCGNodeLike, PcgDebugData, PcgError, PcgMutRef,
         place_capabilities::{BlockType, PlaceCapabilities, PlaceCapabilitiesInterface},
@@ -57,7 +58,10 @@ impl PlaceObtainer<'_, '_, '_> {
 pub(crate) enum ObtainType {
     Capability(CapabilityKind),
     TwoPhaseExpand,
-    LoopInvariant,
+    LoopInvariant {
+        is_blocked: bool,
+        usage_type: PlaceUsageType,
+    },
 }
 
 impl ObtainType {
@@ -77,15 +81,21 @@ impl ObtainType {
         }
     }
     pub(crate) fn capability<'tcx>(
-        &self,
+        self,
         place: Place<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> CapabilityKind {
         match self {
-            ObtainType::Capability(cap) => *cap,
+            ObtainType::Capability(cap) => cap,
             ObtainType::TwoPhaseExpand => CapabilityKind::Read,
-            ObtainType::LoopInvariant => {
-                if place.is_shared_ref(ctxt) || place.projects_shared_ref(ctxt) {
+            ObtainType::LoopInvariant {
+                is_blocked,
+                usage_type,
+            } => {
+                if usage_type == PlaceUsageType::Read
+                    || place.is_shared_ref(ctxt)
+                    || place.projects_shared_ref(ctxt)
+                {
                     CapabilityKind::Read
                 } else {
                     CapabilityKind::Exclusive
@@ -102,7 +112,7 @@ impl ObtainType {
         match self {
             ObtainType::Capability(cap) => !cap.is_read(),
             ObtainType::TwoPhaseExpand => true,
-            ObtainType::LoopInvariant => rp.base.is_mutable(ctxt),
+            ObtainType::LoopInvariant { .. } => rp.base.is_mutable(ctxt),
         }
     }
 }

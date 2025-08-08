@@ -273,22 +273,28 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
 
 pub struct BorrowsGraphConstructor<'graph, 'mir, 'tcx> {
     borrows_graph: &'graph BorrowsGraph<'tcx>,
+    capabilities: &'graph PlaceCapabilities<'tcx>,
     constructor: GraphConstructor<'mir, 'tcx>,
-    repacker: CompilerCtxt<'mir, 'tcx>,
+    ctxt: CompilerCtxt<'mir, 'tcx>,
 }
 
 impl<'graph, 'mir: 'graph, 'tcx: 'mir> BorrowsGraphConstructor<'graph, 'mir, 'tcx> {
-    pub fn new(borrows_graph: &'graph BorrowsGraph<'tcx>, ctxt: CompilerCtxt<'mir, 'tcx>) -> Self {
+    pub fn new(
+        borrows_graph: &'graph BorrowsGraph<'tcx>,
+        capabilities: &'graph PlaceCapabilities<'tcx>,
+        ctxt: CompilerCtxt<'mir, 'tcx>,
+    ) -> Self {
         Self {
             borrows_graph,
+            capabilities,
             constructor: GraphConstructor::new(ctxt, None),
-            repacker: ctxt,
+            ctxt,
         }
     }
 
     pub(crate) fn construct_graph(mut self) -> Graph {
         let edges: Vec<MaterializedEdge<'tcx, 'graph>> =
-            self.borrows_graph.materialized_edges(self.repacker);
+            self.borrows_graph.materialized_edges(self.ctxt);
         for (edge_idx, edge) in edges.into_iter().enumerate() {
             self.draw_materialized_edge(edge, edge_idx);
         }
@@ -315,13 +321,13 @@ impl<'tcx> CapabilityGetter<'tcx> for PCGCapabilityGetter<'_, 'tcx> {
     }
 }
 
-struct NullCapabilityGetter;
+// struct NullCapabilityGetter;
 
-impl<'tcx> CapabilityGetter<'tcx> for NullCapabilityGetter {
-    fn get(&self, _: Place<'tcx>) -> Option<CapabilityKind> {
-        None
-    }
-}
+// impl<'tcx> CapabilityGetter<'tcx> for NullCapabilityGetter {
+//     fn get(&self, _: Place<'tcx>) -> Option<CapabilityKind> {
+//         None
+//     }
+// }
 
 impl<'pcg, 'a: 'pcg, 'tcx> Grapher<'pcg, 'a, 'tcx> for PcgGraphConstructor<'pcg, 'a, 'tcx> {
     fn ctxt(&self) -> CompilerCtxt<'a, 'tcx> {
@@ -344,7 +350,7 @@ impl<'graph, 'mir: 'graph, 'tcx: 'mir> Grapher<'graph, 'mir, 'tcx>
     for BorrowsGraphConstructor<'graph, 'mir, 'tcx>
 {
     fn ctxt(&self) -> CompilerCtxt<'mir, 'tcx> {
-        self.repacker
+        self.ctxt
     }
 
     fn constructor(&mut self) -> &mut GraphConstructor<'mir, 'tcx> {
@@ -352,7 +358,10 @@ impl<'graph, 'mir: 'graph, 'tcx: 'mir> Grapher<'graph, 'mir, 'tcx>
     }
 
     fn capability_getter(&self) -> impl CapabilityGetter<'tcx> + 'graph {
-        NullCapabilityGetter
+        PCGCapabilityGetter {
+            capabilities: self.capabilities,
+            ctxt: self.ctxt,
+        }
     }
 }
 
