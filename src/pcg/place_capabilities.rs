@@ -134,6 +134,8 @@ impl<'tcx> DebugLines<CompilerCtxt<'_, 'tcx>> for PlaceCapabilities<'tcx> {
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum BlockType {
+    /// Derefing a mutable reference, *not* in the context of a two-phase borrow
+    /// of otherwise just for read. The reference will be downgraded to w.
     DerefRefExclusive,
     Read,
     Other,

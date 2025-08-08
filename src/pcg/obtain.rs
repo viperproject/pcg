@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use crate::{
     action::{BorrowPcgAction, OwnedPcgAction, PcgAction},
     borrow_checker::r#impl::get_reserve_location,
@@ -487,6 +489,8 @@ pub(crate) trait PlaceExpander<'mir, 'tcx>:
         Ok(true)
     }
 
+    fn debug_capabilities(&self) -> Cow<'_, PlaceCapabilities<'tcx>>;
+
     fn expand_place_one_level(
         &mut self,
         base: Place<'tcx>,
@@ -511,13 +515,28 @@ pub(crate) trait PlaceExpander<'mir, 'tcx>:
                 )
             };
             let deref = DerefEdge::new(base, blocked_lifetime_projection_label, ctxt);
+            self.borrows_graph().render_debug_graph(
+                self.debug_capabilities().as_ref(),
+                ctxt,
+                "expand_place_one_level: before apply action",
+            );
             let action = BorrowPcgAction::add_edge(
                 BorrowPcgEdge::new(deref.clone().into(), self.path_conditions()),
                 "expand_place_one_level: add deref edge",
                 ctxt,
             );
             self.apply_action(action.into())?;
+            self.borrows_graph().render_debug_graph(
+                self.debug_capabilities().as_ref(),
+                ctxt,
+                "expand_place_one_level: after apply action",
+            );
             self.update_capabilities_for_deref(base, obtain_type.capability(base, ctxt), ctxt)?;
+            self.borrows_graph().render_debug_graph(
+                self.debug_capabilities().as_ref(),
+                ctxt,
+                "expand_place_one_level: after update_capabilities_for_deref",
+            );
             if deref.blocked_lifetime_projection.label().is_some() {
                 self.apply_action(
                     BorrowPcgAction::label_lifetime_projection(
@@ -571,7 +590,20 @@ pub(crate) trait PlaceExpander<'mir, 'tcx>:
         let expansion: BorrowPcgExpansion<'tcx, LocalNode<'tcx>> =
             BorrowPcgExpansion::new(base.into(), expanded_place.expansion, ctxt)?;
 
+        self.borrows_graph().render_debug_graph(
+            self.debug_capabilities().as_ref(),
+            ctxt,
+            &format!(
+                "add_borrow_pcg_expansion: before update_capabilities_for_borrow_expansion {}",
+                expansion.to_short_string(ctxt)
+            ),
+        );
         self.update_capabilities_for_borrow_expansion(&expansion, block_type, ctxt)?;
+        self.borrows_graph().render_debug_graph(
+            self.debug_capabilities().as_ref(),
+            ctxt,
+            "add_borrow_pcg_expansion: after update_capabilities_for_borrow_expansion",
+        );
         let action = BorrowPcgAction::add_edge(
             BorrowPcgEdge::new(
                 BorrowPcgEdgeKind::BorrowPcgExpansion(expansion),

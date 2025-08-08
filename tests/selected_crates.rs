@@ -161,6 +161,15 @@ fn test_selected_crates() {
 
     let test_cases = vec![
         SelectedCrateTestCase::new(
+            "object",
+            "0.36.7",
+            Some("2025-03-13"),
+            TestCrateType::function(
+                "<read::coff::comdat::CoffComdatIterator<'data, 'file, R, Coff> as core::iter::Iterator>::next",
+                Some(20),
+            ),
+        ),
+        SelectedCrateTestCase::new(
             "dashmap",
             "6.1.0",
             Some("2025-03-13"),
@@ -931,9 +940,8 @@ fn test_selected_crates() {
         SelectedCrateTestCase::new("rustls", "0.23.23", None, TestCrateType::EntireCrate),
     ];
 
-    for test_case in test_cases
-        .into_iter()
-        .sorted_by_key(|tc| tc.num_bbs().unwrap_or(usize::MAX))
+    for test_case in test_cases.into_iter()
+    // .sorted_by_key(|tc| tc.num_bbs().unwrap_or(usize::MAX))
     {
         test_case.run();
     }

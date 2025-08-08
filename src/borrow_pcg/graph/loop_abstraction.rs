@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use derive_more::From;
 
 use crate::{
@@ -133,13 +135,11 @@ impl<'tcx> BorrowsGraph<'tcx> {
         let mut expander = AbsExpander {
             loop_head_block: loop_head,
             graph: &mut graph,
-            capabilities: None,
             path_conditions: path_conditions.clone(),
             ctxt,
-            owned: None,
         };
 
-        tracing::info!(
+        tracing::debug!(
             "loop blocked places: {}",
             loop_blocked_places.to_short_string(ctxt)
         );
@@ -383,17 +383,24 @@ impl<'tcx> BorrowsGraph<'tcx> {
             to_obtain.retain(|p| !place_usage.place.is_prefix_of(p.place));
             to_obtain.push(place_usage);
         }
+        obtainer.pcg.as_ref().render_debug_graph(
+            ctxt,
+            obtainer.location(),
+            "Before obtaining (self)",
+        );
         for place_usage in to_obtain {
-            obtainer
-                .obtain(place_usage.place, ObtainType::LoopInvariant {
-                    is_blocked: loop_blocked_places.contains(place_usage.place),
-                    usage_type: place_usage.usage,
-                })
-                .unwrap();
+            let obtain_type = ObtainType::LoopInvariant {
+                is_blocked: loop_blocked_places.contains(place_usage.place),
+                usage_type: place_usage.usage,
+            };
+            obtainer.obtain(place_usage.place, obtain_type).unwrap();
             obtainer.pcg.borrows_graph().render_debug_graph(
                 obtainer.pcg.capabilities,
                 ctxt,
-                &format!("After obtaining {}", place_usage.to_short_string(ctxt)),
+                &format!(
+                    "After obtaining (self) {}",
+                    place_usage.to_short_string(ctxt)
+                ),
             );
         }
     }
@@ -454,8 +461,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
 struct AbsExpander<'pcg, 'mir, 'tcx> {
     loop_head_block: mir::BasicBlock,
     graph: &'pcg mut BorrowsGraph<'tcx>,
-    capabilities: Option<&'pcg mut PlaceCapabilities<'tcx>>,
-    owned: Option<&'pcg mut OwnedPcg<'tcx>>,
     path_conditions: ValidityConditions,
     ctxt: CompilerCtxt<'mir, 'tcx>,
 }
@@ -470,7 +475,7 @@ impl<'tcx> AbsExpander<'_, '_, 'tcx> {
 
     fn expand_to_places(&mut self, blocked_places: &PlaceUsages<'tcx>, places: &PlaceUsages<'tcx>) {
         for place in places.iter() {
-            tracing::info!("expanding to {}", place.to_short_string(self.ctxt));
+            tracing::debug!("loop expanding to {}", place.to_short_string(self.ctxt));
             self.expand_to(
                 place.place,
                 ObtainType::LoopInvariant {
@@ -511,16 +516,7 @@ impl<'mir, 'tcx> ActionApplier<'tcx> for AbsExpander<'_, 'mir, 'tcx> {
                 RepackOp::IgnoreStorageDead(_) => todo!(),
                 RepackOp::Weaken(_, _, _) => todo!(),
                 RepackOp::Expand(repack_expand) => {
-                    if let Some(owned) = &mut self.owned {
-                        owned.perform_expand_action(
-                            repack_expand,
-                            self.capabilities.as_mut().unwrap(),
-                            self.ctxt,
-                        )?;
-                    } else {
-                        unreachable!()
-                    }
-                    Ok(true)
+                    unreachable!()
                 }
                 RepackOp::Collapse(_) => todo!(),
                 RepackOp::DerefShallowInit(_, _) => todo!(),
@@ -540,14 +536,8 @@ impl<'mir, 'tcx> PlaceExpander<'mir, 'tcx> for AbsExpander<'_, 'mir, 'tcx> {
     }
 
     fn contains_owned_expansion_to(&self, target: Place<'tcx>) -> bool {
-        if let Some(owned) = &self.owned {
-            owned.locals()[target.local]
-                .get_allocated()
-                .contains_expansion_to(target, self.ctxt)
-        } else {
-            // Pretend we're always fully expanded in the local PCG
-            true
-        }
+        // Pretend we're always fully expanded in the local PCG
+        true
     }
 
     fn update_capabilities_for_borrow_expansion(
@@ -556,11 +546,7 @@ impl<'mir, 'tcx> PlaceExpander<'mir, 'tcx> for AbsExpander<'_, 'mir, 'tcx> {
         block_type: crate::pcg::place_capabilities::BlockType,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> Result<bool, crate::pcg::PcgError> {
-        if let Some(caps) = &mut self.capabilities {
-            caps.update_for_expansion(expansion, block_type, ctxt)
-        } else {
-            Ok(true)
-        }
+        Ok(true)
     }
     fn update_capabilities_for_deref(
         &mut self,
@@ -568,15 +554,15 @@ impl<'mir, 'tcx> PlaceExpander<'mir, 'tcx> for AbsExpander<'_, 'mir, 'tcx> {
         capability: CapabilityKind,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> Result<bool, crate::pcg::PcgError> {
-        if let Some(caps) = &mut self.capabilities {
-            caps.update_for_deref(ref_place, capability, ctxt)
-        } else {
-            Ok(true)
-        }
+        Ok(true)
     }
 
     fn location(&self) -> mir::Location {
         self.loop_head_location()
+    }
+
+    fn debug_capabilities(&self) -> std::borrow::Cow<'_, PlaceCapabilities<'tcx>> {
+        Cow::Owned(PlaceCapabilities::default())
     }
 }
 

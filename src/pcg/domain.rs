@@ -15,20 +15,39 @@ use derive_more::TryInto;
 use serde::{Serialize, Serializer};
 
 use crate::{
-    action::PcgActions, borrow_pcg::{
+    AnalysisEngine, DebugLines,
+    action::PcgActions,
+    borrow_pcg::{
         edge::{borrow::BorrowEdge, kind::BorrowPcgEdgeKind},
         graph::BorrowsGraph,
         state::{BorrowStateMutRef, BorrowStateRef, BorrowsState, BorrowsStateLike},
-    }, borrows_imgcat_debug, free_pcs::{join::data::JoinOwnedData, CapabilityKind}, r#loop::{LoopAnalysis, LoopPlaceUsageAnalysis, PlaceUsages}, pcg::{
-        dot_graphs::{generate_dot_graph, PcgDotGraphsForBlock, ToGraph},
+    },
+    borrows_imgcat_debug,
+    free_pcs::{CapabilityKind, join::data::JoinOwnedData},
+    r#loop::{LoopAnalysis, LoopPlaceUsageAnalysis, PlaceUsages},
+    pcg::{
+        dot_graphs::{PcgDotGraphsForBlock, ToGraph, generate_dot_graph},
         place_capabilities::PlaceCapabilitiesInterface,
         triple::Triple,
-    }, rustc_interface::{
+    },
+    rustc_interface::{
         middle::mir::{self, BasicBlock},
-        mir_dataflow::{fmt::DebugWithContext, move_paths::MoveData, JoinSemiLattice},
-    }, utils::{
-        arena::ArenaRef, data_structures::HashSet, display::DisplayWithCompilerCtxt, domain_data::{DomainData, DomainDataIndex}, eval_stmt_data::EvalStmtData, incoming_states::IncomingStates, initialized::DefinitelyInitialized, liveness::PlaceLiveness, maybe_old::MaybeLabelledPlace, validity::HasValidityCheck, CompilerCtxt, Place, CHECK_CYCLES, PANIC_ON_ERROR
-    }, visualization::{dot_graph::DotGraph, generate_pcg_dot_graph}, AnalysisEngine, DebugLines
+        mir_dataflow::{JoinSemiLattice, fmt::DebugWithContext, move_paths::MoveData},
+    },
+    utils::{
+        CHECK_CYCLES, CompilerCtxt, PANIC_ON_ERROR, Place,
+        arena::ArenaRef,
+        data_structures::HashSet,
+        display::DisplayWithCompilerCtxt,
+        domain_data::{DomainData, DomainDataIndex},
+        eval_stmt_data::EvalStmtData,
+        incoming_states::IncomingStates,
+        initialized::DefinitelyInitialized,
+        liveness::PlaceLiveness,
+        maybe_old::MaybeLabelledPlace,
+        validity::HasValidityCheck,
+    },
+    visualization::{dot_graph::DotGraph, generate_pcg_dot_graph},
 };
 
 use super::{PcgEngine, place_capabilities::PlaceCapabilities};
@@ -165,6 +184,22 @@ pub(crate) struct PcgRef<'pcg, 'tcx> {
     pub(crate) owned: &'pcg OwnedPcg<'tcx>,
     pub(crate) borrow: BorrowStateRef<'pcg, 'tcx>,
     pub(crate) capabilities: &'pcg PlaceCapabilities<'tcx>,
+}
+
+impl<'pcg, 'tcx> PcgRef<'pcg, 'tcx> {
+    pub(crate) fn render_debug_graph(
+        &self,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+        location: mir::Location,
+        comment: &str,
+    ) {
+        if borrows_imgcat_debug() {
+            let dot_graph = generate_pcg_dot_graph(self.as_ref(), ctxt, location).unwrap();
+            DotGraph::render_with_imgcat(&dot_graph, comment).unwrap_or_else(|e| {
+                eprintln!("Error rendering self graph: {e}");
+            });
+        }
+    }
 }
 
 impl<'pcg, 'tcx> From<&'pcg Pcg<'tcx>> for PcgRef<'pcg, 'tcx> {
@@ -307,21 +342,6 @@ impl<'tcx> HasValidityCheck<'tcx> for PcgRef<'_, 'tcx> {
 }
 
 impl<'mir, 'tcx: 'mir> Pcg<'tcx> {
-    #[allow(unused)]
-    pub(crate) fn render_debug_graph(
-        &self,
-        ctxt: CompilerCtxt<'mir, 'tcx>,
-        location: mir::Location,
-        comment: &str,
-    ) {
-        if borrows_imgcat_debug() {
-            let dot_graph = generate_pcg_dot_graph(self.as_ref(), ctxt, location).unwrap();
-            DotGraph::render_with_imgcat(&dot_graph, comment).unwrap_or_else(|e| {
-                eprintln!("Error rendering self graph: {e}");
-            });
-        }
-    }
-
     pub(crate) fn is_expansion_leaf(
         &self,
         place: Place<'tcx>,
