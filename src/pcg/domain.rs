@@ -187,6 +187,12 @@ pub(crate) struct PcgRef<'pcg, 'tcx> {
 }
 
 impl<'pcg, 'tcx> PcgRef<'pcg, 'tcx> {
+    fn places(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> HashSet<Place<'tcx>> {
+        let mut places = self.owned.places(ctxt);
+        places.extend(self.borrow.graph.places(ctxt));
+        places
+    }
+
     fn leaf_places(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> HashSet<Place<'tcx>> {
         let mut leaf_places = self.owned.leaf_places(ctxt);
         leaf_places.retain(|p| !self.borrow.graph.places(ctxt).contains(p));
@@ -312,7 +318,20 @@ impl<'tcx> HasValidityCheck<'tcx> for PcgRef<'_, 'tcx> {
             }
         }
 
-        for place in self.leaf_places(ctxt) {
+        let leaf_places = self.leaf_places(ctxt);
+
+        for place in self.places(ctxt) {
+            if self.capabilities.get(place, ctxt) == Some(CapabilityKind::Exclusive)
+                && !leaf_places.contains(&place)
+            {
+                return Err(format!(
+                    "Place {} has exclusive capability but is not a leaf place",
+                    place.to_short_string(ctxt)
+                ));
+            }
+        }
+
+        for place in leaf_places {
             if self.capabilities.get(place, ctxt).is_none() {
                 return Err(format!(
                     "Leaf place {} does not have a capability and is not borrowed",

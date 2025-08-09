@@ -168,6 +168,14 @@ impl<'tcx> LocalExpansions<'tcx> {
         self.leaf_places(ctxt).contains(&place)
     }
 
+    pub(crate) fn places(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> HashSet<Place<'tcx>> {
+        self.expansions
+            .iter()
+            .flat_map(|e| e.expansion_places(ctxt).unwrap())
+            .chain(std::iter::once(self.local.into()))
+            .collect()
+    }
+
     pub fn leaf_places(&self, repacker: CompilerCtxt<'_, 'tcx>) -> HashSet<Place<'tcx>> {
         if self.expansions.is_empty() {
             return vec![self.local.into()].into_iter().collect();

@@ -393,20 +393,20 @@ impl<'tcx> BorrowsGraph<'tcx> {
             "Before obtaining (self)",
         );
         for place_usage in to_obtain {
-            let obtain_type = ObtainType::LoopInvariant {
-                is_blocked: loop_blocked_places.contains(place_usage.place),
-                usage_type: place_usage.usage,
-            };
-            obtainer.obtain(place_usage.place, obtain_type).unwrap();
-            obtainer.pcg.borrows_graph().render_debug_graph(
-                Some(DebugImgcat::JoinLoop),
-                obtainer.pcg.capabilities,
-                ctxt,
-                &format!(
-                    "After obtaining (self) {}",
-                    place_usage.to_short_string(ctxt)
-                ),
-            );
+                let obtain_type = ObtainType::LoopInvariant {
+                    is_blocked: loop_blocked_places.contains(place_usage.place),
+                    usage_type: place_usage.usage,
+                };
+                obtainer.obtain(place_usage.place, obtain_type).unwrap();
+                obtainer.pcg.borrows_graph().render_debug_graph(
+                    Some(DebugImgcat::JoinLoop),
+                    obtainer.pcg.capabilities,
+                    ctxt,
+                    &format!(
+                        "After obtaining (self) {}",
+                        place_usage.to_short_string(ctxt)
+                    ),
+                );
         }
     }
 

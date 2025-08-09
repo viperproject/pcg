@@ -19,7 +19,6 @@ impl DotGraph {
         Ok(())
     }
     pub fn render_with_imgcat(dot_str: &str, comment: &str) -> Result<(), std::io::Error> {
-        tracing::info!("{}", comment);
         let mut dot_process = Command::new("dot")
             .args(["-Tpng"])
             .stdin(Stdio::piped())
@@ -54,6 +53,7 @@ impl DotGraph {
         if !imgcat_status.success() {
             return Err(std::io::Error::other("imgcat command failed"));
         }
+        tracing::info!("↑ {} ↑\n", comment);
 
         Ok(())
     }

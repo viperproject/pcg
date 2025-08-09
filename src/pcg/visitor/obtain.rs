@@ -82,7 +82,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceCollapser<'mir, 'tcx> for PlaceObtainer<'s
 }
 
 impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
-    fn restore_place(&mut self, place: Place<'tcx>) -> Result<(), PcgError> {
+    fn restore_place(&mut self, place: Place<'tcx>, context: &str) -> Result<(), PcgError> {
         // The place to restore could come from a local that was conditionally
         // allocated and therefore we can't get back to it, and certainly
         // shouldn't give it any capability
@@ -107,7 +107,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
             self.record_and_apply_action(PcgAction::restore_capability(
                 place,
                 restore_cap,
-                "restore_capabilities_for_removed_edge",
+                context,
                 self.ctxt,
             ))?;
         }
@@ -140,7 +140,10 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
 
         for node in to_restore {
             if let Some(place) = node.as_current_place() {
-                self.restore_place(place)?;
+                self.restore_place(
+                    place,
+                    "update_unblocked_node_capabilities_and_remove_placeholder_projections",
+                )?;
             }
         }
         Ok(())
@@ -195,7 +198,6 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
             self.unlabel_blocked_region_projections_if_applicable(&edge, context)?;
         }
         if let Some(deref_place) = deref_place.as_current_place() {
-            self.restore_place(deref_place.parent_place().unwrap())?;
             self.apply_action(
                 BorrowPcgAction::label_place(
                     deref_place,
@@ -204,6 +206,15 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                 )
                 .into(),
             )?;
+            let ref_place = deref_place.parent_place().unwrap();
+            // Perhaps the place isn't yet a leaf in the borrows graph, (e.g. the ref itself is conditionally borrowed)
+            // In that case we shouldn't restore its caps
+            if !self.pcg.borrow.graph.contains(ref_place, self.ctxt) {
+                self.restore_place(
+                    ref_place,
+                    &format!("{}: remove_deref_edges_to: restore parent place", context),
+                )?;
+            }
         }
         Ok(())
     }
@@ -528,6 +539,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
     /// capability.
     ///
     /// This also handles corresponding region projections of the place.
+    #[tracing::instrument(skip(self))]
     pub(crate) fn obtain(
         &mut self,
         place: Place<'tcx>,
@@ -535,6 +547,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
     ) -> Result<(), PcgError> {
         let obtain_cap = obtain_type.capability(place, self.ctxt);
 
+        // STEP 1
         // This is to support the following kind of scenario:
         //
         //  - `s` is to be re-assigned or borrowed mutably at location `l`
@@ -547,11 +560,14 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
         // After performing this operation, we should try again to remove borrow
         // PCG edges blocking `place`, since this may enable some borrow
         // expansions to be removed (s.f was previously blocked and no longer is)
-        if !obtain_cap.is_read() && !matches!(obtain_type, ObtainType::LoopInvariant { .. }) {
+        //
+        // Note that this could also happen when obtaining for a loop invariant
+        if !obtain_cap.is_read() {
             self.label_and_remove_capabilities_for_deref_projections_of_postfix_places(
                 place, true, self.ctxt,
             )?;
             self.pack_old_and_dead_borrow_leaves(Some(place))?;
+            self.render_debug_graph(None, "after step 1", self.ctxt);
         }
 
         let current_cap = self.pcg.capabilities.get(place, self.ctxt);
@@ -564,6 +580,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
             obtain_cap
         );
 
+        // STEP 2
         if current_cap.is_none()
             || matches!(
                 current_cap.unwrap().partial_cmp(&obtain_cap),
@@ -582,14 +599,23 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                 "Collapsing owned places to {}",
                 place.to_short_string(self.ctxt)
             );
-            self.collapse_owned_places_to(
+            self.collapse_owned_places_and_lifetime_projections_to(
                 place,
                 collapse_cap,
                 format!("Obtain {}", place.to_short_string(self.ctxt)),
                 self.ctxt,
             )?;
+            self.render_debug_graph(
+                None,
+                &format!(
+                    "after step 2 (collapse owned places and lifetime projections to {})",
+                    place.to_short_string(self.ctxt)
+                ),
+                self.ctxt,
+            );
         }
 
+        // STEP 3
         if !obtain_cap.is_read() {
             tracing::debug!(
                 "Obtain {:?} to place {} in phase {:?}",
@@ -614,8 +640,10 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
             //
             // This also labels rps and adds placeholder projections
             self.upgrade_closest_read_ancestor_to_exclusive_and_update_rps(place)?;
+            self.render_debug_graph(None, "after step 3", self.ctxt);
         }
 
+        // STEP 4
         if obtain_cap.is_write() {
             let _ = self.record_and_apply_action(
                 BorrowPcgAction::label_place(
@@ -629,10 +657,14 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
             // (postfixes of) place may have not yet expired, and therefore the borrowed
             // caps are still in the PCG.
             // This will remove them (since we're going to overwrite anyways)
-            self.pcg.capabilities.remove_all_strict_postfixes(place, self.ctxt);
+            self.pcg
+                .capabilities
+                .remove_all_strict_postfixes(place, self.ctxt);
+            self.render_debug_graph(None, "after step 4", self.ctxt);
         }
 
         self.expand_to(place, obtain_type, self.ctxt)?;
+        self.render_debug_graph(None, "after step 5", self.ctxt);
 
         // pcg_validity_assert!(
         //     self.pcg.capabilities.get(place.into()).is_some(),

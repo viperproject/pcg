@@ -217,7 +217,10 @@ pub(crate) trait PlaceCollapser<'mir, 'tcx>:
             .collect::<Vec<_>>();
 
         for mut rp in derefs_to_disconnect {
-            tracing::debug!("Disconnecting deref projection {:?}", rp);
+            tracing::info!(
+                "Disconnecting deref projection {}",
+                rp.to_short_string(ctxt)
+            );
             let conditions = self
                 .borrows_state()
                 .graph
@@ -250,6 +253,10 @@ pub(crate) trait PlaceCollapser<'mir, 'tcx>:
                 .into(),
             )?;
         }
+        tracing::info!(
+            "Labeling defef projections for place {}",
+            place.to_short_string(ctxt)
+        );
         self.apply_action(
             BorrowPcgAction::label_place(
                 place,
@@ -261,8 +268,8 @@ pub(crate) trait PlaceCollapser<'mir, 'tcx>:
         Ok(true)
     }
 
-    /// Collapses owned places and performs appropriate updates to region projections.
-    fn collapse_owned_places_to(
+    /// Collapses owned places and performs appropriate updates to lifetime projections.
+    fn collapse_owned_places_and_lifetime_projections_to(
         &mut self,
         place: Place<'tcx>,
         capability: CapabilityKind,
@@ -272,7 +279,7 @@ pub(crate) trait PlaceCollapser<'mir, 'tcx>:
         let to_collapse = self
             .get_local_expansions(place.local)
             .places_to_collapse_for_obtain_of(place, ctxt);
-        tracing::debug!(
+        tracing::info!(
             "To obtain {}, will collapse {}",
             place.to_short_string(ctxt),
             to_collapse.to_short_string(ctxt)
@@ -602,21 +609,19 @@ pub(crate) trait PlaceExpander<'mir, 'tcx>:
         let expansion: BorrowPcgExpansion<'tcx, LocalNode<'tcx>> =
             BorrowPcgExpansion::new(base.into(), expanded_place.expansion, ctxt)?;
 
-        self.borrows_graph().render_debug_graph(
+        self.render_debug_graph(
             None,
-            self.debug_capabilities().as_ref(),
-            ctxt,
             &format!(
                 "add_borrow_pcg_expansion: before update_capabilities_for_borrow_expansion {}",
                 expansion.to_short_string(ctxt)
             ),
+            ctxt,
         );
         self.update_capabilities_for_borrow_expansion(&expansion, block_type, ctxt)?;
-        self.borrows_graph().render_debug_graph(
+        self.render_debug_graph(
             None,
-            self.debug_capabilities().as_ref(),
-            ctxt,
             "add_borrow_pcg_expansion: after update_capabilities_for_borrow_expansion",
+            ctxt,
         );
         let action = BorrowPcgAction::add_edge(
             BorrowPcgEdge::new(

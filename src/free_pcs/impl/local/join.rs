@@ -61,7 +61,7 @@ impl<'pcg: 'exp, 'exp, 'tcx> JoinOwnedData<'pcg, 'tcx, &'exp mut LocalExpansions
 
                 // The capability of the place should be Write because presumably something
                 // was moved out in either of the expansions.
-                self_obtainer.collapse_owned_places_to(
+                self_obtainer.collapse_owned_places_and_lifetime_projections_to(
                     base_place,
                     CapabilityKind::Write,
                     format!(
@@ -84,7 +84,7 @@ impl<'pcg: 'exp, 'exp, 'tcx> JoinOwnedData<'pcg, 'tcx, &'exp mut LocalExpansions
                     actions: vec![],
                 };
 
-                other_obtainer.collapse_owned_places_to(
+                other_obtainer.collapse_owned_places_and_lifetime_projections_to(
                     base_place,
                     CapabilityKind::Write,
                     format!(
@@ -161,7 +161,7 @@ impl<'pcg: 'exp, 'exp, 'tcx> JoinOwnedData<'pcg, 'tcx, &'exp mut LocalExpansions
             join_obtainer.label_and_remove_capabilities_for_deref_projections_of_postfix_places(
                 place, false, ctxt,
             )?;
-            join_obtainer.collapse_owned_places_to(
+            join_obtainer.collapse_owned_places_and_lifetime_projections_to(
                 place,
                 CapabilityKind::Read,
                 "join".to_string(),
@@ -310,7 +310,7 @@ impl<'pcg: 'exp, 'exp, 'tcx> JoinOwnedData<'pcg, 'tcx, &'exp mut LocalExpansions
                             ctxt,
                         );
                     }
-                    Some(CapabilityKind::Write) => {
+                    Some(CapabilityKind::Write) if self_cap != other_cap => {
                         // One has write, the other has exclusive
                         // The one having exclusive caps should have copy borrow caps from the write ones
                         let (source, target) = if self_cap == CapabilityKind::Write {

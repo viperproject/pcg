@@ -253,7 +253,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
             return Ok(false);
         }
         for (place, candidate_cap) in places_to_collapse {
-            self.collapse_owned_places_to(
+            self.collapse_owned_places_and_lifetime_projections_to(
                 place,
                 candidate_cap,
                 format!(

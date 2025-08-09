@@ -116,12 +116,16 @@ impl<'tcx> LabelPlacePredicate<'tcx> {
             LabelPlacePredicate::DerefPostfixOf(place) => {
                 if let Some(iter) = candidate.iter_projections_after(*place, ctxt) {
                     let mut seen_deref_target = false;
+                    // If we want to label deref postfixes of e.g. "foo"
+                    // and we're looking at the deref edge foo.baz -> *foo.baz,
+                    // we don't want to label *this* instance, but all expansions
+                    // from *foo.baz should be labelled
                     for (p, proj) in iter {
+                        if seen_deref_target {
+                            return true;
+                        }
                         if matches!(proj, ProjectionElem::Deref) && p.is_ref(ctxt) {
                             if label_context == LabelNodeContext::TargetOfExpansion {
-                                if seen_deref_target {
-                                    return true;
-                                }
                                 seen_deref_target = true;
                             } else {
                                 return true;
