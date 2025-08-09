@@ -5,7 +5,7 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 use crate::{
-    free_pcs::{CapabilityKind, OwnedPcgLocal, LocalExpansions},
+    free_pcs::{CapabilityKind, LocalExpansions, OwnedPcgLocal},
     pcg::{
         place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface},
         triple::{PlaceCondition, Triple},
@@ -76,7 +76,8 @@ impl<'tcx> OwnedPcgData<'tcx> {
             }
             PlaceCondition::Return => {
                 pcg_validity_assert!(
-                    capabilities.get(RETURN_PLACE.into(), ctxt).unwrap() == CapabilityKind::Exclusive,
+                    capabilities.get(RETURN_PLACE.into(), ctxt).unwrap()
+                        == CapabilityKind::Exclusive,
                     [ctxt]
                 );
             }

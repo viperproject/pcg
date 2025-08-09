@@ -6,8 +6,8 @@ use crate::borrow_pcg::edge::abstraction::{AbstractionType, LoopAbstractionInput
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::borrow_pcg::edge_data::{EdgeData, LabelEdgePlaces, LabelPlacePredicate};
 use crate::borrow_pcg::has_pcs_elem::{
-    LabelLifetimeProjection, LabelLifetimeProjectionPredicate,
-    LabelLifetimeProjectionResult, PlaceLabeller,
+    LabelLifetimeProjection, LabelLifetimeProjectionPredicate, LabelLifetimeProjectionResult,
+    PlaceLabeller,
 };
 use crate::borrow_pcg::path_condition::ValidityConditions;
 use crate::borrow_pcg::region_projection::LifetimeProjectionLabel;

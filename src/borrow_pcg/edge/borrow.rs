@@ -5,8 +5,7 @@ use crate::{
         edge_data::{LabelEdgePlaces, LabelPlacePredicate, edgedata_enum},
         has_pcs_elem::{
             LabelLifetimeProjection, LabelLifetimeProjectionPredicate,
-            LabelLifetimeProjectionResult, LabelNodeContext, LabelPlaceWithContext,
-            PlaceLabeller,
+            LabelLifetimeProjectionResult, LabelNodeContext, LabelPlaceWithContext, PlaceLabeller,
         },
         region_projection::LifetimeProjectionLabel,
     },
@@ -59,7 +58,10 @@ impl<'tcx> LabelLifetimeProjection<'tcx> for LocalBorrow<'tcx> {
         repacker: CompilerCtxt<'_, 'tcx>,
     ) -> LabelLifetimeProjectionResult {
         let mut changed = LabelLifetimeProjectionResult::Unchanged;
-        if predicate.matches(self.assigned_lifetime_projection(repacker).rebase(), repacker) {
+        if predicate.matches(
+            self.assigned_lifetime_projection(repacker).rebase(),
+            repacker,
+        ) {
             self.assigned_lifetime_projection_label = label;
             changed = LabelLifetimeProjectionResult::Changed;
         }
@@ -121,7 +123,10 @@ impl<'tcx> LabelLifetimeProjection<'tcx> for RemoteBorrow<'tcx> {
         label: Option<LifetimeProjectionLabel>,
         repacker: CompilerCtxt<'_, 'tcx>,
     ) -> LabelLifetimeProjectionResult {
-        if predicate.matches(self.assigned_lifetime_projection(repacker).rebase(), repacker) {
+        if predicate.matches(
+            self.assigned_lifetime_projection(repacker).rebase(),
+            repacker,
+        ) {
             self.rp_snapshot_location = label;
             LabelLifetimeProjectionResult::Changed
         } else {
@@ -195,7 +200,8 @@ impl<'tcx, 'a> DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx
         format!(
             "{} -> {}",
             self.blocked_place().to_short_string(ctxt),
-            self.assigned_lifetime_projection(ctxt).to_short_string(ctxt)
+            self.assigned_lifetime_projection(ctxt)
+                .to_short_string(ctxt)
         )
     }
 }

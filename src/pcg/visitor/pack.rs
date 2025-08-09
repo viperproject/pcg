@@ -45,10 +45,13 @@ impl<'tcx> EdgesToRemove<'tcx> {
                 if let Some(deref_edges) = self.deref_edges.get_mut(&deref.deref_place) {
                     deref_edges.value.insert(deref.clone());
                 } else {
-                    self.deref_edges.insert(deref.deref_place, WithReason {
-                        value: vec![deref.clone()].into_iter().collect(),
-                        reason,
-                    });
+                    self.deref_edges.insert(
+                        deref.deref_place,
+                        WithReason {
+                            value: vec![deref.clone()].into_iter().collect(),
+                            reason,
+                        },
+                    );
                 }
             }
             _ => self.other_edges.push(WithReason {

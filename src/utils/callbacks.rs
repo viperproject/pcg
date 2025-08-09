@@ -9,9 +9,16 @@ use bumpalo::Bump;
 use derive_more::From;
 
 use crate::{
+    PcgCtxt, PcgOutput,
     borrow_checker::{
-        r#impl::{NllBorrowCheckerImpl, PoloniusBorrowChecker}, RustBorrowCheckerInterface
-    }, borrow_pcg::region_projection::{PcgRegion, RegionIdx}, free_pcs::PcgAnalysis, pcg::{self, BodyWithBorrowckFacts}, run_pcg, rustc_interface::{
+        RustBorrowCheckerInterface,
+        r#impl::{NllBorrowCheckerImpl, PoloniusBorrowChecker},
+    },
+    borrow_pcg::region_projection::{PcgRegion, RegionIdx},
+    free_pcs::PcgAnalysis,
+    pcg::{self, BodyWithBorrowckFacts},
+    run_pcg,
+    rustc_interface::{
         borrowck::{
             self, BorrowIndex, BorrowSet, LocationTable, PoloniusInput, PoloniusOutput,
             RegionInferenceContext, RichLocation,
@@ -20,19 +27,21 @@ use crate::{
             fx::{FxHashMap, FxHashSet},
             graph::is_cyclic,
         },
-        driver::{self, init_rustc_env_logger, Compilation},
+        driver::{self, Compilation, init_rustc_env_logger},
         hir::{def::DefKind, def_id::LocalDefId},
         index::bit_set::BitSet,
-        interface::{interface::Compiler, Config},
+        interface::{Config, interface::Compiler},
         middle::{
             mir::{Body, Local, Location},
             query::queries::mir_borrowck::ProvidedValue as MirBorrowck,
             ty::{RegionVid, TyCtxt},
             util::Providers,
         },
-        session::{config::ErrorOutputType, EarlyDiagCtxt, Session},
+        session::{EarlyDiagCtxt, Session, config::ErrorOutputType},
         span::SpanSnippetError,
-    }, utils::{MAX_BASIC_BLOCKS, PCG_DEBUG_BLOCK, SKIP_BODIES_WITH_LOOPS}, validity_checks_enabled, PcgCtxt, PcgOutput
+    },
+    utils::{MAX_BASIC_BLOCKS, PCG_DEBUG_BLOCK, SKIP_BODIES_WITH_LOOPS},
+    validity_checks_enabled,
 };
 
 #[cfg(feature = "visualization")]

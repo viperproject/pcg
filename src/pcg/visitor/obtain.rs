@@ -83,6 +83,14 @@ impl<'state, 'mir: 'state, 'tcx> PlaceCollapser<'mir, 'tcx> for PlaceObtainer<'s
 
 impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
     fn restore_place(&mut self, place: Place<'tcx>) -> Result<(), PcgError> {
+
+        // The place to restore could come from a local that was conditionally
+        // allocated and therefore we can't get back to it, and certainly
+        // shouldn't give it any capability
+        // TODO: Perhaps the join should label such places?
+        if !self.pcg.owned.is_allocated(place.local) {
+            return Ok(());
+        }
         let blocked_cap = self.pcg.capabilities.get(place, self.ctxt);
 
         // TODO: If the place projects a shared ref, do we even need to restore a capability?
@@ -106,15 +114,15 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
         }
         for rp in place.lifetime_projections(self.ctxt) {
             self.record_and_apply_action(
-                        BorrowPcgAction::remove_lifetime_projection_label(
-                            rp.with_placeholder_label(self.ctxt).into(),
-                            format!(
-                                "Place {} unblocked: remove placeholder label of rps of newly unblocked nodes",
-                                place.to_short_string(self.ctxt)
-                            ),
-                        )
-                        .into(),
-                    )?;
+                    BorrowPcgAction::remove_lifetime_projection_label(
+                        rp.with_placeholder_label(self.ctxt).into(),
+                        format!(
+                            "Place {} unblocked: remove placeholder label of rps of newly unblocked nodes",
+                            place.to_short_string(self.ctxt)
+                        ),
+                    )
+                    .into(),
+                )?;
         }
         Ok(())
     }

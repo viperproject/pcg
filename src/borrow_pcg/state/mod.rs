@@ -7,7 +7,6 @@ use super::{
     path_condition::{PathCondition, ValidityConditions},
     visitor::extract_regions,
 };
-use crate::{borrow_pcg::edge::kind::BorrowPcgEdgeKind, utils::place::maybe_old::MaybeLabelledPlace};
 use crate::{
     action::BorrowPcgAction,
     borrow_pcg::{
@@ -19,6 +18,9 @@ use crate::{
     pcg::{BodyAnalysis, PcgError, place_capabilities::PlaceCapabilitiesInterface},
     pcg_validity_assert,
     utils::place::maybe_remote::MaybeRemotePlace,
+};
+use crate::{
+    borrow_pcg::edge::kind::BorrowPcgEdgeKind, utils::place::maybe_old::MaybeLabelledPlace,
 };
 use crate::{
     borrow_pcg::edge::{

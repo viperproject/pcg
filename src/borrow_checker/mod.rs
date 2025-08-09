@@ -15,8 +15,8 @@ use crate::rustc_interface::borrowck::RegionInferenceContext;
 use crate::rustc_interface::borrowck::{
     BorrowIndex, BorrowSet, LocationTable, PlaceConflictBias, places_conflict,
 };
-use crate::rustc_interface::index::bit_set::BitSet;
 use crate::rustc_interface::data_structures::fx::{FxIndexMap, FxIndexSet};
+use crate::rustc_interface::index::bit_set::BitSet;
 use crate::rustc_interface::middle::mir::{self, Location};
 use crate::rustc_interface::middle::ty::RegionVid;
 use crate::utils::CompilerCtxt;
@@ -296,7 +296,8 @@ pub trait RustBorrowCheckerInterface<'tcx> {
     fn borrows_in_scope_at(&self, location: Location, before: bool) -> BitSet<BorrowIndex>;
 
     fn borrow_in_scope_at(&self, borrow_index: BorrowIndex, location: Location) -> bool {
-        self.borrows_in_scope_at(location, true).contains(borrow_index)
+        self.borrows_in_scope_at(location, true)
+            .contains(borrow_index)
     }
 
     fn origin_contains_loan_at(
@@ -333,8 +334,6 @@ pub trait RustBorrowCheckerInterface<'tcx> {
     fn polonius_output(&self) -> Option<&PoloniusOutput>;
 
     fn override_region_debug_string(&self, region: RegionVid) -> Option<&str>;
-
-
 
     fn borrows_blocking(
         &self,

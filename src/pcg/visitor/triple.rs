@@ -1,5 +1,5 @@
 use crate::{
-    free_pcs::{CapabilityKind, OwnedPcgLocal, LocalExpansions},
+    free_pcs::{CapabilityKind, LocalExpansions, OwnedPcgLocal},
     pcg::{
         PcgError, PcgUnsupportedError,
         obtain::ObtainType,

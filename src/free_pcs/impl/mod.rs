@@ -6,8 +6,8 @@
 
 mod bridge;
 mod fpcs;
-pub(crate) mod join_semi_lattice;
 pub(crate) mod join;
+pub(crate) mod join_semi_lattice;
 mod local;
 mod place;
 mod update;

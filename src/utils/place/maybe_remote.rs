@@ -2,13 +2,11 @@ use derive_more::From;
 
 use crate::borrow_pcg::edge_data::LabelPlacePredicate;
 use crate::borrow_pcg::graph::loop_abstraction::MaybeRemoteCurrentPlace;
-use crate::borrow_pcg::has_pcs_elem::{
-    LabelNodeContext, LabelPlaceWithContext, PlaceLabeller,
-};
+use crate::borrow_pcg::has_pcs_elem::{LabelNodeContext, LabelPlaceWithContext, PlaceLabeller};
 use crate::borrow_pcg::region_projection::{
     MaybeRemoteRegionProjectionBase, PcgRegion, RegionIdx, RegionProjectionBaseLike,
 };
-use crate::pcg::{PcgNode, PCGNodeLike};
+use crate::pcg::{PCGNodeLike, PcgNode};
 use crate::rustc_interface::index::IndexVec;
 use crate::rustc_interface::middle::{mir, ty};
 use crate::utils::display::DisplayWithCompilerCtxt;

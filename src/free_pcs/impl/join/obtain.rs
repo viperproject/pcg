@@ -7,8 +7,8 @@ use crate::{
         obtain::{ActionApplier, HasSnapshotLocation, PlaceCollapser},
         place_capabilities::PlaceCapabilities,
     },
-    utils::{CompilerCtxt, Place, SnapshotLocation, data_structures::HashSet},
     rustc_interface::middle::mir,
+    utils::{CompilerCtxt, Place, SnapshotLocation, data_structures::HashSet},
 };
 
 pub(crate) struct JoinObtainer<'pcg: 'exp, 'exp, 'slf, 'mir, 'tcx> {

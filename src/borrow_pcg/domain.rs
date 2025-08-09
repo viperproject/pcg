@@ -13,7 +13,7 @@ use crate::{
         },
         region_projection::{LifetimeProjectionLabel, LocalLifetimeProjection},
     },
-    pcg::{PcgNode, PCGNodeLike},
+    pcg::{PCGNodeLike, PcgNode},
     utils::{
         CompilerCtxt, Place, display::DisplayWithCompilerCtxt, maybe_remote::MaybeRemotePlace,
         place::maybe_old::MaybeLabelledPlace, validity::HasValidityCheck,

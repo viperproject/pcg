@@ -5,10 +5,10 @@ use super::{CompilerCtxt, Place, validity::HasValidityCheck};
 use crate::borrow_pcg::region_projection::{
     MaybeRemoteRegionProjectionBase, PcgRegion, RegionIdx, RegionProjectionBaseLike,
 };
-use crate::pcg::{EvalStmtPhase, PcgNode, PCGNodeLike};
+use crate::pcg::{EvalStmtPhase, PCGNodeLike, PcgNode};
 use crate::utils::json::ToJsonWithCompilerCtxt;
 use crate::{
-    borrow_pcg::{borrow_pcg_edge::LocalNode},
+    borrow_pcg::borrow_pcg_edge::LocalNode,
     pcg::LocalNodeLike,
     rustc_interface::{
         index::IndexVec,

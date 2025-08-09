@@ -15,20 +15,39 @@ use derive_more::TryInto;
 use serde::{Serialize, Serializer};
 
 use crate::{
-    action::PcgActions, borrow_pcg::{
+    AnalysisEngine, DebugLines,
+    action::PcgActions,
+    borrow_pcg::{
         edge::{borrow::BorrowEdge, kind::BorrowPcgEdgeKind},
         graph::BorrowsGraph,
         state::{BorrowStateMutRef, BorrowStateRef, BorrowsState, BorrowsStateLike},
-    }, borrows_imgcat_debug, free_pcs::{join::data::JoinOwnedData, CapabilityKind}, r#loop::{LoopAnalysis, LoopPlaceUsageAnalysis, PlaceUsages}, pcg::{
-        dot_graphs::{generate_dot_graph, PcgDotGraphsForBlock, ToGraph},
+    },
+    borrows_imgcat_debug,
+    free_pcs::{CapabilityKind, join::data::JoinOwnedData},
+    r#loop::{LoopAnalysis, LoopPlaceUsageAnalysis, PlaceUsages},
+    pcg::{
+        dot_graphs::{PcgDotGraphsForBlock, ToGraph, generate_dot_graph},
         place_capabilities::PlaceCapabilitiesInterface,
         triple::Triple,
-    }, rustc_interface::{
+    },
+    rustc_interface::{
         middle::mir::{self, BasicBlock},
-        mir_dataflow::{fmt::DebugWithContext, move_paths::MoveData, JoinSemiLattice},
-    }, utils::{
-        arena::ArenaRef, data_structures::HashSet, display::DisplayWithCompilerCtxt, domain_data::{DomainData, DomainDataIndex}, eval_stmt_data::EvalStmtData, incoming_states::IncomingStates, initialized::DefinitelyInitialized, liveness::PlaceLiveness, maybe_old::MaybeLabelledPlace, validity::HasValidityCheck, CompilerCtxt, DebugImgcat, Place, CHECK_CYCLES, PANIC_ON_ERROR
-    }, visualization::{dot_graph::DotGraph, generate_pcg_dot_graph}, AnalysisEngine, DebugLines
+        mir_dataflow::{JoinSemiLattice, fmt::DebugWithContext, move_paths::MoveData},
+    },
+    utils::{
+        CHECK_CYCLES, CompilerCtxt, DebugImgcat, PANIC_ON_ERROR, Place,
+        arena::ArenaRef,
+        data_structures::HashSet,
+        display::DisplayWithCompilerCtxt,
+        domain_data::{DomainData, DomainDataIndex},
+        eval_stmt_data::EvalStmtData,
+        incoming_states::IncomingStates,
+        initialized::DefinitelyInitialized,
+        liveness::PlaceLiveness,
+        maybe_old::MaybeLabelledPlace,
+        validity::HasValidityCheck,
+    },
+    visualization::{dot_graph::DotGraph, generate_pcg_dot_graph},
 };
 
 use super::{PcgEngine, place_capabilities::PlaceCapabilities};
@@ -272,6 +291,18 @@ impl<'tcx> HasValidityCheck<'tcx> for PcgRef<'_, 'tcx> {
         self.owned.check_validity(self.capabilities, ctxt)?;
         if *CHECK_CYCLES && !self.is_acyclic(ctxt) {
             return Err("PCG is not acyclic".to_string());
+        }
+
+        for (place, cap) in self.capabilities.iter() {
+            if !self.owned.contains_place(place, ctxt)
+                && !self.borrow.graph.places(ctxt).contains(&place)
+            {
+                return Err(format!(
+                    "Place {} has capability {:?} but is not in the owned PCG or borrow graph",
+                    place.to_short_string(ctxt),
+                    cap
+                ));
+            }
         }
 
         let borrow_graph_places = self.borrow.graph.places(ctxt);

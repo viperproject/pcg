@@ -5,7 +5,7 @@ use std::{fmt, marker::PhantomData};
 use derive_more::{Display, From, TryFrom};
 use serde_json::json;
 
-use super::has_pcs_elem::{LabelLifetimeProjection};
+use super::has_pcs_elem::LabelLifetimeProjection;
 use super::{
     abstraction::node::AbstractionGraphNode, borrow_pcg_edge::LocalNode, visitor::extract_regions,
 };
@@ -13,7 +13,8 @@ use crate::borrow_checker::BorrowCheckerInterface;
 use crate::borrow_pcg::edge_data::LabelPlacePredicate;
 use crate::borrow_pcg::graph::loop_abstraction::MaybeRemoteCurrentPlace;
 use crate::borrow_pcg::has_pcs_elem::{
-    LabelLifetimeProjectionPredicate, LabelLifetimeProjectionResult, LabelNodeContext, LabelPlaceWithContext, PlaceLabeller,
+    LabelLifetimeProjectionPredicate, LabelLifetimeProjectionResult, LabelNodeContext,
+    LabelPlaceWithContext, PlaceLabeller,
 };
 use crate::pcg::{PcgError, PcgInternalError};
 use crate::utils::json::ToJsonWithCompilerCtxt;

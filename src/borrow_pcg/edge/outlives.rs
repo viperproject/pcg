@@ -6,16 +6,13 @@ use crate::{
         edge_data::{EdgeData, LabelEdgePlaces, LabelPlacePredicate},
         has_pcs_elem::{
             LabelLifetimeProjection, LabelLifetimeProjectionPredicate,
-            LabelLifetimeProjectionResult, LabelNodeContext, LabelPlaceWithContext,
-            PlaceLabeller,
+            LabelLifetimeProjectionResult, LabelNodeContext, LabelPlaceWithContext, PlaceLabeller,
         },
         region_projection::{LifetimeProjection, LifetimeProjectionLabel, LocalLifetimeProjection},
     },
-    pcg::{PcgNode, PCGNodeLike},
+    pcg::{PCGNodeLike, PcgNode},
     pcg_validity_assert,
-    utils::{
-        CompilerCtxt, display::DisplayWithCompilerCtxt, validity::HasValidityCheck,
-    },
+    utils::{CompilerCtxt, display::DisplayWithCompilerCtxt, validity::HasValidityCheck},
 };
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]

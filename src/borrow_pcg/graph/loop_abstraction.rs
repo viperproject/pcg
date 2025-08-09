@@ -8,7 +8,7 @@ use crate::{
     borrow_pcg::{
         action::BorrowPcgActionKind,
         borrow_pcg_edge::{BorrowPcgEdgeLike, BorrowPcgEdgeRef, LocalNode, ToBorrowsEdge},
-        edge::abstraction::{r#loop::LoopAbstraction, AbstractionBlockEdge},
+        edge::abstraction::{AbstractionBlockEdge, r#loop::LoopAbstraction},
         edge_data::EdgeData,
         graph::BorrowsGraph,
         has_pcs_elem::LabelLifetimeProjectionPredicate,
@@ -21,12 +21,18 @@ use crate::{
     free_pcs::{CapabilityKind, OwnedPcg, RepackOp},
     r#loop::{PlaceUsage, PlaceUsages},
     pcg::{
-        obtain::{ActionApplier, HasSnapshotLocation, ObtainType, PlaceExpander, PlaceObtainer}, place_capabilities::PlaceCapabilities, LocalNodeLike, PCGNodeLike, PcgMutRef, PcgNode, PcgRefLike
+        LocalNodeLike, PCGNodeLike, PcgMutRef, PcgNode, PcgRefLike,
+        obtain::{ActionApplier, HasSnapshotLocation, ObtainType, PlaceExpander, PlaceObtainer},
+        place_capabilities::PlaceCapabilities,
     },
     pcg_validity_assert,
     rustc_interface::middle::mir::{self},
     utils::{
-        data_structures::{HashMap, HashSet}, display::DisplayWithCompilerCtxt, maybe_old::MaybeLabelledPlace, remote::RemotePlace, CompilerCtxt, DebugImgcat, LocalMutationIsAllowed, Place, SnapshotLocation
+        CompilerCtxt, DebugImgcat, LocalMutationIsAllowed, Place, SnapshotLocation,
+        data_structures::{HashMap, HashSet},
+        display::DisplayWithCompilerCtxt,
+        maybe_old::MaybeLabelledPlace,
+        remote::RemotePlace,
     },
 };
 

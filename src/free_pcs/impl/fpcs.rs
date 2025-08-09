@@ -41,6 +41,10 @@ impl<'tcx> OwnedPcg<'tcx> {
             .check_validity(capabilities, ctxt)
     }
 
+    pub(crate) fn is_allocated(&self, local: Local) -> bool {
+        self.data.as_ref().unwrap().is_allocated(local)
+    }
+
     pub(crate) fn contains_place(&self, place: Place<'tcx>, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
         self.data.as_ref().unwrap().contains_place(place, ctxt)
     }
@@ -152,6 +156,10 @@ impl<'tcx> OwnedPcgData<'tcx> {
             return false;
         }
         expansion.get_allocated().contains_place(place, ctxt)
+    }
+
+    pub(crate) fn is_allocated(&self, local: Local) -> bool {
+        !self.0[local].is_unallocated()
     }
 
     pub(crate) fn allocated_locals(&self) -> Vec<mir::Local> {

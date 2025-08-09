@@ -6,7 +6,9 @@ use crate::{
         dataflow::{Analysis, AnalysisEngine, with_cursor_state},
         middle::mir::{
             self,
-            visit::{MutatingUseContext, NonMutatingUseContext, NonUseContext, PlaceContext, Visitor},
+            visit::{
+                MutatingUseContext, NonMutatingUseContext, NonUseContext, PlaceContext, Visitor,
+            },
         },
         mir_dataflow::{Backward, GenKill, JoinSemiLattice, ResultsCursor, fmt::DebugWithContext},
     },

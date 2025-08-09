@@ -161,12 +161,12 @@ fn test_selected_crates() {
 
     let test_cases = vec![
         SelectedCrateTestCase::new(
-            "axum",
-            "0.8.1",
+            "flume",
+            "0.11.1",
             Some("2025-03-13"),
-            TestCrateType::function(
-                "<extract::path::de::ValueDeserializer<'de> as serde::Deserializer<'de>>::deserialize_tuple",
-                Some(16),
+            TestCrateType::function_debug_failure(
+                "<select::Selector<'a, T>::recv::RecvSelection<'a, T, F, U> as select::Selection<'a, T>>::init",
+                None,
             ),
         ),
         SelectedCrateTestCase::new(
@@ -176,6 +176,15 @@ fn test_selected_crates() {
             TestCrateType::function_debug_failure(
                 "<util::captures::GroupInfoAllNames<'a> as core::iter::Iterator>::next",
                 Some(33),
+            ),
+        ),
+        SelectedCrateTestCase::new(
+            "axum",
+            "0.8.1",
+            Some("2025-03-13"),
+            TestCrateType::function(
+                "<extract::path::de::ValueDeserializer<'de> as serde::Deserializer<'de>>::deserialize_tuple",
+                Some(16),
             ),
         ),
         SelectedCrateTestCase::new(
@@ -605,7 +614,6 @@ fn test_selected_crates() {
                 None,
             ),
         ),
-        // 36 basic blocks
         SelectedCrateTestCase::new(
             "flume",
             "0.11.1",
@@ -958,10 +966,17 @@ fn test_selected_crates() {
         SelectedCrateTestCase::new("rustls", "0.23.23", None, TestCrateType::EntireCrate),
     ];
 
-    for test_case in test_cases
-        .into_iter()
-        .sorted_by_key(|tc| tc.num_bbs().unwrap_or(usize::MAX))
-    {
+    for test_case in test_cases.into_iter().sorted_by_key(|tc| {
+        if let TestCrateType::Function(f) = &tc.test_type {
+            if f.debug_failure {
+                0 // Try these first
+            } else {
+                f.metadata.num_bbs.unwrap_or(usize::MAX)
+            }
+        } else {
+            usize::MAX
+        }
+    }) {
         test_case.run();
     }
 }

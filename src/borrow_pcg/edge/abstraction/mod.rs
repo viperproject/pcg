@@ -14,8 +14,7 @@ use crate::{
         edge_data::{LabelEdgePlaces, LabelPlacePredicate, edgedata_enum},
         has_pcs_elem::{
             LabelLifetimeProjection, LabelLifetimeProjectionPredicate,
-            LabelLifetimeProjectionResult, LabelNodeContext, LabelPlaceWithContext,
-            PlaceLabeller,
+            LabelLifetimeProjectionResult, LabelNodeContext, LabelPlaceWithContext, PlaceLabeller,
         },
         region_projection::{LifetimeProjectionLabel, MaybeRemoteRegionProjectionBase},
     },

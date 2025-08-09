@@ -4,7 +4,7 @@ use crate::{
         edge::{kind::BorrowPcgEdgeKind, outlives::BorrowFlowEdgeKind},
         edge_data::EdgeData,
     },
-    pcg::{LocalNodeLike, PcgNode, PCGNodeLike},
+    pcg::{LocalNodeLike, PCGNodeLike, PcgNode},
     rustc_interface::data_structures::fx::FxHashSet,
     utils::{CompilerCtxt, HasPlace, data_structures::HashSet},
 };

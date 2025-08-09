@@ -2,10 +2,7 @@ use derive_more::{Deref, DerefMut};
 
 use crate::{
     borrow_checker::BorrowCheckerInterface,
-    borrow_pcg::{
-        borrow_pcg_edge::LocalNode,
-        region_projection::MaybeRemoteRegionProjectionBase,
-    },
+    borrow_pcg::{borrow_pcg_edge::LocalNode, region_projection::MaybeRemoteRegionProjectionBase},
     pcg::PcgNode,
     utils::{CompilerCtxt, display::DisplayWithCompilerCtxt, maybe_remote::MaybeRemotePlace},
 };
