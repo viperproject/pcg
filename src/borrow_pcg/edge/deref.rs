@@ -16,7 +16,7 @@ use crate::{
     },
 };
 
-#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct DerefEdge<'tcx> {
     pub(crate) blocked_place: MaybeLabelledPlace<'tcx>,
     pub(crate) deref_place: MaybeLabelledPlace<'tcx>,

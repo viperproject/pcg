@@ -13,6 +13,7 @@ pub mod eval_stmt_data;
 pub(crate) mod incoming_states;
 pub(crate) mod initialized;
 pub(crate) mod iter;
+pub(crate) mod logging;
 pub mod json;
 pub(crate) mod liveness;
 mod mutable;
@@ -21,7 +22,6 @@ pub mod place_snapshot;
 mod root_place;
 pub mod validity;
 pub mod visitor;
-use std::cmp::Ordering;
 
 pub use mutable::*;
 pub use place::*;

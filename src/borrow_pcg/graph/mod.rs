@@ -18,11 +18,7 @@ use crate::{
         middle::mir::{self},
     },
     utils::{
-        DEBUG_IMGCAT, DebugImgcat, Place,
-        data_structures::HashSet,
-        display::{DebugLines, DisplayWithCompilerCtxt},
-        maybe_old::MaybeLabelledPlace,
-        validity::HasValidityCheck,
+        data_structures::HashSet, display::{DebugLines, DisplayWithCompilerCtxt}, maybe_old::MaybeLabelledPlace, validity::HasValidityCheck, DebugImgcat, Place, DEBUG_IMGCAT, PCG_DEBUG_BLOCK
     },
 };
 use frozen::{CachedLeafEdges, FrozenGraphRef};
@@ -103,7 +99,15 @@ impl PartialEq for BorrowsGraph<'_> {
     }
 }
 
-pub(crate) fn borrows_imgcat_debug(debug_imgcat: Option<DebugImgcat>) -> bool {
+pub(crate) fn borrows_imgcat_debug(
+    block: mir::BasicBlock,
+    debug_imgcat: Option<DebugImgcat>,
+) -> bool {
+    if let Some(debug_block) = *PCG_DEBUG_BLOCK
+        && debug_block != block
+    {
+        return false;
+    }
     if let Some(debug_imgcat) = debug_imgcat {
         DEBUG_IMGCAT.contains(&debug_imgcat)
     } else {

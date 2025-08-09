@@ -106,7 +106,9 @@ pub enum LabelPlaceReason {
     StorageDead,
     MoveOut,
     ReAssign,
-    LabelDerefProjections,
+    LabelDerefProjections {
+        shared_refs_only: bool,
+    },
     Collapse,
 }
 
@@ -130,7 +132,12 @@ impl LabelPlaceReason {
                 label_place_in_expansion: false,
             },
             LabelPlaceReason::Collapse => LabelPlacePredicate::Exact(place),
-            LabelPlaceReason::LabelDerefProjections => LabelPlacePredicate::DerefPostfixOf(place),
+            LabelPlaceReason::LabelDerefProjections { shared_refs_only } => {
+                LabelPlacePredicate::DerefPostfixOf {
+                    place,
+                    shared_refs_only,
+                }
+            }
         };
         let mut changed = edge.label_blocked_by_places(&predicate, labeller, ctxt);
         changed |= edge.label_blocked_places(&predicate, labeller, ctxt);

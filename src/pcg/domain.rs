@@ -202,12 +202,12 @@ impl<'pcg, 'tcx> PcgRef<'pcg, 'tcx> {
 
     pub(crate) fn render_debug_graph(
         &self,
-        debug_imgcat: Option<DebugImgcat>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
         location: mir::Location,
+        debug_imgcat: Option<DebugImgcat>,
         comment: &str,
+        ctxt: CompilerCtxt<'_, 'tcx>,
     ) {
-        if borrows_imgcat_debug(debug_imgcat) {
+        if borrows_imgcat_debug(location.block, debug_imgcat) {
             let dot_graph = generate_pcg_dot_graph(self.as_ref(), ctxt, location).unwrap();
             DotGraph::render_with_imgcat(&dot_graph, comment).unwrap_or_else(|e| {
                 eprintln!("Error rendering self graph: {e}");

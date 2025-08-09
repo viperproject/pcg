@@ -269,10 +269,11 @@ impl<'pcg: 'exp, 'exp, 'tcx> JoinOwnedData<'pcg, 'tcx, &'exp mut LocalExpansions
 
     fn render_debug_graph(&self, comment: &str, ctxt: CompilerCtxt<'_, 'tcx>) {
         self.borrows.graph.render_debug_graph(
+            self.block,
             Some(crate::utils::DebugImgcat::JoinOwned),
             &self.capabilities,
-            ctxt,
             comment,
+            ctxt,
         );
     }
 

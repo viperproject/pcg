@@ -10,6 +10,7 @@ use crate::free_pcs::{CapabilityKind, RepackOp};
 use crate::pcg::dot_graphs::{ToGraph, generate_dot_graph};
 use crate::pcg::obtain::{
     ActionApplier, HasSnapshotLocation, ObtainType, PlaceCollapser, PlaceExpander, PlaceObtainer,
+    RenderDebugGraph,
 };
 use crate::pcg::place_capabilities::{BlockType, PlaceCapabilitiesInterface};
 use crate::pcg::{EvalStmtPhase, PCGNodeLike, PcgDebugData, PcgMutRef, PcgNode, PcgRefLike};
@@ -566,8 +567,9 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
             self.label_and_remove_capabilities_for_deref_projections_of_postfix_places(
                 place, true, self.ctxt,
             )?;
+            self.render_debug_graph(None, "step 1 (after label + remove)");
             self.pack_old_and_dead_borrow_leaves(Some(place))?;
-            self.render_debug_graph(None, "after step 1", self.ctxt);
+            self.render_debug_graph(None, "after step 1");
         }
 
         let current_cap = self.pcg.capabilities.get(place, self.ctxt);
@@ -611,7 +613,6 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                     "after step 2 (collapse owned places and lifetime projections to {})",
                     place.to_short_string(self.ctxt)
                 ),
-                self.ctxt,
             );
         }
 
@@ -640,7 +641,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
             //
             // This also labels rps and adds placeholder projections
             self.upgrade_closest_read_ancestor_to_exclusive_and_update_rps(place)?;
-            self.render_debug_graph(None, "after step 3", self.ctxt);
+            self.render_debug_graph(None, "after step 3");
         }
 
         // STEP 4
@@ -660,11 +661,11 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
             self.pcg
                 .capabilities
                 .remove_all_strict_postfixes(place, self.ctxt);
-            self.render_debug_graph(None, "after step 4", self.ctxt);
+            self.render_debug_graph(None, "after step 4");
         }
 
         self.expand_to(place, obtain_type, self.ctxt)?;
-        self.render_debug_graph(None, "after step 5", self.ctxt);
+        self.render_debug_graph(None, "after step 5");
 
         // pcg_validity_assert!(
         //     self.pcg.capabilities.get(place.into()).is_some(),

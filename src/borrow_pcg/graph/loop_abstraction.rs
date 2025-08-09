@@ -22,7 +22,10 @@ use crate::{
     r#loop::{PlaceUsage, PlaceUsages},
     pcg::{
         LocalNodeLike, PCGNodeLike, PcgMutRef, PcgNode, PcgRefLike,
-        obtain::{ActionApplier, HasSnapshotLocation, ObtainType, PlaceExpander, PlaceObtainer},
+        obtain::{
+            ActionApplier, HasSnapshotLocation, ObtainType, PlaceExpander, PlaceObtainer,
+            RenderDebugGraph,
+        },
         place_capabilities::PlaceCapabilities,
     },
     pcg_validity_assert,
@@ -202,10 +205,8 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 }
             }
         }
-        expander.graph.render_debug_graph(
+        expander.render_debug_graph(
             Some(DebugImgcat::JoinLoop),
-            &PlaceCapabilities::default(),
-            ctxt,
             "Abstraction graph after connections expansion",
         );
 
@@ -214,10 +215,8 @@ impl<'tcx> BorrowsGraph<'tcx> {
             &loop_blocked_places.joined_with(&candidate_blockers),
         );
 
-        expander.graph.render_debug_graph(
+        expander.render_debug_graph(
             Some(DebugImgcat::JoinLoop),
-            &PlaceCapabilities::default(),
-            ctxt,
             "Abstraction graph after expansion",
         );
 
@@ -258,10 +257,8 @@ impl<'tcx> BorrowsGraph<'tcx> {
             }
         }
 
-        expander.graph.render_debug_graph(
+        expander.render_debug_graph(
             Some(DebugImgcat::JoinLoop),
-            &PlaceCapabilities::default(),
-            ctxt,
             "Abstraction graph after root reconnect",
         );
         let loop_head_label = LifetimeProjectionLabel::Location(SnapshotLocation::Loop(loop_head));
@@ -386,32 +383,26 @@ impl<'tcx> BorrowsGraph<'tcx> {
             to_obtain.retain(|p| !place_usage.place.is_prefix_of(p.place));
             to_obtain.push(place_usage);
         }
-        obtainer.pcg.as_ref().render_debug_graph(
-            Some(DebugImgcat::JoinLoop),
-            ctxt,
-            obtainer.location(),
-            "Before obtaining (self)",
-        );
+        obtainer.render_debug_graph(Some(DebugImgcat::JoinLoop), "Before obtaining (self)");
         for place_usage in to_obtain {
-                let obtain_type = ObtainType::LoopInvariant {
-                    is_blocked: loop_blocked_places.contains(place_usage.place),
-                    usage_type: place_usage.usage,
-                };
-                obtainer.obtain(place_usage.place, obtain_type).unwrap();
-                obtainer.pcg.borrows_graph().render_debug_graph(
-                    Some(DebugImgcat::JoinLoop),
-                    obtainer.pcg.capabilities,
-                    ctxt,
-                    &format!(
-                        "After obtaining (self) {}",
-                        place_usage.to_short_string(ctxt)
-                    ),
-                );
+            let obtain_type = ObtainType::LoopInvariant {
+                is_blocked: loop_blocked_places.contains(place_usage.place),
+                usage_type: place_usage.usage,
+            };
+            obtainer.obtain(place_usage.place, obtain_type).unwrap();
+            obtainer.render_debug_graph(
+                Some(DebugImgcat::JoinLoop),
+                &format!(
+                    "After obtaining (self) {}",
+                    place_usage.to_short_string(ctxt)
+                ),
+            );
         }
     }
 
     pub(crate) fn identify_subgraph_to_cut<'mir: 'graph, 'graph>(
         &'graph self,
+        block: mir::BasicBlock,
         abstraction_graph_nodes: HashSet<PcgNode<'tcx>>,
         ctxt: CompilerCtxt<'mir, 'tcx>,
     ) -> BorrowsGraph<'tcx> {
@@ -440,10 +431,11 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 for edge in self.edges_blocking(blocked_by_node.into(), ctxt) {
                     if path.contains(&edge) {
                         self.render_debug_graph(
+                            block,
                             Some(DebugImgcat::JoinLoop),
                             &PlaceCapabilities::default(),
-                            ctxt,
                             "Invalid abstraction graph",
+                            ctxt,
                         );
                         pcg_validity_assert!(false, "edge already in path");
                         panic!("edge already in path");
@@ -469,6 +461,18 @@ struct AbsExpander<'pcg, 'mir, 'tcx> {
     graph: &'pcg mut BorrowsGraph<'tcx>,
     path_conditions: ValidityConditions,
     ctxt: CompilerCtxt<'mir, 'tcx>,
+}
+
+impl<'mir, 'tcx> RenderDebugGraph for AbsExpander<'_, 'mir, 'tcx> {
+    fn render_debug_graph(&self, debug_imgcat: Option<DebugImgcat>, comment: &str) {
+        self.graph.render_debug_graph(
+            self.loop_head_block,
+            debug_imgcat,
+            &PlaceCapabilities::default(),
+            comment,
+            self.ctxt,
+        );
+    }
 }
 
 impl<'tcx> AbsExpander<'_, '_, 'tcx> {
@@ -638,10 +642,8 @@ fn add_rp_block_edges<'mir, 'tcx>(
                 expander
                     .add_and_update_placeholder_edges(blocked_rp, &mut_rps, "mut rps", ctxt)
                     .unwrap();
-                expander.graph.render_debug_graph(
+                expander.render_debug_graph(
                     Some(DebugImgcat::JoinLoop),
-                    &PlaceCapabilities::default(),
-                    ctxt,
                     "Abstraction graph after adding mut rps",
                 );
             }

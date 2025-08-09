@@ -25,7 +25,7 @@ use crate::{
     free_pcs::{CapabilityKind, ExpandedPlace, LocalExpansions, RepackCollapse, RepackOp},
     r#loop::PlaceUsageType,
     pcg::{
-        PCGNodeLike, PcgDebugData, PcgError, PcgMutRef,
+        PCGNodeLike, PcgDebugData, PcgError, PcgMutRef, PcgRefLike,
         place_capabilities::{BlockType, PlaceCapabilities, PlaceCapabilitiesInterface},
     },
     rustc_interface::middle::mir,
@@ -43,6 +43,14 @@ pub(crate) struct PlaceObtainer<'state, 'mir, 'tcx> {
     pub(crate) location: mir::Location,
     pub(crate) prev_snapshot_location: SnapshotLocation,
     pub(crate) debug_data: Option<&'state mut PcgDebugData>,
+}
+
+impl<'state, 'mir, 'tcx> RenderDebugGraph for PlaceObtainer<'state, 'mir, 'tcx> {
+    fn render_debug_graph(&self, debug_imgcat: Option<DebugImgcat>, comment: &str) {
+        self.pcg
+            .as_ref()
+            .render_debug_graph(self.location(), debug_imgcat, comment, self.ctxt);
+    }
 }
 
 impl<'state, 'mir, 'tcx> HasSnapshotLocation for PlaceObtainer<'state, 'mir, 'tcx> {
@@ -185,6 +193,7 @@ pub(crate) trait PlaceCollapser<'mir, 'tcx>:
         Ok(())
     }
 
+    #[tracing::instrument(skip(self, place, ctxt))]
     fn label_and_remove_capabilities_for_deref_projections_of_postfix_places(
         &mut self,
         place: Place<'tcx>,
@@ -216,7 +225,7 @@ pub(crate) trait PlaceCollapser<'mir, 'tcx>:
             })
             .collect::<Vec<_>>();
 
-        for mut rp in derefs_to_disconnect {
+        for mut rp in derefs_to_disconnect.iter().copied() {
             tracing::info!(
                 "Disconnecting deref projection {}",
                 rp.to_short_string(ctxt)
@@ -253,18 +262,21 @@ pub(crate) trait PlaceCollapser<'mir, 'tcx>:
                 .into(),
             )?;
         }
-        tracing::info!(
-            "Labeling defef projections for place {}",
-            place.to_short_string(ctxt)
-        );
-        self.apply_action(
-            BorrowPcgAction::label_place(
-                place,
-                self.prev_snapshot_location(),
-                LabelPlaceReason::LabelDerefProjections,
-            )
-            .into(),
-        )?;
+        // TODO: THis could be a hack
+        if !derefs_to_disconnect.is_empty() {
+            tracing::info!(
+                "Labeling deref projections for place {}",
+                place.to_short_string(ctxt)
+            );
+            self.apply_action(
+                BorrowPcgAction::label_place(
+                    place,
+                    self.prev_snapshot_location(),
+                    LabelPlaceReason::LabelDerefProjections { shared_refs_only },
+                )
+                .into(),
+            )?;
+        }
         Ok(true)
     }
 
@@ -279,7 +291,7 @@ pub(crate) trait PlaceCollapser<'mir, 'tcx>:
         let to_collapse = self
             .get_local_expansions(place.local)
             .places_to_collapse_for_obtain_of(place, ctxt);
-        tracing::info!(
+        tracing::debug!(
             "To obtain {}, will collapse {}",
             place.to_short_string(ctxt),
             to_collapse.to_short_string(ctxt)
@@ -380,8 +392,16 @@ pub(crate) trait HasSnapshotLocation {
     fn prev_snapshot_location(&self) -> SnapshotLocation;
 }
 
+pub(crate) trait HasBlock {
+    fn block(&self) -> mir::BasicBlock;
+}
+
+pub(crate) trait RenderDebugGraph {
+    fn render_debug_graph(&self, debug_imgcat: Option<DebugImgcat>, comment: &str);
+}
+
 pub(crate) trait PlaceExpander<'mir, 'tcx>:
-    HasSnapshotLocation + ActionApplier<'tcx>
+    HasSnapshotLocation + ActionApplier<'tcx> + RenderDebugGraph
 {
     fn contains_owned_expansion_to(&self, target: Place<'tcx>) -> bool;
 
@@ -499,25 +519,6 @@ pub(crate) trait PlaceExpander<'mir, 'tcx>:
 
     fn debug_capabilities(&self) -> Cow<'_, PlaceCapabilities<'tcx>>;
 
-    fn render_debug_graph(
-        &self,
-        debug_imgcat: Option<DebugImgcat>,
-        comment: &str,
-        ctxt: CompilerCtxt<'mir, 'tcx>,
-    ) {
-        if let Some(block) = *PCG_DEBUG_BLOCK
-            && self.location().block != block
-        {
-            return;
-        }
-        self.borrows_graph().render_debug_graph(
-            debug_imgcat,
-            self.debug_capabilities().as_ref(),
-            ctxt,
-            comment,
-        );
-    }
-
     fn expand_place_one_level(
         &mut self,
         base: Place<'tcx>,
@@ -542,19 +543,18 @@ pub(crate) trait PlaceExpander<'mir, 'tcx>:
                 )
             };
             let deref = DerefEdge::new(base, blocked_lifetime_projection_label, ctxt);
-            self.render_debug_graph(None, "expand_place_one_level: before apply action", ctxt);
+            self.render_debug_graph(None, "expand_place_one_level: before apply action");
             let action = BorrowPcgAction::add_edge(
                 BorrowPcgEdge::new(deref.clone().into(), self.path_conditions()),
                 "expand_place_one_level: add deref edge",
                 ctxt,
             );
             self.apply_action(action.into())?;
-            self.render_debug_graph(None, "expand_place_one_level: after apply action", ctxt);
+            self.render_debug_graph(None, "expand_place_one_level: after apply action");
             self.update_capabilities_for_deref(base, obtain_type.capability(base, ctxt), ctxt)?;
             self.render_debug_graph(
                 None,
                 "expand_place_one_level: after update_capabilities_for_deref",
-                ctxt,
             );
             if deref.blocked_lifetime_projection.label().is_some() {
                 self.apply_action(
@@ -615,13 +615,11 @@ pub(crate) trait PlaceExpander<'mir, 'tcx>:
                 "add_borrow_pcg_expansion: before update_capabilities_for_borrow_expansion {}",
                 expansion.to_short_string(ctxt)
             ),
-            ctxt,
         );
         self.update_capabilities_for_borrow_expansion(&expansion, block_type, ctxt)?;
         self.render_debug_graph(
             None,
             "add_borrow_pcg_expansion: after update_capabilities_for_borrow_expansion",
-            ctxt,
         );
         let action = BorrowPcgAction::add_edge(
             BorrowPcgEdge::new(

@@ -63,7 +63,10 @@ pub enum LabelPlacePredicate<'tcx> {
         place: Place<'tcx>,
         label_place_in_expansion: bool,
     },
-    DerefPostfixOf(Place<'tcx>),
+    DerefPostfixOf {
+        place: Place<'tcx>,
+        shared_refs_only: bool,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -83,8 +86,15 @@ impl<'tcx, 'a> DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx
             LabelPlacePredicate::Postfix { place, .. } => {
                 place.to_short_string(ctxt) // As a hack for now so debug output doesn't change
             }
-            LabelPlacePredicate::DerefPostfixOf(place) => {
-                format!("deref postfix of {}", place.to_short_string(ctxt))
+            LabelPlacePredicate::DerefPostfixOf {
+                place,
+                shared_refs_only,
+            } => {
+                format!(
+                    "deref postfix of {} (shared_refs_only: {})",
+                    place.to_short_string(ctxt),
+                    shared_refs_only
+                )
             }
             LabelPlacePredicate::Exact(place) => {
                 format!("exact {}", place.to_short_string(ctxt))
@@ -113,7 +123,18 @@ impl<'tcx> LabelPlacePredicate<'tcx> {
                     predicate_place.is_prefix_of(candidate)
                 }
             }
-            LabelPlacePredicate::DerefPostfixOf(place) => {
+            LabelPlacePredicate::DerefPostfixOf {
+                place,
+                shared_refs_only,
+            } => {
+                let is_ref_predicate = |p: Place<'tcx>| {
+                    if *shared_refs_only {
+                        p.is_shared_ref(ctxt)
+                    } else {
+                        p.is_ref(ctxt)
+                    }
+                };
+                let mut seen_deref_target = false;
                 if let Some(iter) = candidate.iter_projections_after(*place, ctxt) {
                     let mut seen_deref_target = false;
                     // If we want to label deref postfixes of e.g. "foo"
@@ -124,7 +145,7 @@ impl<'tcx> LabelPlacePredicate<'tcx> {
                         if seen_deref_target {
                             return true;
                         }
-                        if matches!(proj, ProjectionElem::Deref) && p.is_ref(ctxt) {
+                        if matches!(proj, ProjectionElem::Deref) && is_ref_predicate(p) {
                             if label_context == LabelNodeContext::TargetOfExpansion {
                                 seen_deref_target = true;
                             } else {
