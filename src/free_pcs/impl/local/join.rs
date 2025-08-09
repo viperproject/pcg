@@ -340,10 +340,10 @@ impl<'pcg: 'exp, 'exp, 'tcx> JoinOwnedData<'pcg, 'tcx, &'exp mut LocalExpansions
                                     actions: vec![],
                                 }
                             };
-                        let action = BorrowPcgAction::label_place(
+                        let action = BorrowPcgAction::label_place_and_update_related_capabilities(
                             local_place,
                             join_obtainer.prev_snapshot_location(),
-                            LabelPlaceReason::MoveOut,
+                            LabelPlaceReason::JoinOwnedReadAndWriteCapabilities,
                         );
                         join_obtainer.apply_action(PcgAction::Borrow(action))?;
                         join_obtainer.data.capabilities.insert(

@@ -82,7 +82,7 @@ impl<'tcx> BorrowPcgAction<'tcx> {
         }
     }
 
-    pub(crate) fn label_place(
+    pub(crate) fn label_place_and_update_related_capabilities(
         place: Place<'tcx>,
         location: SnapshotLocation,
         reason: LabelPlaceReason,
@@ -105,6 +105,7 @@ pub type MakePlaceOldReason = LabelPlaceReason;
 pub enum LabelPlaceReason {
     StorageDead,
     MoveOut,
+    JoinOwnedReadAndWriteCapabilities,
     ReAssign,
     LabelDerefProjections {
         shared_refs_only: bool,
@@ -121,7 +122,7 @@ impl LabelPlaceReason {
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         let predicate = match self {
-            LabelPlaceReason::StorageDead | LabelPlaceReason::MoveOut => {
+            LabelPlaceReason::StorageDead | LabelPlaceReason::MoveOut | LabelPlaceReason::JoinOwnedReadAndWriteCapabilities => {
                 LabelPlacePredicate::Postfix {
                     place,
                     label_place_in_expansion: true,

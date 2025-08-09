@@ -39,7 +39,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 let place: utils::Place<'tcx> = (*local).into();
                 let snapshot_location = self.prev_snapshot_location();
                 self.record_and_apply_action(
-                    BorrowPcgAction::label_place(
+                    BorrowPcgAction::label_place_and_update_related_capabilities(
                         place,
                         snapshot_location,
                         LabelPlaceReason::StorageDead,

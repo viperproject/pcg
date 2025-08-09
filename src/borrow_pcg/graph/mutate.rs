@@ -12,7 +12,7 @@ use crate::{
 use super::BorrowsGraph;
 
 impl<'tcx> BorrowsGraph<'tcx> {
-    pub(crate) fn make_place_old(
+    pub(crate) fn label_place(
         &mut self,
         place: Place<'tcx>,
         reason: LabelPlaceReason,

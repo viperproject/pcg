@@ -200,7 +200,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
         }
         if let Some(deref_place) = deref_place.as_current_place() {
             self.apply_action(
-                BorrowPcgAction::label_place(
+                BorrowPcgAction::label_place_and_update_related_capabilities(
                     deref_place,
                     self.prev_snapshot_location().into(),
                     LabelPlaceReason::Collapse,
@@ -259,7 +259,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                 self.unlabel_blocked_region_projections_if_applicable(deref, context)?;
                 if deref.deref_place.is_current() {
                     self.apply_action(
-                        BorrowPcgAction::label_place(
+                        BorrowPcgAction::label_place_and_update_related_capabilities(
                             deref.deref_place.place(),
                             self.prev_snapshot_location().into(),
                             LabelPlaceReason::Collapse,
@@ -647,7 +647,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
         // STEP 4
         if obtain_cap.is_write() {
             let _ = self.record_and_apply_action(
-                BorrowPcgAction::label_place(
+                BorrowPcgAction::label_place_and_update_related_capabilities(
                     place,
                     self.prev_snapshot_location(),
                     LabelPlaceReason::ReAssign,

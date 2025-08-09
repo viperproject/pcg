@@ -76,7 +76,7 @@ pub(crate) trait BorrowsStateLike<'tcx> {
     }
     fn graph(&self) -> &BorrowsGraph<'tcx>;
 
-    fn make_place_old(
+    fn label_place_and_update_related_capabilities(
         &mut self,
         place: Place<'tcx>,
         reason: LabelPlaceReason,
@@ -85,8 +85,13 @@ pub(crate) trait BorrowsStateLike<'tcx> {
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         let state = self.as_mut_ref();
-        state.graph.make_place_old(place, reason, labeller, ctxt);
-        capabilities.retain(|p, _| !p.projects_indirection_from(place, ctxt));
+        state.graph.label_place(place, reason, labeller, ctxt);
+        // If in a join we don't want to change capabilities because this will
+        // essentially be handled by the join logic.
+        // See 69_http_header_map.rs
+        if reason != LabelPlaceReason::JoinOwnedReadAndWriteCapabilities {
+            capabilities.retain(|p, _| !p.projects_indirection_from(place, ctxt));
+        }
         true
     }
 
@@ -162,13 +167,14 @@ pub(crate) trait BorrowsStateLike<'tcx> {
                 }
                 true
             }
-            BorrowPcgActionKind::MakePlaceOld(action) => self.make_place_old(
-                action.place,
-                action.reason,
-                &SetLabel(action.location),
-                capabilities,
-                ctxt,
-            ),
+            BorrowPcgActionKind::MakePlaceOld(action) => self
+                .label_place_and_update_related_capabilities(
+                    action.place,
+                    action.reason,
+                    &SetLabel(action.location),
+                    capabilities,
+                    ctxt,
+                ),
             BorrowPcgActionKind::RemoveEdge(edge) => self.remove(&edge, capabilities, ctxt),
             BorrowPcgActionKind::AddEdge { edge } => self.graph_mut().insert(edge, ctxt),
             BorrowPcgActionKind::LabelLifetimeProjection(rp, label) => {

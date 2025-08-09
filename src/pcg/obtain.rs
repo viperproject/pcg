@@ -269,7 +269,7 @@ pub(crate) trait PlaceCollapser<'mir, 'tcx>:
                 place.to_short_string(ctxt)
             );
             self.apply_action(
-                BorrowPcgAction::label_place(
+                BorrowPcgAction::label_place_and_update_related_capabilities(
                     place,
                     self.prev_snapshot_location(),
                     LabelPlaceReason::LabelDerefProjections { shared_refs_only },
@@ -343,7 +343,7 @@ pub(crate) trait PlaceCollapser<'mir, 'tcx>:
         for (idx, node) in expansion.iter().enumerate() {
             if let Some(place) = node.base.as_current_place() {
                 let labeller = SetLabel(self.prev_snapshot_location());
-                self.borrows_state().graph.make_place_old(
+                self.borrows_state().graph.label_place(
                     (*place).into(),
                     LabelPlaceReason::Collapse,
                     &labeller,

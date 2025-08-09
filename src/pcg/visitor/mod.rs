@@ -145,7 +145,7 @@ impl<'tcx> FallableVisitor<'tcx> for PcgVisitor<'_, '_, 'tcx> {
                 if self.phase() == EvalStmtPhase::PostOperands {
                     let snapshot_location = self.prev_snapshot_location();
                     self.record_and_apply_action(
-                        BorrowPcgAction::label_place(
+                        BorrowPcgAction::label_place_and_update_related_capabilities(
                             (*place).into(),
                             snapshot_location,
                             LabelPlaceReason::MoveOut,

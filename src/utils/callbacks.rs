@@ -231,12 +231,8 @@ pub(crate) unsafe fn run_pcg_on_all_fns(tcx: TyCtxt<'_>, polonius: bool) {
 
     let mut item_names = vec![];
 
-    let user_specified_vis_dir = std::env::var("PCG_VISUALIZATION_DATA_DIR");
-    let vis_dir: Option<&str> = if env_feature_enabled("PCG_VISUALIZATION").unwrap_or(false) {
-        Some(match user_specified_vis_dir.as_ref() {
-            Ok(dir) => dir,
-            Err(_) => "visualization/data",
-        })
+    let vis_dir: Option<&str> = if *crate::utils::VISUALIZATION {
+        Some(crate::utils::VISUALIZATION_DATA_DIR.as_deref().unwrap_or("visualization/data"))
     } else {
         None
     };
