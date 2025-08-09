@@ -187,6 +187,13 @@ pub(crate) struct PcgRef<'pcg, 'tcx> {
 }
 
 impl<'pcg, 'tcx> PcgRef<'pcg, 'tcx> {
+    fn leaf_places(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> HashSet<Place<'tcx>> {
+        let mut leaf_places = self.owned.leaf_places(ctxt);
+        leaf_places.retain(|p| !self.borrow.graph.places(ctxt).contains(p));
+        leaf_places.extend(self.borrow.graph.leaf_places(ctxt));
+        leaf_places
+    }
+
     pub(crate) fn render_debug_graph(
         &self,
         debug_imgcat: Option<DebugImgcat>,
@@ -305,10 +312,8 @@ impl<'tcx> HasValidityCheck<'tcx> for PcgRef<'_, 'tcx> {
             }
         }
 
-        let borrow_graph_places = self.borrow.graph.places(ctxt);
-        for place in self.owned.leaf_places(ctxt) {
-            if self.capabilities.get(place, ctxt).is_none() && !borrow_graph_places.contains(&place)
-            {
+        for place in self.leaf_places(ctxt) {
+            if self.capabilities.get(place, ctxt).is_none() {
                 return Err(format!(
                     "Leaf place {} does not have a capability and is not borrowed",
                     place.to_short_string(ctxt)

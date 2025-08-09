@@ -134,6 +134,17 @@ impl<'tcx> BorrowsGraph<'tcx> {
         })
     }
 
+    pub(crate) fn leaf_places(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> HashSet<Place<'tcx>> {
+        self.frozen_graph()
+            .leaf_nodes(ctxt)
+            .into_iter()
+            .filter_map(|node| match node {
+                PcgNode::Place(place) => place.as_current_place(),
+                _ => None,
+            })
+            .collect()
+    }
+
     pub(crate) fn contains_deref_edge_to(&self, place: Place<'tcx>) -> bool {
         self.edges().any(|edge| {
             if let BorrowPcgEdgeKind::Deref(e) = edge.kind {

@@ -310,6 +310,18 @@ impl<'pcg: 'exp, 'exp, 'tcx> JoinOwnedData<'pcg, 'tcx, &'exp mut LocalExpansions
                             ctxt,
                         );
                     }
+                    Some(CapabilityKind::Write) => {
+                        // One has write, the other has exclusive
+                        // The one having exclusive caps should have copy borrow caps from the write ones
+                        let (source, target) = if self_cap == CapabilityKind::Write {
+                            (&self.capabilities, &mut other.capabilities)
+                        } else {
+                            (&other.capabilities, &mut self.capabilities)
+                        };
+                        for (p, c) in source.capabilities_for_strict_postfixes_of(local_place) {
+                            target.insert(p, c, ctxt);
+                        }
+                    }
                     None => {
                         // One of these has read cap and the other has write cap
                         // We want to mark the read place as "old" and then set it to write
