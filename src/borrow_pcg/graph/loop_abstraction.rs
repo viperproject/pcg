@@ -8,7 +8,7 @@ use crate::{
     borrow_pcg::{
         action::BorrowPcgActionKind,
         borrow_pcg_edge::{BorrowPcgEdgeLike, BorrowPcgEdgeRef, LocalNode, ToBorrowsEdge},
-        edge::abstraction::{AbstractionBlockEdge, r#loop::LoopAbstraction},
+        edge::abstraction::{r#loop::LoopAbstraction, AbstractionBlockEdge},
         edge_data::EdgeData,
         graph::BorrowsGraph,
         has_pcs_elem::LabelLifetimeProjectionPredicate,
@@ -21,18 +21,12 @@ use crate::{
     free_pcs::{CapabilityKind, OwnedPcg, RepackOp},
     r#loop::{PlaceUsage, PlaceUsages},
     pcg::{
-        LocalNodeLike, PCGNodeLike, PcgMutRef, PcgNode, PcgRefLike,
-        obtain::{ActionApplier, HasSnapshotLocation, ObtainType, PlaceExpander, PlaceObtainer},
-        place_capabilities::PlaceCapabilities,
+        obtain::{ActionApplier, HasSnapshotLocation, ObtainType, PlaceExpander, PlaceObtainer}, place_capabilities::PlaceCapabilities, LocalNodeLike, PCGNodeLike, PcgMutRef, PcgNode, PcgRefLike
     },
     pcg_validity_assert,
     rustc_interface::middle::mir::{self},
     utils::{
-        CompilerCtxt, LocalMutationIsAllowed, Place, SnapshotLocation,
-        data_structures::{HashMap, HashSet},
-        display::DisplayWithCompilerCtxt,
-        maybe_old::MaybeLabelledPlace,
-        remote::RemotePlace,
+        data_structures::{HashMap, HashSet}, display::DisplayWithCompilerCtxt, maybe_old::MaybeLabelledPlace, remote::RemotePlace, CompilerCtxt, DebugImgcat, LocalMutationIsAllowed, Place, SnapshotLocation
     },
 };
 
@@ -203,6 +197,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             }
         }
         expander.graph.render_debug_graph(
+            Some(DebugImgcat::JoinLoop),
             &PlaceCapabilities::default(),
             ctxt,
             "Abstraction graph after connections expansion",
@@ -214,6 +209,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         );
 
         expander.graph.render_debug_graph(
+            Some(DebugImgcat::JoinLoop),
             &PlaceCapabilities::default(),
             ctxt,
             "Abstraction graph after expansion",
@@ -257,6 +253,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         }
 
         expander.graph.render_debug_graph(
+            Some(DebugImgcat::JoinLoop),
             &PlaceCapabilities::default(),
             ctxt,
             "Abstraction graph after root reconnect",
@@ -384,6 +381,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             to_obtain.push(place_usage);
         }
         obtainer.pcg.as_ref().render_debug_graph(
+            Some(DebugImgcat::JoinLoop),
             ctxt,
             obtainer.location(),
             "Before obtaining (self)",
@@ -395,6 +393,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             };
             obtainer.obtain(place_usage.place, obtain_type).unwrap();
             obtainer.pcg.borrows_graph().render_debug_graph(
+                Some(DebugImgcat::JoinLoop),
                 obtainer.pcg.capabilities,
                 ctxt,
                 &format!(
@@ -435,6 +434,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 for edge in self.edges_blocking(blocked_by_node.into(), ctxt) {
                     if path.contains(&edge) {
                         self.render_debug_graph(
+                            Some(DebugImgcat::JoinLoop),
                             &PlaceCapabilities::default(),
                             ctxt,
                             "Invalid abstraction graph",
@@ -633,6 +633,7 @@ fn add_rp_block_edges<'mir, 'tcx>(
                     .add_and_update_placeholder_edges(blocked_rp, &mut_rps, "mut rps", ctxt)
                     .unwrap();
                 expander.graph.render_debug_graph(
+                    Some(DebugImgcat::JoinLoop),
                     &PlaceCapabilities::default(),
                     ctxt,
                     "Abstraction graph after adding mut rps",

@@ -30,8 +30,9 @@ use crate::{
     },
     rustc_interface::middle::mir,
     utils::{
-        CompilerCtxt, HasPlace, Place, ProjectionKind, ShallowExpansion, SnapshotLocation,
-        data_structures::HashSet, display::DisplayWithCompilerCtxt,
+        CompilerCtxt, DebugImgcat, HasPlace, PCG_DEBUG_BLOCK, Place, ProjectionKind,
+        ShallowExpansion, SnapshotLocation, data_structures::HashSet,
+        display::DisplayWithCompilerCtxt,
     },
 };
 
@@ -491,6 +492,25 @@ pub(crate) trait PlaceExpander<'mir, 'tcx>:
 
     fn debug_capabilities(&self) -> Cow<'_, PlaceCapabilities<'tcx>>;
 
+    fn render_debug_graph(
+        &self,
+        debug_imgcat: Option<DebugImgcat>,
+        comment: &str,
+        ctxt: CompilerCtxt<'mir, 'tcx>,
+    ) {
+        if let Some(block) = *PCG_DEBUG_BLOCK
+            && self.location().block != block
+        {
+            return;
+        }
+        self.borrows_graph().render_debug_graph(
+            debug_imgcat,
+            self.debug_capabilities().as_ref(),
+            ctxt,
+            comment,
+        );
+    }
+
     fn expand_place_one_level(
         &mut self,
         base: Place<'tcx>,
@@ -515,27 +535,19 @@ pub(crate) trait PlaceExpander<'mir, 'tcx>:
                 )
             };
             let deref = DerefEdge::new(base, blocked_lifetime_projection_label, ctxt);
-            self.borrows_graph().render_debug_graph(
-                self.debug_capabilities().as_ref(),
-                ctxt,
-                "expand_place_one_level: before apply action",
-            );
+            self.render_debug_graph(None, "expand_place_one_level: before apply action", ctxt);
             let action = BorrowPcgAction::add_edge(
                 BorrowPcgEdge::new(deref.clone().into(), self.path_conditions()),
                 "expand_place_one_level: add deref edge",
                 ctxt,
             );
             self.apply_action(action.into())?;
-            self.borrows_graph().render_debug_graph(
-                self.debug_capabilities().as_ref(),
-                ctxt,
-                "expand_place_one_level: after apply action",
-            );
+            self.render_debug_graph(None, "expand_place_one_level: after apply action", ctxt);
             self.update_capabilities_for_deref(base, obtain_type.capability(base, ctxt), ctxt)?;
-            self.borrows_graph().render_debug_graph(
-                self.debug_capabilities().as_ref(),
-                ctxt,
+            self.render_debug_graph(
+                None,
                 "expand_place_one_level: after update_capabilities_for_deref",
+                ctxt,
             );
             if deref.blocked_lifetime_projection.label().is_some() {
                 self.apply_action(
@@ -591,6 +603,7 @@ pub(crate) trait PlaceExpander<'mir, 'tcx>:
             BorrowPcgExpansion::new(base.into(), expanded_place.expansion, ctxt)?;
 
         self.borrows_graph().render_debug_graph(
+            None,
             self.debug_capabilities().as_ref(),
             ctxt,
             &format!(
@@ -600,6 +613,7 @@ pub(crate) trait PlaceExpander<'mir, 'tcx>:
         );
         self.update_capabilities_for_borrow_expansion(&expansion, block_type, ctxt)?;
         self.borrows_graph().render_debug_graph(
+            None,
             self.debug_capabilities().as_ref(),
             ctxt,
             "add_borrow_pcg_expansion: after update_capabilities_for_borrow_expansion",

@@ -164,6 +164,10 @@ impl<'tcx> LocalExpansions<'tcx> {
             .collect()
     }
 
+    pub(crate) fn is_leaf_place(&self, place: Place<'tcx>, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
+        self.leaf_places(ctxt).contains(&place)
+    }
+
     pub fn leaf_places(&self, repacker: CompilerCtxt<'_, 'tcx>) -> HashSet<Place<'tcx>> {
         if self.expansions.is_empty() {
             return vec![self.local.into()].into_iter().collect();

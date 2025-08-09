@@ -12,15 +12,23 @@ use super::{
     region_projection::LifetimeProjectionLabel,
 };
 use crate::{
-    borrow_checker::BorrowCheckerInterface, borrow_pcg::{
+    borrow_checker::BorrowCheckerInterface,
+    borrow_pcg::{
         edge_data::{LabelEdgePlaces, LabelPlacePredicate},
         has_pcs_elem::{
             LabelLifetimeProjectionPredicate, LabelLifetimeProjectionResult, LabelNodeContext,
             LabelPlaceWithContext, PlaceLabeller,
         },
-    }, free_pcs::{CapabilityKind, RepackGuide}, r#loop::PlaceUsageType, pcg::{
-        obtain::ObtainType, place_capabilities::{BlockType, PlaceCapabilities, PlaceCapabilitiesInterface}, MaybeHasLocation, PcgUnsupportedError
-    }, pcg_validity_assert, utils::json::ToJsonWithCompilerCtxt
+    },
+    free_pcs::{CapabilityKind, RepackGuide},
+    r#loop::PlaceUsageType,
+    pcg::{
+        MaybeHasLocation, PcgUnsupportedError,
+        obtain::ObtainType,
+        place_capabilities::{BlockType, PlaceCapabilities, PlaceCapabilitiesInterface},
+    },
+    pcg_validity_assert,
+    utils::json::ToJsonWithCompilerCtxt,
 };
 use crate::{pcg::PcgError, utils::place::corrected::CorrectedPlace};
 use crate::{
@@ -72,7 +80,7 @@ impl<'tcx> PlaceExpansion<'tcx> {
         if matches!(
             obtain_type,
             ObtainType::Capability(CapabilityKind::Read)
-            | ObtainType::TwoPhaseExpand
+                | ObtainType::TwoPhaseExpand
                 | ObtainType::LoopInvariant {
                     usage_type: PlaceUsageType::Read,
                     ..

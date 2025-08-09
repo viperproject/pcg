@@ -161,6 +161,24 @@ fn test_selected_crates() {
 
     let test_cases = vec![
         SelectedCrateTestCase::new(
+            "axum",
+            "0.8.1",
+            Some("2025-03-13"),
+            TestCrateType::function(
+                "<extract::path::de::ValueDeserializer<'de> as serde::Deserializer<'de>>::deserialize_tuple",
+                Some(16),
+            ),
+        ),
+        SelectedCrateTestCase::new(
+            "regex-automata",
+            "0.4.9",
+            Some("2025-03-13"),
+            TestCrateType::function_debug_failure(
+                "<util::captures::GroupInfoAllNames<'a> as core::iter::Iterator>::next",
+                Some(33),
+            ),
+        ),
+        SelectedCrateTestCase::new(
             "object",
             "0.36.7",
             Some("2025-03-13"),
@@ -940,8 +958,9 @@ fn test_selected_crates() {
         SelectedCrateTestCase::new("rustls", "0.23.23", None, TestCrateType::EntireCrate),
     ];
 
-    for test_case in test_cases.into_iter()
-    .sorted_by_key(|tc| tc.num_bbs().unwrap_or(usize::MAX))
+    for test_case in test_cases
+        .into_iter()
+        .sorted_by_key(|tc| tc.num_bbs().unwrap_or(usize::MAX))
     {
         test_case.run();
     }

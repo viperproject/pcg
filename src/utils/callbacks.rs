@@ -9,39 +9,30 @@ use bumpalo::Bump;
 use derive_more::From;
 
 use crate::{
-    PcgCtxt, PcgOutput,
     borrow_checker::{
-        RustBorrowCheckerInterface,
-        r#impl::{NllBorrowCheckerImpl, PoloniusBorrowChecker},
-    },
-    borrow_pcg::region_projection::{PcgRegion, RegionIdx},
-    free_pcs::PcgAnalysis,
-    pcg::{self, BodyWithBorrowckFacts},
-    run_pcg,
-    rustc_interface::{
+        r#impl::{NllBorrowCheckerImpl, PoloniusBorrowChecker}, RustBorrowCheckerInterface
+    }, borrow_pcg::region_projection::{PcgRegion, RegionIdx}, free_pcs::PcgAnalysis, pcg::{self, BodyWithBorrowckFacts}, run_pcg, rustc_interface::{
         borrowck::{
-            self, BorrowIndex, BorrowSet, LocationTable, PoloniusInput, PoloniusOutput, RegionInferenceContext,
-            RichLocation,
+            self, BorrowIndex, BorrowSet, LocationTable, PoloniusInput, PoloniusOutput,
+            RegionInferenceContext, RichLocation,
         },
         data_structures::{
             fx::{FxHashMap, FxHashSet},
             graph::is_cyclic,
         },
-        driver::{self, Compilation, init_rustc_env_logger},
+        driver::{self, init_rustc_env_logger, Compilation},
         hir::{def::DefKind, def_id::LocalDefId},
         index::bit_set::BitSet,
-        interface::{Config, interface::Compiler},
+        interface::{interface::Compiler, Config},
         middle::{
             mir::{Body, Local, Location},
             query::queries::mir_borrowck::ProvidedValue as MirBorrowck,
             ty::{RegionVid, TyCtxt},
             util::Providers,
         },
-        session::{EarlyDiagCtxt, Session, config::ErrorOutputType},
+        session::{config::ErrorOutputType, EarlyDiagCtxt, Session},
         span::SpanSnippetError,
-    },
-    utils::{MAX_BASIC_BLOCKS, SKIP_BODIES_WITH_LOOPS},
-    validity_checks_enabled,
+    }, utils::{MAX_BASIC_BLOCKS, PCG_DEBUG_BLOCK, SKIP_BODIES_WITH_LOOPS}, validity_checks_enabled, PcgCtxt, PcgOutput
 };
 
 #[cfg(feature = "visualization")]
@@ -212,6 +203,9 @@ pub(crate) unsafe fn run_pcg_on_all_fns(tcx: TyCtxt<'_>, polonius: bool) {
             "disabled"
         }
     );
+    if let Some(block) = *PCG_DEBUG_BLOCK {
+        tracing::info!("Debug block: {:?}", block);
+    }
     if in_cargo_crate() && !is_primary_crate() {
         // We're running in cargo, but not compiling the primary package
         // We don't want to check dependencies, so abort

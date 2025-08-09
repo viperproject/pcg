@@ -18,7 +18,7 @@ use crate::{
         middle::mir::{self},
     },
     utils::{
-        BORROWS_DEBUG_IMGCAT, Place,
+        DEBUG_IMGCAT, DebugImgcat, Place,
         data_structures::HashSet,
         display::{DebugLines, DisplayWithCompilerCtxt},
         maybe_old::MaybeLabelledPlace,
@@ -103,8 +103,12 @@ impl PartialEq for BorrowsGraph<'_> {
     }
 }
 
-pub(crate) fn borrows_imgcat_debug() -> bool {
-    *BORROWS_DEBUG_IMGCAT
+pub(crate) fn borrows_imgcat_debug(debug_imgcat: Option<DebugImgcat>) -> bool {
+    if let Some(debug_imgcat) = debug_imgcat {
+        DEBUG_IMGCAT.contains(&debug_imgcat)
+    } else {
+        !DEBUG_IMGCAT.is_empty()
+    }
 }
 
 impl<'tcx> BorrowsGraph<'tcx> {
