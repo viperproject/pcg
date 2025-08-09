@@ -68,6 +68,10 @@ pub struct PcgSettings {
     pub dump_mir_dataflow: bool,
     pub visualization: bool,
     pub visualization_data_dir: Option<String>,
+    pub check_annotations: bool,
+    pub emit_annotations: bool,
+    pub check_function: Option<String>,
+    pub skip_function: Option<String>,
 }
 
 impl PcgSettings {
@@ -87,9 +91,13 @@ impl PcgSettings {
         let validity_checks_warn_only = Self::process_bool_var(&mut processed_vars, "PCG_VALIDITY_CHECKS_WARN_ONLY", false);
         let panic_on_error = Self::process_bool_var(&mut processed_vars, "PCG_PANIC_ON_ERROR", false);
         let polonius = Self::process_bool_var(&mut processed_vars, "PCG_POLONIUS", false);
-        let dump_mir_dataflow = Self::process_bool_var(&mut processed_vars, "PCG_DUMP_MIR_DATAFLOW", false);
+                let dump_mir_dataflow = Self::process_bool_var(&mut processed_vars, "PCG_DUMP_MIR_DATAFLOW", false);
         let visualization = Self::process_bool_var(&mut processed_vars, "PCG_VISUALIZATION", false);
-        let visualization_data_dir = Self::process_string_var(&mut processed_vars, "PCG_VISUALIZATION_DATA_DIR");
+                let visualization_data_dir = Self::process_string_var(&mut processed_vars, "PCG_VISUALIZATION_DATA_DIR");
+        let check_annotations = Self::process_bool_var(&mut processed_vars, "PCG_CHECK_ANNOTATIONS", false);
+        let emit_annotations = Self::process_bool_var(&mut processed_vars, "PCG_EMIT_ANNOTATIONS", false);
+        let check_function = Self::process_string_var(&mut processed_vars, "PCG_CHECK_FUNCTION");
+        let skip_function = Self::process_string_var(&mut processed_vars, "PCG_SKIP_FUNCTION");
 
         // Check for unknown PCG_ environment variables
         Self::check_for_unknown_vars(&processed_vars);
@@ -110,6 +118,10 @@ impl PcgSettings {
             dump_mir_dataflow,
             visualization,
             visualization_data_dir,
+            check_annotations,
+            emit_annotations,
+            check_function,
+            skip_function,
         }
     }
 
@@ -217,6 +229,10 @@ lazy_static! {
     pub static ref DUMP_MIR_DATAFLOW: bool = SETTINGS.dump_mir_dataflow;
     pub static ref VISUALIZATION: bool = SETTINGS.visualization;
     pub static ref VISUALIZATION_DATA_DIR: Option<String> = SETTINGS.visualization_data_dir.clone();
+    pub static ref CHECK_ANNOTATIONS: bool = SETTINGS.check_annotations;
+    pub static ref EMIT_ANNOTATIONS: bool = SETTINGS.emit_annotations;
+    pub static ref CHECK_FUNCTION: Option<String> = SETTINGS.check_function.clone();
+    pub static ref SKIP_FUNCTION: Option<String> = SETTINGS.skip_function.clone();
 }
 
 fn env_feature_enabled(feature: &str) -> Option<bool> {

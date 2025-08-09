@@ -49,7 +49,7 @@ use crate::visualization::bc_facts_graph::{
     RegionPrettyPrinter, region_inference_outlives, subset_anywhere, subset_at_location,
 };
 
-use super::{CompilerCtxt, Place, env_feature_enabled};
+use super::{CompilerCtxt, Place};
 
 pub struct PcgCallbacks;
 
@@ -70,7 +70,7 @@ impl driver::Callbacks for PcgCallbacks {
         // SAFETY: `config()` overrides the borrowck query to save the bodies
         // from `tcx` in `BODIES`
         unsafe {
-            run_pcg_on_all_fns(tcx, env_feature_enabled("PCG_POLONIUS").unwrap_or(false));
+            run_pcg_on_all_fns(tcx, *crate::utils::POLONIUS);
         }
         if in_cargo_crate() {
             Compilation::Continue
@@ -258,16 +258,16 @@ pub(crate) unsafe fn run_pcg_on_all_fns(tcx: TyCtxt<'_>, polonius: bool) {
             continue;
         }
         let item_name = tcx.def_path_str(def_id.to_def_id()).to_string();
-        if let Ok(function) = std::env::var("PCG_CHECK_FUNCTION")
-            && function != item_name
+        if let Some(ref function) = *crate::utils::CHECK_FUNCTION
+            && function != &item_name
         {
             tracing::debug!(
                 "Skipping function: {item_name} because PCG_CHECK_FUNCTION is set to {function}"
             );
             continue;
         }
-        if let Ok(function) = std::env::var("PCG_SKIP_FUNCTION")
-            && function == item_name
+        if let Some(ref function) = *crate::utils::SKIP_FUNCTION
+            && function == &item_name
         {
             tracing::info!(
                 "Skipping function: {item_name} because PCG_SKIP_FUNCTION is set to {function}"
@@ -501,8 +501,8 @@ impl<'mir, 'tcx> RustBorrowCheckerImpl<'mir, 'tcx> {
 }
 
 fn emit_and_check_annotations(item_name: String, output: &mut PcgOutput<'_, '_, &bumpalo::Bump>) {
-    let emit_pcg_annotations = env_feature_enabled("PCG_EMIT_ANNOTATIONS").unwrap_or(false);
-    let check_pcg_annotations = env_feature_enabled("PCG_CHECK_ANNOTATIONS").unwrap_or(false);
+    let emit_pcg_annotations = *crate::utils::EMIT_ANNOTATIONS;
+    let check_pcg_annotations = *crate::utils::CHECK_ANNOTATIONS;
 
     let ctxt = output.ctxt();
 
