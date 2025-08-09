@@ -161,6 +161,12 @@ fn test_selected_crates() {
 
     let test_cases = vec![
         SelectedCrateTestCase::new(
+            "syn",
+            "2.0.100",
+            Some("2025-03-13"),
+            TestCrateType::function("punctuated::Pair::<T, P>::value_mut", Some(6)),
+        ),
+        SelectedCrateTestCase::new(
             "pyo3-macros-backend",
             "0.24.0",
             Some("2025-03-13"),

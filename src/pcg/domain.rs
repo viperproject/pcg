@@ -331,15 +331,6 @@ impl<'tcx> HasValidityCheck<'tcx> for PcgRef<'_, 'tcx> {
             }
         }
 
-        for place in leaf_places {
-            if self.capabilities.get(place, ctxt).is_none() {
-                return Err(format!(
-                    "Leaf place {} does not have a capability and is not borrowed",
-                    place.to_short_string(ctxt)
-                ));
-            }
-        }
-
         for edge in self.borrow.graph.edges() {
             match edge.kind {
                 BorrowPcgEdgeKind::Deref(deref_edge) => {
