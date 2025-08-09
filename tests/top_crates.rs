@@ -2,7 +2,7 @@
 #![feature(let_chains)]
 use chrono::Local;
 use derive_more::Deref;
-use pcg::utils::TEST_CRATES_START_FROM;
+use pcg::utils::{TEST_CRATES_START_FROM, NUM_TEST_CRATES, TEST_CRATE_PARALLELISM};
 use rayon::prelude::*;
 use serde_derive::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -15,12 +15,12 @@ use crate::common::RunOnCrateResult;
 #[test]
 #[ignore]
 pub fn top_crates() {
-    let num_crates = std::env::var("PCG_NUM_TEST_CRATES").unwrap_or("500".to_string());
-    let parallelism = std::env::var("PCG_TEST_CRATE_PARALLELISM").unwrap_or("1".to_string());
+    let num_crates = NUM_TEST_CRATES.unwrap_or(500);
+    let parallelism = TEST_CRATE_PARALLELISM.unwrap_or(1);
     top_crates_parallel(
-        num_crates.parse().unwrap(),
+        num_crates,
         Some("2025-03-13"),
-        parallelism.parse().unwrap(),
+        parallelism,
     )
 }
 

@@ -57,6 +57,8 @@ pub struct PcgSettings {
     pub max_basic_blocks: Option<usize>,
     pub max_nodes: Option<usize>,
     pub test_crates_start_from: Option<usize>,
+    pub num_test_crates: Option<usize>,
+    pub test_crate_parallelism: Option<usize>,
     pub check_cycles: bool,
     pub validity_checks: bool,
     pub coupling_debug_imgcat: bool,
@@ -83,6 +85,8 @@ impl PcgSettings {
         let max_basic_blocks = Self::process_usize_var(&mut processed_vars, "PCG_MAX_BASIC_BLOCKS");
         let max_nodes = Self::process_usize_var(&mut processed_vars, "PCG_MAX_NODES");
         let test_crates_start_from = Self::process_usize_var(&mut processed_vars, "PCG_TEST_CRATES_START_FROM");
+        let num_test_crates = Self::process_usize_var(&mut processed_vars, "PCG_NUM_TEST_CRATES");
+        let test_crate_parallelism = Self::process_usize_var(&mut processed_vars, "PCG_TEST_CRATE_PARALLELISM");
         let check_cycles = Self::process_bool_var(&mut processed_vars, "PCG_CHECK_CYCLES", false);
         let validity_checks = Self::process_bool_var(&mut processed_vars, "PCG_VALIDITY_CHECKS", cfg!(debug_assertions));
         let coupling_debug_imgcat = Self::process_bool_var(&mut processed_vars, "PCG_COUPLING_DEBUG_IMGCAT", false);
@@ -107,6 +111,8 @@ impl PcgSettings {
             max_basic_blocks,
             max_nodes,
             test_crates_start_from,
+            num_test_crates,
+            test_crate_parallelism,
             check_cycles,
             validity_checks,
             coupling_debug_imgcat,
@@ -218,6 +224,8 @@ lazy_static! {
     pub static ref MAX_BASIC_BLOCKS: Option<usize> = SETTINGS.max_basic_blocks;
     pub static ref MAX_NODES: Option<usize> = SETTINGS.max_nodes;
     pub static ref TEST_CRATES_START_FROM: Option<usize> = SETTINGS.test_crates_start_from;
+    pub static ref NUM_TEST_CRATES: Option<usize> = SETTINGS.num_test_crates;
+    pub static ref TEST_CRATE_PARALLELISM: Option<usize> = SETTINGS.test_crate_parallelism;
     pub static ref CHECK_CYCLES: bool = SETTINGS.check_cycles;
     pub static ref VALIDITY_CHECKS: bool = SETTINGS.validity_checks;
     pub static ref COUPLING_DEBUG_IMGCAT: bool = SETTINGS.coupling_debug_imgcat;
