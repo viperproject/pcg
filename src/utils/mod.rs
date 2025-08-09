@@ -12,6 +12,7 @@ pub mod display;
 pub mod eval_stmt_data;
 pub(crate) mod incoming_states;
 pub(crate) mod initialized;
+pub(crate) mod iter;
 pub mod json;
 pub(crate) mod liveness;
 mod mutable;
@@ -20,6 +21,8 @@ pub mod place_snapshot;
 mod root_place;
 pub mod validity;
 pub mod visitor;
+use std::cmp::Ordering;
+
 pub use mutable::*;
 pub use place::*;
 pub use place_snapshot::*;
@@ -27,6 +30,7 @@ pub use repacker::*;
 pub(crate) mod data_structures;
 pub(crate) mod domain_data;
 pub(crate) mod repacker;
+use crate::rustc_interface::middle::mir::BasicBlock;
 
 #[cfg(test)]
 #[rustversion::since(2025-05-24)]
@@ -34,7 +38,22 @@ pub(crate) mod test;
 
 use lazy_static::lazy_static;
 
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
+pub enum DebugImgcat {
+    JoinLoop,
+    JoinOwned,
+    JoinBorrows,
+}
+
+impl DebugImgcat {
+    pub(crate) fn all() -> Vec<Self> {
+        vec![Self::JoinLoop, Self::JoinOwned, Self::JoinBorrows]
+    }
+}
+
 lazy_static! {
+    pub static ref SKIP_BODIES_WITH_LOOPS: bool =
+        env_feature_enabled("PCG_SKIP_BODIES_WITH_LOOPS").unwrap_or(false);
     pub static ref MAX_BASIC_BLOCKS: Option<usize> = match std::env::var("PCG_MAX_BASIC_BLOCKS") {
         Ok(val) => Some(val.parse().unwrap()),
         Err(_) => None,
@@ -43,18 +62,47 @@ lazy_static! {
         Ok(val) => Some(val.parse().unwrap()),
         Err(_) => None,
     };
-    pub static ref TEST_CRATES_START_FROM: Option<usize> = match std::env::var("PCG_TEST_CRATES_START_FROM") {
-        Ok(val) => Some(val.parse().unwrap()),
-        Err(_) => None,
-    };
-    pub static ref CHECK_CYCLES: bool =
-        env_feature_enabled("PCG_CHECK_CYCLES").unwrap_or(false);
+    pub static ref TEST_CRATES_START_FROM: Option<usize> =
+        match std::env::var("PCG_TEST_CRATES_START_FROM") {
+            Ok(val) => Some(val.parse().unwrap()),
+            Err(_) => None,
+        };
+    pub static ref CHECK_CYCLES: bool = env_feature_enabled("PCG_CHECK_CYCLES").unwrap_or(false);
     pub static ref VALIDITY_CHECKS: bool =
         env_feature_enabled("PCG_VALIDITY_CHECKS").unwrap_or(cfg!(debug_assertions));
     pub static ref COUPLING_DEBUG_IMGCAT: bool =
         env_feature_enabled("PCG_COUPLING_DEBUG_IMGCAT").unwrap_or(false);
-    pub static ref BORROWS_DEBUG_IMGCAT: bool =
-        env_feature_enabled("PCG_BORROWS_DEBUG_IMGCAT").unwrap_or(false);
+    pub static ref PCG_DEBUG_BLOCK: Option<BasicBlock> = match std::env::var("PCG_DEBUG_BLOCK") {
+        Ok(val) => {
+            if !val.starts_with("bb") {
+                panic!("PCG_DEBUG_BLOCK must start with 'bb'");
+            }
+            let block_id: usize = val[2..].parse().unwrap();
+            Some(block_id.into())
+        }
+        Err(_) => None,
+    };
+    pub static ref DEBUG_IMGCAT: Vec<DebugImgcat> = match std::env::var("PCG_DEBUG_IMGCAT") {
+        Ok(val) => {
+            val.split(',')
+                .map(|s| s.trim())
+                .flat_map(|s| {
+                    if s.to_lowercase() == "true" || s.to_lowercase() == "all" {
+                        DebugImgcat::all()
+                    } else if s.to_lowercase() == "join_loop" {
+                        vec![DebugImgcat::JoinLoop]
+                    } else if s.to_lowercase() == "join_owned" {
+                        vec![DebugImgcat::JoinOwned]
+                    } else if s.to_lowercase() == "join_borrows" {
+                        vec![DebugImgcat::JoinBorrows]
+                    } else {
+                        panic!("Unexpected value for PCG_DEBUG_IMGCAT: {}", s);
+                    }
+                })
+                .collect()
+        }
+        Err(_) => vec![],
+    };
     pub static ref VALIDITY_CHECKS_WARN_ONLY: bool =
         env_feature_enabled("PCG_VALIDITY_CHECKS_WARN_ONLY").unwrap_or(false);
     pub static ref PANIC_ON_ERROR: bool =
@@ -73,7 +121,9 @@ fn env_feature_enabled(feature: &'static str) -> Option<bool> {
                 match val.as_str() {
                     "true" | "1" => Some(true),
                     "false" | "0" => Some(false),
-                    other => panic!("Environment variable {feature} has unexpected value: '{other}'. Expected one of: true, false, 1, 0, or empty string")
+                    other => panic!(
+                        "Environment variable {feature} has unexpected value: '{other}'. Expected one of: true, false, 1, 0, or empty string"
+                    ),
                 }
             }
         }

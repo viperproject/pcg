@@ -6,15 +6,15 @@ use crate::{
         graph::materialize::{MaterializedEdge, SyntheticEdge},
     },
     free_pcs::CapabilityKind,
-    pcg::{MaybeHasLocation, PCGNode, PCGNodeLike},
+    pcg::{MaybeHasLocation, PCGNodeLike, PcgNode},
     rustc_interface::middle::mir,
     utils::{
-        display::DisplayWithCompilerCtxt, maybe_old::MaybeOldPlace, maybe_remote::MaybeRemotePlace,
-        CompilerCtxt, HasPlace, Place,
+        CompilerCtxt, HasPlace, Place, display::DisplayWithCompilerCtxt,
+        maybe_old::MaybeLabelledPlace, maybe_remote::MaybeRemotePlace,
     },
 };
 
-use super::{graph_constructor::GraphConstructor, GraphEdge, NodeId};
+use super::{GraphEdge, NodeId, graph_constructor::GraphConstructor};
 
 pub(super) trait CapabilityGetter<'tcx> {
     fn get(&self, node: Place<'tcx>) -> Option<CapabilityKind>;
@@ -22,7 +22,7 @@ pub(super) trait CapabilityGetter<'tcx> {
 
 pub(super) trait Grapher<'state, 'mir: 'state, 'tcx: 'mir> {
     fn capability_getter(&self) -> impl CapabilityGetter<'tcx> + 'state;
-    fn insert_maybe_old_place(&mut self, place: MaybeOldPlace<'tcx>) -> NodeId {
+    fn insert_maybe_old_place(&mut self, place: MaybeLabelledPlace<'tcx>) -> NodeId {
         let capability_getter = self.capability_getter();
         let constructor = self.constructor();
         constructor.insert_place_node(place.place(), place.location(), &capability_getter)
@@ -34,10 +34,10 @@ pub(super) trait Grapher<'state, 'mir: 'state, 'tcx: 'mir> {
             MaybeRemotePlace::Remote(local) => constructor.insert_remote_node(local),
         }
     }
-    fn insert_pcg_node(&mut self, node: PCGNode<'tcx>) -> NodeId {
+    fn insert_pcg_node(&mut self, node: PcgNode<'tcx>) -> NodeId {
         match node {
-            PCGNode::Place(place) => self.insert_maybe_remote_place(place),
-            PCGNode::RegionProjection(rp) => self.constructor().insert_region_projection_node(rp),
+            PcgNode::Place(place) => self.insert_maybe_remote_place(place),
+            PcgNode::LifetimeProjection(rp) => self.constructor().insert_region_projection_node(rp),
         }
     }
 
@@ -77,6 +77,17 @@ pub(super) trait Grapher<'state, 'mir: 'state, 'tcx: 'mir> {
     ) {
         let path_conditions = edge.conditions().to_short_string(self.ctxt());
         match edge.kind() {
+            BorrowPcgEdgeKind::Deref(deref_edge) => {
+                let deref_place = self.insert_pcg_node(deref_edge.deref_place.into());
+                for blocked in deref_edge.blocked_nodes(self.ctxt()) {
+                    let blocked = self.insert_pcg_node(blocked);
+                    self.constructor().edges.insert(GraphEdge::DerefExpansion {
+                        source: blocked,
+                        target: deref_place,
+                        path_conditions: path_conditions.clone(),
+                    });
+                }
+            }
             BorrowPcgEdgeKind::BorrowPcgExpansion(deref_expansion) => {
                 for blocked in deref_expansion.blocked_nodes(self.ctxt()) {
                     let blocked_graph_node = self.insert_pcg_node(blocked);
@@ -93,7 +104,7 @@ pub(super) trait Grapher<'state, 'mir: 'state, 'tcx: 'mir> {
             BorrowPcgEdgeKind::Borrow(borrow) => {
                 let borrowed_place = self.insert_maybe_remote_place(borrow.blocked_place());
                 let assigned_region_projection = borrow
-                    .assigned_region_projection(self.ctxt())
+                    .assigned_lifetime_projection(self.ctxt())
                     .to_region_projection();
                 let assigned_rp_node = self
                     .constructor()

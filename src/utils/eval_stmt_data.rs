@@ -1,8 +1,7 @@
-
 use crate::pcg::EvalStmtPhase;
+use crate::utils::CompilerCtxt;
 use crate::utils::json::ToJsonWithCompilerCtxt;
 use crate::utils::validity::HasValidityCheck;
-use crate::utils::CompilerCtxt;
 use serde_json::json;
 
 #[derive(Clone, PartialEq, Eq, Debug)]
@@ -24,7 +23,9 @@ impl<T> EvalStmtData<T> {
     }
 }
 
-impl<'tcx, BC: Copy, T: ToJsonWithCompilerCtxt<'tcx, BC>> ToJsonWithCompilerCtxt<'tcx, BC> for EvalStmtData<T> {
+impl<'tcx, BC: Copy, T: ToJsonWithCompilerCtxt<'tcx, BC>> ToJsonWithCompilerCtxt<'tcx, BC>
+    for EvalStmtData<T>
+{
     fn to_json(&self, ctxt: CompilerCtxt<'_, 'tcx, BC>) -> serde_json::Value {
         json!({
             "pre_operands": self.pre_operands.to_json(ctxt),

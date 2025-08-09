@@ -1,9 +1,9 @@
 use crate::borrow_checker::BorrowCheckerInterface;
-use crate::borrow_pcg::has_pcs_elem::PlaceLabeller;
-use crate::pcg::PCGNode;
+use crate::borrow_pcg::has_pcs_elem::{LabelNodeContext, PlaceLabeller};
+use crate::pcg::PcgNode;
+use crate::rustc_interface::middle::mir::ProjectionElem;
 use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::{CompilerCtxt, Place};
-use crate::rustc_interface::middle::mir::ProjectionElem;
 
 use super::borrow_pcg_edge::{BlockedNode, LocalNode};
 
@@ -14,7 +14,7 @@ pub trait EdgeData<'tcx> {
     fn blocked_nodes<'slf, BC: Copy>(
         &'slf self,
         ctxt: CompilerCtxt<'_, 'tcx, BC>,
-    ) -> Box<dyn std::iter::Iterator<Item = PCGNode<'tcx>> + 'slf>
+    ) -> Box<dyn std::iter::Iterator<Item = PcgNode<'tcx>> + 'slf>
     where
         'tcx: 'slf;
 
@@ -38,7 +38,7 @@ pub trait EdgeData<'tcx> {
     fn nodes<'slf, 'mir: 'slf, BC: Copy + 'slf>(
         &'slf self,
         ctxt: CompilerCtxt<'mir, 'tcx, BC>,
-    ) -> Box<dyn std::iter::Iterator<Item = PCGNode<'tcx>> + 'slf>
+    ) -> Box<dyn std::iter::Iterator<Item = PcgNode<'tcx>> + 'slf>
     where
         'tcx: 'slf,
     {
@@ -50,8 +50,8 @@ pub trait EdgeData<'tcx> {
 
     fn references_place(&self, place: Place<'tcx>, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
         self.nodes(ctxt).any(|n| match n {
-            PCGNode::Place(p) => p.as_current_place() == Some(place),
-            PCGNode::RegionProjection(rp) => rp.base.as_current_place() == Some(place),
+            PcgNode::Place(p) => p.as_current_place() == Some(place),
+            PcgNode::LifetimeProjection(rp) => rp.base.as_current_place() == Some(place),
         })
     }
 }
@@ -59,8 +59,11 @@ pub trait EdgeData<'tcx> {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum LabelPlacePredicate<'tcx> {
     Exact(Place<'tcx>),
-    PrefixWithoutIndirectionOrPostfix(Place<'tcx>),
-    StrictPostfix(Place<'tcx>),
+    Postfix {
+        place: Place<'tcx>,
+        label_place_in_expansion: bool,
+    },
+    DerefPostfixOf(Place<'tcx>),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -77,11 +80,11 @@ impl<'tcx, 'a> DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx
         ctxt: CompilerCtxt<'_, 'tcx, &'a dyn BorrowCheckerInterface<'tcx>>,
     ) -> String {
         match self {
-            LabelPlacePredicate::PrefixWithoutIndirectionOrPostfix(predicate_place) => {
-                predicate_place.to_short_string(ctxt) // As a hack for now so debug output doesn't change
+            LabelPlacePredicate::Postfix { place, .. } => {
+                place.to_short_string(ctxt) // As a hack for now so debug output doesn't change
             }
-            LabelPlacePredicate::StrictPostfix(place) => {
-                format!("strict postfix of {}", place.to_short_string(ctxt))
+            LabelPlacePredicate::DerefPostfixOf(place) => {
+                format!("deref postfix of {}", place.to_short_string(ctxt))
             }
             LabelPlacePredicate::Exact(place) => {
                 format!("exact {}", place.to_short_string(ctxt))
@@ -91,31 +94,42 @@ impl<'tcx, 'a> DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx
 }
 
 impl<'tcx> LabelPlacePredicate<'tcx> {
-    pub(crate) fn applies_to(&self, candidate: Place<'tcx>, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
+    pub(crate) fn applies_to(
+        &self,
+        candidate: Place<'tcx>,
+        label_context: LabelNodeContext,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
         match self {
-            LabelPlacePredicate::PrefixWithoutIndirectionOrPostfix(predicate_place) => {
-                if predicate_place.is_prefix_of(candidate) {
-                    true
-                } else if candidate.is_prefix_of(*predicate_place) {
-                    for p in predicate_place
-                        .iter_places(ctxt)
-                        .into_iter()
-                        .skip(candidate.projection.len() + 1)
-                    {
-                        if p.parent_place().unwrap().is_ref(ctxt) && p.is_deref() {
-                            return false;
-                        }
-                    }
-                    true
+            LabelPlacePredicate::Postfix {
+                place: predicate_place,
+                label_place_in_expansion,
+            } => {
+                if candidate == *predicate_place
+                    && label_context == LabelNodeContext::TargetOfExpansion
+                {
+                    return *label_place_in_expansion;
                 } else {
-                    false
+                    predicate_place.is_prefix_of(candidate)
                 }
             }
-            LabelPlacePredicate::StrictPostfix(place) => {
+            LabelPlacePredicate::DerefPostfixOf(place) => {
                 if let Some(iter) = candidate.iter_projections_after(*place, ctxt) {
-                    for (place, proj) in iter {
-                        if matches!(proj, ProjectionElem::Deref) && place.is_shared_ref(ctxt) {
+                    let mut seen_deref_target = false;
+                    // If we want to label deref postfixes of e.g. "foo"
+                    // and we're looking at the deref edge foo.baz -> *foo.baz,
+                    // we don't want to label *this* instance, but all expansions
+                    // from *foo.baz should be labelled
+                    for (p, proj) in iter {
+                        if seen_deref_target {
                             return true;
+                        }
+                        if matches!(proj, ProjectionElem::Deref) && p.is_ref(ctxt) {
+                            if label_context == LabelNodeContext::TargetOfExpansion {
+                                seen_deref_target = true;
+                            } else {
+                                return true;
+                            }
                         }
                     }
                 }
@@ -151,7 +165,7 @@ macro_rules! edgedata_enum {
             fn blocked_nodes<'slf, BC: Copy>(
                 &'slf self,
                 repacker: CompilerCtxt<'_, $tcx, BC>,
-            ) -> Box<dyn std::iter::Iterator<Item = PCGNode<'tcx>> + 'slf>
+            ) -> Box<dyn std::iter::Iterator<Item = PcgNode<'tcx>> + 'slf>
             where
                 'tcx: 'slf,
             {
@@ -271,21 +285,6 @@ macro_rules! edgedata_enum {
                 }
             }
         }
-
-        impl<'tcx, T> HasPcgElems<T> for $enum_name<$tcx>
-            where
-                $(
-                    $inner_type: HasPcgElems<T>,
-                )+
-            {
-                fn pcg_elems(&mut self) -> Vec<&mut T> {
-                    match self {
-                        $(
-                            $enum_name::$variant_name(inner) => inner.pcg_elems(),
-                        )+
-                    }
-                }
-            }
     }
 }
 pub(crate) use edgedata_enum;

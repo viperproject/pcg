@@ -1,32 +1,30 @@
 use axum::{
     body::Body,
     extract::Multipart,
-    response::{IntoResponse, Redirect, Response, Html},
+    response::{Html, IntoResponse, Redirect, Response},
     routing::{get, post},
     Router,
 };
+use hyper::StatusCode;
 use std::{
+    backtrace::Backtrace,
+    error::Error,
     fs,
+    net::SocketAddr,
     path::{Path, PathBuf},
     process::Command,
-    net::SocketAddr,
-    error::Error,
-    backtrace::Backtrace,
 };
 use tempfile::TempDir;
-use tower_http::services::ServeDir;
-use tracing::{info, debug, Level};
-use tracing_subscriber::FmtSubscriber;
-use hyper::StatusCode;
 use tokio::net::TcpListener;
+use tower_http::services::ServeDir;
+use tracing::{debug, info, Level};
+use tracing_subscriber::FmtSubscriber;
 use uuid::Uuid;
 
 #[tokio::main]
 async fn main() {
     // Initialize tracing with debug level
-    let subscriber = FmtSubscriber::builder()
-        .with_max_level(Level::DEBUG)
-        .init();
+    let subscriber = FmtSubscriber::builder().with_max_level(Level::DEBUG).init();
 
     // Ensure tmp directory exists
     fs::create_dir_all("tmp").expect("Failed to create tmp directory");
@@ -43,8 +41,8 @@ async fn main() {
 }
 
 async fn serve_upload_form() -> impl IntoResponse {
-    let html_content = fs::read_to_string("templates/index.html")
-        .expect("Failed to read upload form template");
+    let html_content =
+        fs::read_to_string("templates/index.html").expect("Failed to read upload form template");
     Html(html_content)
 }
 
@@ -57,6 +55,38 @@ async fn handle_upload(mut multipart: Multipart) -> Response {
             (StatusCode::INTERNAL_SERVER_ERROR, error_with_trace).into_response()
         }
     }
+}
+
+fn find_pcg_bin() -> Result<PathBuf, String> {
+    let to_try = vec![
+        PathBuf::from("pcg_bin"),
+        PathBuf::from("../target/debug/pcg_bin"),
+    ];
+
+    for path in to_try {
+        if path.exists() {
+            tracing::info!("Found pcg_bin at {:?}", path);
+            return Ok(path);
+        }
+    }
+
+    Err("pcg_bin not found".to_string())
+}
+
+fn find_pcg_visualization_dir() -> Result<PathBuf, String> {
+    let to_try = vec![
+        PathBuf::from("visualization"),
+        PathBuf::from("../visualization"),
+    ];
+
+    for path in to_try {
+        if path.exists() {
+            tracing::info!("Found visualization directory at {:?}", path);
+            return Ok(path);
+        }
+    }
+
+    Err("visualization directory not found".to_string())
 }
 
 async fn handle_upload_inner(mut multipart: Multipart) -> Result<Response, String> {
@@ -89,12 +119,14 @@ async fn handle_upload_inner(mut multipart: Multipart) -> Result<Response, Strin
             }
             "file" => {
                 if input_method == "file" {
-                    let file_name = field.file_name()
-                        .ok_or("No file name")?
-                        .to_string();
+                    let file_name = field.file_name().ok_or("No file name")?.to_string();
 
                     if !file_name.ends_with(".rs") {
-                        return Ok((StatusCode::BAD_REQUEST, "Only Rust files (.rs) are accepted").into_response());
+                        return Ok((
+                            StatusCode::BAD_REQUEST,
+                            "Only Rust files (.rs) are accepted",
+                        )
+                            .into_response());
                     }
 
                     let contents = field.bytes().await.map_err(|e| e.to_string())?;
@@ -130,7 +162,8 @@ async fn handle_upload_inner(mut multipart: Multipart) -> Result<Response, Strin
     debug!("Using absolute data dir: {:?}", abs_data_dir);
 
     // Run pcg_bin with visualization flags
-    let output = Command::new("./pcg_bin")
+    let pcg_bin = find_pcg_bin()?;
+    let output = Command::new(pcg_bin)
         .env("PCG_VISUALIZATION", "true")
         .env("PCG_VISUALIZATION_DATA_DIR", abs_data_dir.to_str().unwrap())
         .arg(abs_file_path)
@@ -142,27 +175,27 @@ async fn handle_upload_inner(mut multipart: Multipart) -> Result<Response, Strin
         let stderr = String::from_utf8_lossy(&output.stderr);
         let error_message = format!(
             "PCG analysis failed:\n\nStdout:\n{}\n\nStderr:\n{}",
-            stdout,
-            stderr
+            stdout, stderr
         );
         return Ok((StatusCode::INTERNAL_SERVER_ERROR, error_message).into_response());
     }
 
+    let visualization_dir = find_pcg_visualization_dir()?;
+
     // Copy visualization files
-    copy_dir(
-        PathBuf::from("visualization/dist"),
-        unique_dir.join("dist"),
-    )
-    .map_err(|e| e.to_string())?;
+    copy_dir(visualization_dir.join("dist"), unique_dir.join("dist")).map_err(|e| e.to_string())?;
 
     fs::copy(
-        "visualization/index.html",
+        visualization_dir.join("index.html"),
         unique_dir.join("index.html"),
     )
     .map_err(|e| e.to_string())?;
 
     // Redirect to the visualization
-    let redirect_path = format!("/tmp/{}/index.html", unique_dir.file_name().unwrap().to_str().unwrap());
+    let redirect_path = format!(
+        "/tmp/{}/index.html",
+        unique_dir.file_name().unwrap().to_str().unwrap()
+    );
     Ok(Redirect::to(&redirect_path).into_response())
 }
 

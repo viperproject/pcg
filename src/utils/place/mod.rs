@@ -18,6 +18,7 @@ use crate::{
     free_pcs::RepackGuide,
     pcg::{PcgError, PcgUnsupportedError},
     rustc_interface::{
+        VariantIdx,
         ast::Mutability,
         data_structures::fx::FxHasher,
         index::IndexVec,
@@ -25,7 +26,6 @@ use crate::{
             mir::{Local, Place as MirPlace, PlaceElem, PlaceRef, ProjectionElem},
             ty::{self, Ty, TyKind},
         },
-        VariantIdx,
     },
     utils::data_structures::HashSet,
 };
@@ -33,18 +33,18 @@ use crate::{
 #[cfg(feature = "debug_info")]
 use super::debug_info::DebugInfo;
 
-use super::{display::DisplayWithCompilerCtxt, validity::HasValidityCheck, CompilerCtxt};
+use super::{CompilerCtxt, display::DisplayWithCompilerCtxt, validity::HasValidityCheck};
 use crate::utils::json::ToJsonWithCompilerCtxt;
 use crate::{
     borrow_pcg::{
         borrow_pcg_edge::LocalNode,
         region_projection::{
-            MaybeRemoteRegionProjectionBase, PcgRegion, RegionIdx, RegionProjection,
+            LifetimeProjection, MaybeRemoteRegionProjectionBase, PcgRegion, RegionIdx,
             RegionProjectionBaseLike,
         },
         visitor::extract_regions,
     },
-    pcg::{LocalNodeLike, PCGNode, PCGNodeLike},
+    pcg::{LocalNodeLike, PCGNodeLike, PcgNode},
 };
 
 pub mod corrected;
@@ -104,7 +104,7 @@ impl<'tcx> LocalNodeLike<'tcx> for Place<'tcx> {
 }
 
 impl<'tcx> PCGNodeLike<'tcx> for Place<'tcx> {
-    fn to_pcg_node<C: Copy>(self, _repacker: CompilerCtxt<'_, 'tcx, C>) -> PCGNode<'tcx> {
+    fn to_pcg_node<C: Copy>(self, _repacker: CompilerCtxt<'_, 'tcx, C>) -> PcgNode<'tcx> {
         self.into()
     }
 }
@@ -139,6 +139,8 @@ impl<'tcx> HasValidityCheck<'tcx> for Place<'tcx> {
 
 /// A trait for PCG nodes that contain a single place.
 pub trait HasPlace<'tcx>: Sized {
+    fn is_place(&self) -> bool;
+
     fn place(&self) -> Place<'tcx>;
 
     fn place_mut(&mut self) -> &mut Place<'tcx>;
@@ -179,6 +181,10 @@ impl<'tcx> HasPlace<'tcx> for Place<'tcx> {
             .iter_projections()
             .map(|(place, elem)| (place.into(), elem))
             .collect()
+    }
+
+    fn is_place(&self) -> bool {
+        true
     }
 }
 
@@ -257,16 +263,6 @@ impl<'tcx> Place<'tcx> {
         left.zip(right).map(|(e1, e2)| (elem_eq((e1, e2)), e1, e2))
     }
 
-    pub(crate) fn iter_places<C: Copy>(self, repacker: CompilerCtxt<'_, 'tcx, C>) -> Vec<Self> {
-        let mut places = self
-            .iter_projections(repacker)
-            .into_iter()
-            .map(|(place, _)| place)
-            .collect::<Vec<_>>();
-        places.push(self);
-        places
-    }
-
     pub(crate) fn parent_place(self) -> Option<Self> {
         let (prefix, _) = self.last_projection()?;
         Some(Place::new(prefix.local, prefix.projection))
@@ -323,21 +319,21 @@ impl<'tcx> Place<'tcx> {
     pub(crate) fn expansion_places(
         self,
         expansion: &PlaceExpansion<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx>,
-    ) -> Vec<Place<'tcx>> {
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> std::result::Result<Vec<Place<'tcx>>, PcgUnsupportedError> {
         let mut places = Vec::new();
         for elem in expansion.elems() {
-            places.push(self.project_deeper(elem, repacker).unwrap());
+            places.push(self.project_deeper(elem, ctxt)?);
         }
-        places
+        Ok(places)
     }
 
-    pub(crate) fn base_region_projection<C: Copy>(
+    pub(crate) fn base_lifetime_projection<C: Copy>(
         self,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
-    ) -> Option<RegionProjection<'tcx, Self>> {
-        self.ty_region(repacker)
-            .map(|region| RegionProjection::new(region, self, None, repacker).unwrap())
+        ctxt: CompilerCtxt<'_, 'tcx, C>,
+    ) -> Option<LifetimeProjection<'tcx, Self>> {
+        self.ty_region(ctxt)
+            .map(|region| LifetimeProjection::new(region, self, None, ctxt).unwrap())
     }
 
     pub fn projection(&self) -> &'tcx [PlaceElem<'tcx>] {
@@ -464,12 +460,8 @@ impl<'tcx> Place<'tcx> {
         &self,
         idx: RegionIdx,
         repacker: CompilerCtxt<'_, 'tcx>,
-    ) -> RegionProjection<'tcx, Self> {
-        self.region_projections(repacker)[idx]
-    }
-
-    pub(crate) fn has_region_projections(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
-        !self.region_projections(ctxt).is_empty()
+    ) -> LifetimeProjection<'tcx, Self> {
+        self.lifetime_projections(repacker)[idx]
     }
 
     pub fn regions<C: Copy>(
@@ -479,14 +471,14 @@ impl<'tcx> Place<'tcx> {
         extract_regions(self.ty(ctxt).ty, ctxt)
     }
 
-    pub(crate) fn region_projections<C: Copy>(
+    pub(crate) fn lifetime_projections<C: Copy>(
         &self,
         ctxt: CompilerCtxt<'_, 'tcx, C>,
-    ) -> IndexVec<RegionIdx, RegionProjection<'tcx, Self>> {
+    ) -> IndexVec<RegionIdx, LifetimeProjection<'tcx, Self>> {
         let place = self.with_inherent_region(ctxt);
         extract_regions(place.ty(ctxt).ty, ctxt)
             .iter()
-            .map(|region| RegionProjection::new(*region, place, None, ctxt).unwrap())
+            .map(|region| LifetimeProjection::new(*region, place, None, ctxt).unwrap())
             .collect()
     }
 
@@ -611,6 +603,10 @@ impl<'tcx> Place<'tcx> {
             .unwrap_or(false)
     }
 
+    pub(crate) fn is_strict_prefix_of(self, place: Self) -> bool {
+        self != place && self.is_prefix_of(place)
+    }
+
     /// Check if the place `self` is an exact prefix of `place`. For example:
     ///
     /// +   `is_prefix(x.f, x.f) == false`
@@ -682,6 +678,17 @@ impl<'tcx> Place<'tcx> {
         } else {
             None
         }
+    }
+
+    pub(crate) fn projects_indirection_from(
+        self,
+        other: Self,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
+        let Some(mut projections_after) = self.iter_projections_after(other, ctxt) else {
+            return false;
+        };
+        projections_after.any(|(p, elem)| matches!(elem, ProjectionElem::Deref) && p.is_ref(ctxt))
     }
 
     pub(crate) fn iter_projections_after(

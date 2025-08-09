@@ -9,6 +9,8 @@ export type MirStmt = {
   stmt: string;
   loans_invalidated_start: string[];
   loans_invalidated_mid: string[];
+  borrows_in_scope_start: string[];
+  borrows_in_scope_mid: string[];
 };
 
 export type MirGraphNode = {

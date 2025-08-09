@@ -1,7 +1,11 @@
 use itertools::Itertools;
 
 use crate::{
-    borrow_pcg::borrow_pcg_expansion::BorrowPcgExpansion,
+    borrow_pcg::{
+        borrow_pcg_expansion::BorrowPcgExpansion,
+        has_pcs_elem::LabelLifetimeProjectionPredicate,
+        state::{BorrowStateMutRef, BorrowsStateLike},
+    },
     free_pcs::CapabilityKind,
     pcg::PcgError,
     pcg_validity_assert,
@@ -11,11 +15,10 @@ use crate::{
         display::{DebugLines, DisplayWithCompilerCtxt},
         validity::HasValidityCheck,
     },
-    validity_checks_enabled,
 };
 
 pub(crate) trait PlaceCapabilitiesInterface<'tcx> {
-    fn get(&self, place: Place<'tcx>) -> Option<CapabilityKind>;
+    fn get(&self, place: Place<'tcx>, ctxt: CompilerCtxt<'_, 'tcx>) -> Option<CapabilityKind>;
     fn insert(
         &mut self,
         place: Place<'tcx>,
@@ -30,7 +33,7 @@ pub(crate) trait PlaceCapabilitiesInterface<'tcx> {
 }
 
 impl<'tcx> PlaceCapabilitiesInterface<'tcx> for PlaceCapabilities<'tcx> {
-    fn get(&self, place: Place<'tcx>) -> Option<CapabilityKind> {
+    fn get(&self, place: Place<'tcx>, _ctxt: CompilerCtxt<'_, 'tcx>) -> Option<CapabilityKind> {
         self.0.get(&place).copied()
     }
 
@@ -72,6 +75,48 @@ impl<'tcx> HasValidityCheck<'tcx> for PlaceCapabilities<'tcx> {
                 ));
             }
         }
+        for (local, _) in ctxt.body().local_decls.iter_enumerated() {
+            let caps_from_local = self
+                .iter()
+                .filter(|(place, _)| place.local == local)
+                .sorted_by_key(|(place, _)| place.projection.len())
+                .collect_vec();
+            if caps_from_local.is_empty() {
+                continue;
+            }
+            fn allowed_child_cap<'tcx>(
+                parent_place: Place<'tcx>,
+                parent_cap: CapabilityKind,
+                child_cap: CapabilityKind,
+                ctxt: CompilerCtxt<'_, 'tcx>,
+            ) -> bool {
+                match (parent_cap, child_cap) {
+                    (CapabilityKind::Write, _) if parent_place.ref_mutability(ctxt).is_some() => {
+                        true
+                    }
+                    (CapabilityKind::Read, CapabilityKind::Read) => true,
+                    _ => false,
+                }
+            }
+            for i in 0..caps_from_local.len() - 1 {
+                let (place, parent_cap) = caps_from_local[i];
+                for j in i + 1..caps_from_local.len() {
+                    let (other_place, other_cap) = caps_from_local[j];
+                    if place.is_prefix_of(other_place)
+                        && !allowed_child_cap(place, parent_cap, other_cap, ctxt)
+                    {
+                        return Err(format!(
+                            "Place ({}: {}) with capability {:?} has a child {} with capability {:?} which is not allowed",
+                            place.to_short_string(ctxt),
+                            place.ty(ctxt).ty,
+                            parent_cap,
+                            other_place.to_short_string(ctxt),
+                            other_cap
+                        ));
+                    }
+                }
+            }
+        }
         Ok(())
     }
 }
@@ -89,7 +134,9 @@ impl<'tcx> DebugLines<CompilerCtxt<'_, 'tcx>> for PlaceCapabilities<'tcx> {
 
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum BlockType {
-    DerefExclusive,
+    /// Derefing a mutable reference, *not* in the context of a two-phase borrow
+    /// of otherwise just for read. The reference will be downgraded to w.
+    DerefRefExclusive,
     Read,
     Other,
 }
@@ -97,7 +144,7 @@ pub(crate) enum BlockType {
 impl BlockType {
     pub(crate) fn blocked_place_retained_capability(self) -> Option<CapabilityKind> {
         match self {
-            BlockType::DerefExclusive => Some(CapabilityKind::Write),
+            BlockType::DerefRefExclusive => Some(CapabilityKind::Write),
             BlockType::Read => Some(CapabilityKind::Read),
             BlockType::Other => None,
         }
@@ -109,7 +156,7 @@ impl BlockType {
         _ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> CapabilityKind {
         match self {
-            BlockType::DerefExclusive => CapabilityKind::Exclusive,
+            BlockType::DerefRefExclusive => CapabilityKind::Exclusive,
             BlockType::Read => CapabilityKind::Read,
             BlockType::Other => blocked_capability,
         }
@@ -117,6 +164,95 @@ impl BlockType {
 }
 
 impl<'tcx> PlaceCapabilities<'tcx> {
+    pub(crate) fn capabilities_for_strict_postfixes_of(
+        &self,
+        place: Place<'tcx>,
+    ) -> impl Iterator<Item = (Place<'tcx>, CapabilityKind)> + '_ {
+        self.0.iter().filter_map(move |(p, c)| {
+            if place.is_strict_prefix_of(*p) {
+                Some((*p, *c))
+            } else {
+                None
+            }
+        })
+    }
+    pub(crate) fn retain(&mut self, predicate: impl Fn(&Place<'tcx>, &CapabilityKind) -> bool) {
+        self.0.retain(|place, cap| predicate(place, cap));
+    }
+    pub(crate) fn regain_loaned_capability(
+        &mut self,
+        place: Place<'tcx>,
+        capability: CapabilityKind,
+        mut borrows: BorrowStateMutRef<'_, 'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> Result<(), PcgError> {
+        self.insert((*place).into(), capability, ctxt);
+        if capability == CapabilityKind::Exclusive {
+            borrows.label_region_projection(
+                &LabelLifetimeProjectionPredicate::AllPlaceholderPostfixes(place),
+                None,
+                ctxt,
+            );
+        }
+        Ok(())
+    }
+    pub(crate) fn uniform_capability(
+        &self,
+        mut places: impl Iterator<Item = Place<'tcx>>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> Option<CapabilityKind> {
+        let cap = self.get(places.next()?, ctxt)?;
+        for p in places {
+            if self.get(p, ctxt) != Some(cap) {
+                return None;
+            }
+        }
+        Some(cap)
+    }
+    pub(crate) fn remove_all_postfixes(
+        &mut self,
+        place: Place<'tcx>,
+        _ctxt: CompilerCtxt<'_, 'tcx>,
+    ) {
+        self.0.retain(|p, _| !place.is_prefix_of(*p));
+    }
+
+    pub(crate) fn remove_all_strict_postfixes(
+        &mut self,
+        place: Place<'tcx>,
+        _ctxt: CompilerCtxt<'_, 'tcx>,
+    ) {
+        self.0.retain(|p, _| !place.is_strict_prefix_of(*p));
+    }
+
+    pub(crate) fn remove_all_for_local(
+        &mut self,
+        local: mir::Local,
+        _ctxt: CompilerCtxt<'_, 'tcx>,
+    ) {
+        self.0.retain(|place, _| place.local != local);
+    }
+
+    pub(crate) fn update_for_deref(
+        &mut self,
+        ref_place: Place<'tcx>,
+        capability: CapabilityKind,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> Result<bool, PcgError> {
+        if capability.is_read() || ref_place.is_shared_ref(ctxt) {
+            self.insert(ref_place, CapabilityKind::Read, ctxt);
+            self.insert(ref_place.project_deref(ctxt), CapabilityKind::Read, ctxt);
+        } else {
+            self.insert(ref_place, CapabilityKind::Write, ctxt);
+            self.insert(
+                ref_place.project_deref(ctxt),
+                CapabilityKind::Exclusive,
+                ctxt,
+            );
+        }
+        Ok(true)
+    }
+
     #[tracing::instrument(skip(self, expansion, ctxt))]
     pub(crate) fn update_for_expansion(
         &mut self,
@@ -128,7 +264,7 @@ impl<'tcx> PlaceCapabilities<'tcx> {
         // We dont change if only expanding region projections
         if expansion.base.is_place() {
             let base = expansion.base;
-            let base_capability = self.get(base.place());
+            let base_capability = self.get(base.place(), ctxt);
             let expanded_capability = if let Some(capability) = base_capability {
                 block_type.expansion_capability(base.place(), capability, ctxt)
             } else {
@@ -142,13 +278,6 @@ impl<'tcx> PlaceCapabilities<'tcx> {
                 // panic!("Base capability should be set");
             };
 
-            if validity_checks_enabled() && matches!(block_type, BlockType::DerefExclusive) {
-                pcg_validity_assert!(
-                    !base.place().projects_shared_ref(ctxt),
-                    "Updating for DerefExclusive block, but place {} projects a shared ref",
-                    base.place().to_short_string(ctxt)
-                );
-            }
             changed |= self.update_capabilities_for_block_of_place(base.place(), block_type, ctxt);
 
             for p in expansion.expansion.iter() {
@@ -171,8 +300,8 @@ impl<'tcx> PlaceCapabilities<'tcx> {
         }
     }
 
-    pub fn is_exclusive(&self, place: Place<'tcx>) -> bool {
-        self.get(place)
+    pub fn is_exclusive(&self, place: Place<'tcx>, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
+        self.get(place, ctxt)
             .map(|c| c == CapabilityKind::Exclusive)
             .unwrap_or(false)
     }
@@ -197,6 +326,7 @@ impl<'tcx> PlaceCapabilities<'tcx> {
 
     pub(crate) fn join(&mut self, other: &Self) -> bool {
         let mut changed = false;
+        self.0.retain(|place, _| other.0.contains_key(place));
         for (place, other_capability) in other.iter() {
             if let Some(self_capability) = self.0.get(&place) {
                 if let Some(c) = self_capability.minimum(other_capability) {

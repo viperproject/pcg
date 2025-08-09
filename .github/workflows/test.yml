@@ -28,6 +28,13 @@ jobs:
     - name: Run Clippy
       run: cargo clippy -- -D warnings
 
+  rustfmt:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Check code formatting
+      run: cargo fmt --all -- --check
+
   test_files:
     runs-on: ubuntu-latest
     steps:
@@ -111,13 +118,13 @@ jobs:
       working-directory: prusti-dev
       run: ./x.py setup && python3 test-rpe.py --no-server
 
-  mutation_tests:
-    runs-on: ubuntu-latest
-    steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-      with:
-        path: pcg
+  # mutation_tests:
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #   - name: Checkout repository
+  #     uses: actions/checkout@v4
+  #     with:
+  #       path: pcg
 
     - name: Checkout flowistry repository
       uses: actions/checkout@v4

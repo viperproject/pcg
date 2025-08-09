@@ -5,23 +5,20 @@ use crate::{
         borrow_pcg_edge::LocalNode,
         edge_data::{EdgeData, LabelEdgePlaces, LabelPlacePredicate},
         has_pcs_elem::{
-            HasPcgElems, LabelPlace, LabelLifetimeProjection, LabelLifetimeProjectionPredicate,
-            LabelLifetimeProjectionResult, PlaceLabeller,
+            LabelLifetimeProjection, LabelLifetimeProjectionPredicate,
+            LabelLifetimeProjectionResult, LabelNodeContext, LabelPlaceWithContext, PlaceLabeller,
         },
-        region_projection::{LocalRegionProjection, RegionProjection, LifetimeProjectionLabel},
+        region_projection::{LifetimeProjection, LifetimeProjectionLabel, LocalLifetimeProjection},
     },
-    pcg::{PCGNode, PCGNodeLike},
+    pcg::{PCGNodeLike, PcgNode},
     pcg_validity_assert,
-    utils::{
-        display::DisplayWithCompilerCtxt, maybe_old::MaybeOldPlace, validity::HasValidityCheck,
-        CompilerCtxt,
-    },
+    utils::{CompilerCtxt, display::DisplayWithCompilerCtxt, validity::HasValidityCheck},
 };
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct BorrowFlowEdge<'tcx> {
-    long: RegionProjection<'tcx>,
-    short: LocalRegionProjection<'tcx>,
+    long: LifetimeProjection<'tcx>,
+    short: LocalLifetimeProjection<'tcx>,
     pub(crate) kind: BorrowFlowEdgeKind,
 }
 
@@ -32,7 +29,8 @@ impl<'tcx> LabelEdgePlaces<'tcx> for BorrowFlowEdge<'tcx> {
         labeller: &impl PlaceLabeller<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
-        self.long.label_place(predicate, labeller, ctxt)
+        self.long
+            .label_place_with_context(predicate, labeller, LabelNodeContext::Other, ctxt)
     }
 
     fn label_blocked_by_places(
@@ -41,18 +39,8 @@ impl<'tcx> LabelEdgePlaces<'tcx> for BorrowFlowEdge<'tcx> {
         labeller: &impl PlaceLabeller<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
-        self.short.label_place(predicate, labeller, ctxt)
-    }
-}
-
-impl<'tcx> LabelPlace<'tcx> for LocalRegionProjection<'tcx> {
-    fn label_place(
-        &mut self,
-        predicate: &LabelPlacePredicate<'tcx>,
-        labeller: &impl PlaceLabeller<'tcx>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> bool {
-        self.base.label_place(predicate, labeller, ctxt)
+        self.short
+            .label_place_with_context(predicate, labeller, LabelNodeContext::Other, ctxt)
     }
 }
 
@@ -79,14 +67,6 @@ impl<'tcx> LabelLifetimeProjection<'tcx> for BorrowFlowEdge<'tcx> {
     }
 }
 
-impl<'tcx> HasPcgElems<MaybeOldPlace<'tcx>> for BorrowFlowEdge<'tcx> {
-    fn pcg_elems(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
-        let mut elems = self.long.pcg_elems();
-        elems.extend(self.short.pcg_elems());
-        elems
-    }
-}
-
 impl<'tcx, 'a> DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>
     for BorrowFlowEdge<'tcx>
 {
@@ -103,14 +83,14 @@ impl<'tcx, 'a> DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx
 }
 
 impl<'tcx> EdgeData<'tcx> for BorrowFlowEdge<'tcx> {
-    fn blocks_node<'slf>(&self, node: PCGNode<'tcx>, repacker: CompilerCtxt<'_, 'tcx>) -> bool {
+    fn blocks_node<'slf>(&self, node: PcgNode<'tcx>, repacker: CompilerCtxt<'_, 'tcx>) -> bool {
         self.long.to_pcg_node(repacker) == node
     }
 
     fn blocked_nodes<'slf, BC: Copy>(
         &'slf self,
         _ctxt: CompilerCtxt<'_, 'tcx, BC>,
-    ) -> Box<dyn Iterator<Item = PCGNode<'tcx>> + 'slf>
+    ) -> Box<dyn Iterator<Item = PcgNode<'tcx>> + 'slf>
     where
         'tcx: 'slf,
     {
@@ -144,8 +124,8 @@ impl<'tcx> HasValidityCheck<'tcx> for BorrowFlowEdge<'tcx> {
 
 impl<'tcx> BorrowFlowEdge<'tcx> {
     pub(crate) fn new(
-        long: RegionProjection<'tcx>,
-        short: LocalRegionProjection<'tcx>,
+        long: LifetimeProjection<'tcx>,
+        short: LocalLifetimeProjection<'tcx>,
         kind: BorrowFlowEdgeKind,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> Self {
@@ -154,12 +134,12 @@ impl<'tcx> BorrowFlowEdge<'tcx> {
     }
 
     /// The blocked lifetime projection. Intuitively, it must outlive the `short()` projection.
-    pub fn long(&self) -> RegionProjection<'tcx> {
+    pub fn long(&self) -> LifetimeProjection<'tcx> {
         self.long
     }
 
     /// The blocking lifetime projection. Intuitively, it must die before the `long()` projection.
-    pub fn short(&self) -> LocalRegionProjection<'tcx> {
+    pub fn short(&self) -> LocalLifetimeProjection<'tcx> {
         self.short
     }
 

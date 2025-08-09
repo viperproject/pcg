@@ -2,26 +2,22 @@ use std::collections::BTreeMap;
 
 use serde_derive::Serialize;
 
+use crate::RECORD_PCG;
 use crate::pcg::{DataflowStmtPhase, EvalStmtPhase, PcgDebugData, PcgRef};
 use crate::rustc_interface::middle::mir::{self, BasicBlock};
 use crate::utils::CompilerCtxt;
 use crate::visualization::write_pcg_dot_graph_to_file;
-use crate::RECORD_PCG;
 
-#[derive(Clone, Serialize)]
-#[derive(Default)]
+#[derive(Clone, Serialize, Default)]
 pub(crate) struct PcgDotGraphsForBlock(Vec<PcgDotGraphsForStmt>);
 
-#[derive(Clone, Serialize)]
-#[derive(Default)]
+#[derive(Clone, Serialize, Default)]
 pub(crate) struct PcgDotGraphsForIteration {
     at_phase: Vec<(DataflowStmtPhase, String)>,
     actions: BTreeMap<EvalStmtPhase, Vec<String>>,
 }
 
-
-#[derive(Clone, Serialize)]
-#[derive(Default)]
+#[derive(Clone, Serialize, Default)]
 struct PcgDotGraphsForStmt {
     iterations: Vec<PcgDotGraphsForIteration>,
 }
@@ -31,8 +27,6 @@ impl PcgDotGraphsForStmt {
         self.iterations.len()
     }
 }
-
-
 
 impl PcgDotGraphsForBlock {
     pub(crate) fn relative_filename(

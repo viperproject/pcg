@@ -14,7 +14,7 @@ use rustc_interface::{
     data_structures::fx::FxHashSet,
     middle::{
         mir::{
-            PlaceElem, PlaceRef, ProjectionElem, VarDebugInfo, VarDebugInfoContents, RETURN_PLACE,
+            PlaceElem, PlaceRef, ProjectionElem, RETURN_PLACE, VarDebugInfo, VarDebugInfoContents,
         },
         ty::{AdtKind, TyKind},
     },

@@ -14,7 +14,7 @@ use crate::{
         borrow_pcg_edge::{BorrowPcgEdge, BorrowPcgEdgeRef},
         region_projection::MaybeRemoteRegionProjectionBase,
     },
-    pcg::{successor_blocks, EvalStmtPhase, PCGNode, Pcg, PcgEngine, PcgError, PcgSuccessor},
+    pcg::{EvalStmtPhase, Pcg, PcgEngine, PcgError, PcgNode, PcgSuccessor, successor_blocks},
     rustc_interface::{
         data_structures::fx::FxHashSet,
         dataflow::AnalysisEngine,
@@ -26,7 +26,7 @@ use crate::{
         mir_dataflow::ResultsCursor,
     },
     utils::{
-        display::DebugLines, domain_data::DomainDataStates, validity::HasValidityCheck, Place,
+        Place, display::DebugLines, domain_data::DomainDataStates, validity::HasValidityCheck,
     },
 };
 
@@ -146,7 +146,7 @@ impl<'mir, 'tcx, A: Allocator + Copy> PcgAnalysis<'mir, 'tcx, A> {
                                     abstraction.conditions,
                                 ),
                                 "terminator",
-                                ctxt
+                                ctxt,
                             ),
                             ctxt,
                         );
@@ -320,7 +320,7 @@ impl<'tcx> PcgLocation<'tcx> {
     ) -> FxHashSet<BorrowPcgEdgeRef<'tcx, 'slf>> {
         let borrows_graph = self.states[EvalStmtPhase::PostMain].borrow.graph();
         let mut ancestors = borrows_graph.ancestor_edges(place.into(), repacker);
-        for rp in place.region_projections(repacker) {
+        for rp in place.lifetime_projections(repacker) {
             ancestors.extend(borrows_graph.ancestor_edges(rp.into(), repacker));
         }
         ancestors
@@ -341,8 +341,8 @@ impl<'tcx> PcgLocation<'tcx> {
             .aliases(place.into(), ctxt)
             .into_iter()
             .flat_map(|p| match p {
-                PCGNode::Place(p) => p.as_current_place(),
-                PCGNode::RegionProjection(p) => match p.base() {
+                PcgNode::Place(p) => p.as_current_place(),
+                PcgNode::LifetimeProjection(p) => match p.base() {
                     MaybeRemoteRegionProjectionBase::Place(p) => {
                         let assoc_place = p.related_local_place();
                         if assoc_place.is_ref(ctxt) {

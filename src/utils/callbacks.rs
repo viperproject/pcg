@@ -23,9 +23,13 @@ use crate::{
             self, BorrowIndex, BorrowSet, LocationTable, PoloniusInput, PoloniusOutput,
             RegionInferenceContext, RichLocation,
         },
-        data_structures::fx::{FxHashMap, FxHashSet},
+        data_structures::{
+            fx::{FxHashMap, FxHashSet},
+            graph::is_cyclic,
+        },
         driver::{self, Compilation, init_rustc_env_logger},
         hir::{def::DefKind, def_id::LocalDefId},
+        index::bit_set::BitSet,
         interface::{Config, interface::Compiler},
         middle::{
             mir::{Body, Local, Location},
@@ -36,7 +40,8 @@ use crate::{
         session::{EarlyDiagCtxt, Session, config::ErrorOutputType},
         span::SpanSnippetError,
     },
-    utils::MAX_BASIC_BLOCKS,
+    utils::{MAX_BASIC_BLOCKS, PCG_DEBUG_BLOCK, SKIP_BODIES_WITH_LOOPS},
+    validity_checks_enabled,
 };
 
 #[cfg(feature = "visualization")]
@@ -180,6 +185,9 @@ pub(crate) unsafe fn take_stored_body(
 }
 
 fn should_check_body(body: &Body<'_>) -> bool {
+    if *SKIP_BODIES_WITH_LOOPS && is_cyclic(&body.basic_blocks) {
+        return false;
+    }
     if let Some(len) = *MAX_BASIC_BLOCKS {
         body.basic_blocks.len() <= len
     } else {
@@ -196,6 +204,17 @@ fn is_primary_crate() -> bool {
 /// Functions bodies stored in `BODIES` must come from the same `tcx`.
 pub(crate) unsafe fn run_pcg_on_all_fns(tcx: TyCtxt<'_>, polonius: bool) {
     tracing::info!("Running PCG on all functions");
+    tracing::info!(
+        "Validity checks {}",
+        if validity_checks_enabled() {
+            "enabled"
+        } else {
+            "disabled"
+        }
+    );
+    if let Some(block) = *PCG_DEBUG_BLOCK {
+        tracing::info!("Debug block: {:?}", block);
+    }
     if in_cargo_crate() && !is_primary_crate() {
         // We're running in cargo, but not compiling the primary package
         // We don't want to check dependencies, so abort
@@ -390,7 +409,14 @@ pub enum RustBorrowCheckerImpl<'mir, 'tcx> {
 }
 
 impl<'tcx> RustBorrowCheckerInterface<'tcx> for RustBorrowCheckerImpl<'_, 'tcx> {
-    fn is_live(&self, node: pcg::PCGNode<'tcx>, location: Location) -> bool {
+    fn borrows_in_scope_at(&self, location: Location, before: bool) -> BitSet<BorrowIndex> {
+        match self {
+            RustBorrowCheckerImpl::Polonius(bc) => bc.borrows_in_scope_at(location, before),
+            RustBorrowCheckerImpl::Nll(bc) => bc.borrows_in_scope_at(location, before),
+        }
+    }
+
+    fn is_live(&self, node: pcg::PcgNode<'tcx>, location: Location) -> bool {
         match self {
             RustBorrowCheckerImpl::Polonius(bc) => bc.is_live(node, location),
             RustBorrowCheckerImpl::Nll(bc) => bc.is_live(node, location),
@@ -465,15 +491,15 @@ impl<'tcx> RustBorrowCheckerInterface<'tcx> for RustBorrowCheckerImpl<'_, 'tcx> 
 impl<'mir, 'tcx> RustBorrowCheckerImpl<'mir, 'tcx> {
     fn region_pretty_printer(&mut self) -> &mut RegionPrettyPrinter<'mir, 'tcx> {
         match self {
-            RustBorrowCheckerImpl::Polonius(bc) => &mut bc.pretty_printer,
-            RustBorrowCheckerImpl::Nll(bc) => &mut bc.pretty_printer,
+            RustBorrowCheckerImpl::Polonius(bc) => &mut bc.borrow_checker_data.pretty_printer,
+            RustBorrowCheckerImpl::Nll(bc) => &mut bc.borrow_checker_data.pretty_printer,
         }
     }
 
     pub fn region_infer_ctxt(&self) -> &RegionInferenceContext<'tcx> {
         match self {
-            RustBorrowCheckerImpl::Polonius(bc) => bc.region_cx,
-            RustBorrowCheckerImpl::Nll(bc) => bc.region_cx,
+            RustBorrowCheckerImpl::Polonius(bc) => bc.borrow_checker_data.region_cx,
+            RustBorrowCheckerImpl::Nll(bc) => bc.borrow_checker_data.region_cx,
         }
     }
 }
@@ -580,7 +606,12 @@ fn emit_borrowcheck_graphs<'a, 'tcx: 'a, 'bc>(
                     for (region, indices) in loans {
                         writeln!(loans_file, "Region: {region:?}").unwrap();
                         for index in indices {
-                            writeln!(loans_file, "  {:?}", bc.borrows[index].region()).unwrap();
+                            writeln!(
+                                loans_file,
+                                "  {:?}",
+                                bc.borrow_checker_data.borrows[index].region()
+                            )
+                            .unwrap();
                         }
                     }
                 }

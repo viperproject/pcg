@@ -29,6 +29,8 @@ struct MirStmt {
     stmt: String,
     loans_invalidated_start: Vec<String>,
     loans_invalidated_mid: Vec<String>,
+    borrows_in_scope_start: Vec<String>,
+    borrows_in_scope_mid: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -169,9 +171,20 @@ fn format_rvalue<'tcx>(rvalue: &Rvalue<'tcx>, ctxt: CompilerCtxt<'_, 'tcx>) -> S
 }
 fn format_terminator<'tcx>(
     terminator: &TerminatorKind<'tcx>,
-    repacker: CompilerCtxt<'_, 'tcx>,
+    ctxt: CompilerCtxt<'_, 'tcx>,
 ) -> String {
     match terminator {
+        TerminatorKind::Drop {
+            place,
+            target,
+            unwind,
+            ..
+        } => {
+            format!(
+                "drop({}) -> [return: {target:?}, unwind: {unwind:?}]",
+                format_place(place, ctxt)
+            )
+        }
         TerminatorKind::Call {
             func,
             args,
@@ -183,10 +196,10 @@ fn format_terminator<'tcx>(
         } => {
             format!(
                 "{} = {}({})",
-                format_place(destination, repacker),
-                format_operand(func, repacker),
+                format_place(destination, ctxt),
+                format_operand(func, ctxt),
                 args.iter()
-                    .map(|arg| format_operand(&arg.node, repacker))
+                    .map(|arg| format_operand(&arg.node, ctxt))
                     .collect::<Vec<_>>()
                     .join(", ")
             )
@@ -245,7 +258,7 @@ fn mk_mir_graph(ctxt: CompilerCtxt<'_, '_>) -> MirGraph {
     for (bb, data) in ctxt.body().basic_blocks.iter_enumerated() {
         let stmts = data.statements.iter().enumerate().map(|(idx, stmt)| {
             let stmt = format_stmt(stmt, ctxt);
-            let bc = ctxt.bc;
+            let bc = ctxt.bc.rust_borrow_checker().unwrap();
             let invalidated_at = &bc.input_facts().loan_invalidated_at;
             let location = mir::Location {
                 block: bb,
@@ -273,10 +286,22 @@ fn mk_mir_graph(ctxt: CompilerCtxt<'_, '_>) -> MirGraph {
                     }
                 })
                 .collect::<Vec<_>>();
+            let borrows_in_scope_start = bc
+                .borrows_in_scope_at(location, true)
+                .iter()
+                .map(|bi| format!("{bi:?}"))
+                .collect::<Vec<_>>();
+            let borrows_in_scope_mid = bc
+                .borrows_in_scope_at(location, false)
+                .iter()
+                .map(|bi| format!("{bi:?}"))
+                .collect::<Vec<_>>();
             MirStmt {
                 stmt,
                 loans_invalidated_start,
                 loans_invalidated_mid,
+                borrows_in_scope_start,
+                borrows_in_scope_mid,
             }
         });
 

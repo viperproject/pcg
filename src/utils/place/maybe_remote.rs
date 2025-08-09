@@ -1,35 +1,53 @@
 use derive_more::From;
 
+use crate::borrow_pcg::edge_data::LabelPlacePredicate;
 use crate::borrow_pcg::graph::loop_abstraction::MaybeRemoteCurrentPlace;
-use crate::borrow_pcg::has_pcs_elem::HasPcgElems;
+use crate::borrow_pcg::has_pcs_elem::{LabelNodeContext, LabelPlaceWithContext, PlaceLabeller};
 use crate::borrow_pcg::region_projection::{
     MaybeRemoteRegionProjectionBase, PcgRegion, RegionIdx, RegionProjectionBaseLike,
 };
-use crate::pcg::{PCGNode, PCGNodeLike};
+use crate::pcg::{PCGNodeLike, PcgNode};
 use crate::rustc_interface::index::IndexVec;
 use crate::rustc_interface::middle::{mir, ty};
 use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::json::ToJsonWithCompilerCtxt;
-use crate::utils::place::maybe_old::MaybeOldPlace;
+use crate::utils::place::maybe_old::MaybeLabelledPlace;
 use crate::utils::place::remote::RemotePlace;
-use crate::utils::{CompilerCtxt, HasPlace, Place, PlaceSnapshot};
+use crate::utils::{CompilerCtxt, HasPlace, LabelledPlace, Place};
 
 #[derive(From, PartialEq, Eq, Copy, Clone, Debug, Hash, PartialOrd, Ord)]
 pub enum MaybeRemotePlace<'tcx> {
     /// A place that has a name in the program
-    Local(MaybeOldPlace<'tcx>),
+    Local(MaybeLabelledPlace<'tcx>),
 
     /// A place that cannot be named, e.g. the source of a reference-type input argument
     Remote(RemotePlace),
 }
 
+impl<'tcx> LabelPlaceWithContext<'tcx, LabelNodeContext> for MaybeRemotePlace<'tcx> {
+    fn label_place_with_context(
+        &mut self,
+        predicate: &LabelPlacePredicate<'tcx>,
+        labeller: &impl PlaceLabeller<'tcx>,
+        label_context: LabelNodeContext,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
+        match self {
+            MaybeRemotePlace::Local(p) => {
+                p.label_place_with_context(predicate, labeller, label_context, ctxt)
+            }
+            MaybeRemotePlace::Remote(_) => false,
+        }
+    }
+}
+
 impl<'tcx> MaybeRemotePlace<'tcx> {
     pub(crate) fn maybe_remote_current_place(&self) -> Option<MaybeRemoteCurrentPlace<'tcx>> {
         match self {
-            MaybeRemotePlace::Local(MaybeOldPlace::Current { place }) => {
+            MaybeRemotePlace::Local(MaybeLabelledPlace::Current(place)) => {
                 Some(MaybeRemoteCurrentPlace::Local(*place))
             }
-            MaybeRemotePlace::Local(MaybeOldPlace::OldPlace(_)) => None,
+            MaybeRemotePlace::Local(MaybeLabelledPlace::Labelled(_)) => None,
             MaybeRemotePlace::Remote(rp) => Some(MaybeRemoteCurrentPlace::Remote(*rp)),
         }
     }
@@ -53,7 +71,7 @@ impl<'tcx> TryFrom<MaybeRemoteRegionProjectionBase<'tcx>> for MaybeRemotePlace<'
 }
 
 impl<'tcx> PCGNodeLike<'tcx> for MaybeRemotePlace<'tcx> {
-    fn to_pcg_node<C: Copy>(self, repacker: CompilerCtxt<'_, 'tcx, C>) -> PCGNode<'tcx> {
+    fn to_pcg_node<C: Copy>(self, repacker: CompilerCtxt<'_, 'tcx, C>) -> PcgNode<'tcx> {
         match self {
             MaybeRemotePlace::Local(p) => p.to_pcg_node(repacker),
             MaybeRemotePlace::Remote(rp) => rp.to_pcg_node(repacker),
@@ -95,15 +113,6 @@ impl<'tcx, BC: Copy> ToJsonWithCompilerCtxt<'tcx, BC> for MaybeRemotePlace<'tcx>
     }
 }
 
-impl<'tcx> HasPcgElems<MaybeOldPlace<'tcx>> for MaybeRemotePlace<'tcx> {
-    fn pcg_elems(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
-        match self {
-            MaybeRemotePlace::Local(p) => vec![p],
-            MaybeRemotePlace::Remote(_) => vec![],
-        }
-    }
-}
-
 impl std::fmt::Display for MaybeRemotePlace<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -133,21 +142,21 @@ impl<'tcx> MaybeRemotePlace<'tcx> {
     }
 
     pub(crate) fn as_current_place(&self) -> Option<Place<'tcx>> {
-        if let MaybeRemotePlace::Local(MaybeOldPlace::Current { place }) = self {
+        if let MaybeRemotePlace::Local(MaybeLabelledPlace::Current(place)) = self {
             Some(*place)
         } else {
             None
         }
     }
 
-    pub(crate) fn as_local_place_mut(&mut self) -> Option<&mut MaybeOldPlace<'tcx>> {
+    pub(crate) fn as_local_place_mut(&mut self) -> Option<&mut MaybeLabelledPlace<'tcx>> {
         match self {
             MaybeRemotePlace::Local(p) => Some(p),
             MaybeRemotePlace::Remote(_) => None,
         }
     }
 
-    pub fn as_local_place(&self) -> Option<MaybeOldPlace<'tcx>> {
+    pub fn as_local_place(&self) -> Option<MaybeLabelledPlace<'tcx>> {
         match self {
             MaybeRemotePlace::Local(p) => Some(*p),
             MaybeRemotePlace::Remote(_) => None,
@@ -162,8 +171,8 @@ impl<'tcx> MaybeRemotePlace<'tcx> {
     }
 }
 
-impl<'tcx> From<PlaceSnapshot<'tcx>> for MaybeRemotePlace<'tcx> {
-    fn from(place: PlaceSnapshot<'tcx>) -> Self {
+impl<'tcx> From<LabelledPlace<'tcx>> for MaybeRemotePlace<'tcx> {
+    fn from(place: LabelledPlace<'tcx>) -> Self {
         MaybeRemotePlace::Local(place.into())
     }
 }
@@ -196,7 +205,7 @@ impl RemotePlace {
         let place: Place<'_> = self.local.into();
         match place.ty(repacker).ty.kind() {
             ty::TyKind::Ref(_, ty, _) => Some(*ty),
-            _ => None
+            _ => None,
         }
     }
 }

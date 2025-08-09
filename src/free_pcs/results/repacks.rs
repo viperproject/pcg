@@ -70,6 +70,18 @@ pub struct RepackExpand<'tcx> {
 }
 
 impl<'tcx> RepackExpand<'tcx> {
+    pub(crate) fn new(
+        from: Place<'tcx>,
+        guide: Option<RepackGuide>,
+        capability: CapabilityKind,
+    ) -> Self {
+        Self {
+            from,
+            guide,
+            capability,
+        }
+    }
+
     pub fn capability(&self) -> CapabilityKind {
         self.capability
     }
@@ -88,24 +100,19 @@ impl<'tcx> RepackExpand<'tcx> {
 
     pub fn target_places(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Vec<Place<'tcx>> {
         let expansion = self.from.expansion(self.guide, ctxt);
-        self.from.expansion_places(&expansion, ctxt)
+        self.from.expansion_places(&expansion, ctxt).unwrap()
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub struct RepackCollapse<'tcx> {
     pub(crate) to: Place<'tcx>,
-    pub(crate) guide: Option<RepackGuide>,
     pub(crate) capability: CapabilityKind,
 }
 
 impl<'tcx> RepackCollapse<'tcx> {
-    pub fn downcast_place(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Option<Place<'tcx>> {
-        if let Some(guide @ RepackGuide::Downcast(_, _)) = self.guide {
-            self.to.project_deeper(guide.into(), ctxt).ok()
-        } else {
-            None
-        }
+    pub(crate) fn new(to: Place<'tcx>, capability: CapabilityKind) -> Self {
+        Self { to, capability }
     }
 
     pub fn box_deref_place(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Option<Place<'tcx>> {
@@ -120,21 +127,12 @@ impl<'tcx> RepackCollapse<'tcx> {
         self.to
     }
 
-    pub fn guide(&self) -> Option<RepackGuide> {
-        self.guide
-    }
-
     pub fn capability(&self) -> CapabilityKind {
         self.capability
     }
 
     pub(crate) fn local(&self) -> Local {
         self.to.local
-    }
-
-    pub fn expansion_places(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Vec<Place<'tcx>> {
-        let expansion = self.to.expansion(self.guide, ctxt);
-        self.to.expansion_places(&expansion, ctxt)
     }
 }
 
@@ -203,18 +201,6 @@ impl<'tcx, BC: Copy> DisplayWithCompilerCtxt<'tcx, BC> for RepackOp<'tcx> {
 }
 
 impl<'tcx> RepackOp<'tcx> {
-    pub(crate) fn collapse(
-        to: Place<'tcx>,
-        guide: Option<RepackGuide>,
-        capability: CapabilityKind,
-    ) -> Self {
-        Self::Collapse(RepackCollapse {
-            to,
-            guide,
-            capability,
-        })
-    }
-
     pub(crate) fn expand(
         from: Place<'tcx>,
         guide: Option<RepackGuide>,

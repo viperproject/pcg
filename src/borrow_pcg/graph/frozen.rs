@@ -1,6 +1,4 @@
-use std::{
-    cell::{Ref, RefCell},
-};
+use std::cell::{Ref, RefCell};
 
 use derive_more::{Deref, IntoIterator};
 use itertools::Itertools;
@@ -10,7 +8,7 @@ use crate::{
         borrow_pcg_edge::{BorrowPcgEdgeRef, LocalNode},
         edge_data::EdgeData,
     },
-    pcg::{PCGNode, PCGNodeLike},
+    pcg::{PCGNodeLike, PcgNode},
     rustc_interface::data_structures::fx::{FxHashMap, FxHashSet},
     utils::{CompilerCtxt, display::DisplayWithCompilerCtxt},
 };
@@ -34,10 +32,10 @@ pub(crate) type CachedLeafEdges<'graph, 'tcx> = Vec<BorrowPcgEdgeRef<'tcx, 'grap
 /// caching intermediate query results.
 pub struct FrozenGraphRef<'graph, 'tcx> {
     graph: &'graph BorrowsGraph<'tcx>,
-    nodes_cache: RefCell<Option<FxHashSet<PCGNode<'tcx>>>>,
-    edges_blocking_cache: RefCell<FxHashMap<PCGNode<'tcx>, CachedBlockingEdges<'graph, 'tcx>>>,
+    nodes_cache: RefCell<Option<FxHashSet<PcgNode<'tcx>>>>,
+    edges_blocking_cache: RefCell<FxHashMap<PcgNode<'tcx>, CachedBlockingEdges<'graph, 'tcx>>>,
     leaf_edges_cache: RefCell<Option<CachedLeafEdges<'graph, 'tcx>>>,
-    roots_cache: RefCell<Option<FxHashSet<PCGNode<'tcx>>>>,
+    roots_cache: RefCell<Option<FxHashSet<PcgNode<'tcx>>>>,
 }
 
 impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
@@ -127,7 +125,7 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
     pub fn nodes<'slf>(
         &'slf self,
         ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> Ref<'slf, FxHashSet<PCGNode<'tcx>>> {
+    ) -> Ref<'slf, FxHashSet<PcgNode<'tcx>>> {
         {
             let nodes = self.nodes_cache.borrow();
             if nodes.is_some() {
@@ -142,7 +140,7 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
     pub fn roots<'slf, 'bc: 'graph>(
         &'slf self,
         ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> Ref<'slf, FxHashSet<PCGNode<'tcx>>> {
+    ) -> Ref<'slf, FxHashSet<PcgNode<'tcx>>> {
         {
             let roots = self.roots_cache.borrow();
             if roots.is_some() {
@@ -192,7 +190,7 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
 
     pub fn get_edges_blocking<'slf, 'mir: 'graph, 'bc: 'graph>(
         &'slf self,
-        node: PCGNode<'tcx>,
+        node: PcgNode<'tcx>,
         repacker: CompilerCtxt<'mir, 'tcx>,
     ) -> CachedBlockingEdges<'graph, 'tcx> {
         {
@@ -210,7 +208,7 @@ impl<'graph, 'tcx> FrozenGraphRef<'graph, 'tcx> {
 
     pub fn has_edge_blocking<'mir: 'graph, 'bc: 'graph>(
         &self,
-        node: PCGNode<'tcx>,
+        node: PcgNode<'tcx>,
         repacker: CompilerCtxt<'mir, 'tcx>,
     ) -> bool {
         {

@@ -11,12 +11,12 @@ use crate::{
         borrow_pcg_edge::BlockedNode,
         domain::{AbstractionInputTarget, FunctionCallAbstractionInput},
         edge::abstraction::{function::FunctionCallAbstraction, r#loop::LoopAbstraction},
-        edge_data::{edgedata_enum, LabelEdgePlaces, LabelPlacePredicate},
+        edge_data::{LabelEdgePlaces, LabelPlacePredicate, edgedata_enum},
         has_pcs_elem::{
-            LabelPlace, LabelLifetimeProjection, LabelLifetimeProjectionPredicate,
-            LabelLifetimeProjectionResult, PlaceLabeller,
+            LabelLifetimeProjection, LabelLifetimeProjectionPredicate,
+            LabelLifetimeProjectionResult, LabelNodeContext, LabelPlaceWithContext, PlaceLabeller,
         },
-        region_projection::{MaybeRemoteRegionProjectionBase, LifetimeProjectionLabel},
+        region_projection::{LifetimeProjectionLabel, MaybeRemoteRegionProjectionBase},
     },
     pcg::PCGNodeLike,
     utils::maybe_remote::MaybeRemotePlace,
@@ -25,13 +25,11 @@ use crate::{
 use crate::borrow_pcg::borrow_pcg_edge::LocalNode;
 use crate::borrow_pcg::domain::LoopAbstractionInput;
 use crate::borrow_pcg::edge_data::EdgeData;
-use crate::borrow_pcg::has_pcs_elem::HasPcgElems;
-use crate::borrow_pcg::region_projection::RegionProjection;
-use crate::pcg::PCGNode;
-use crate::utils::display::DisplayWithCompilerCtxt;
-use crate::utils::place::maybe_old::MaybeOldPlace;
-use crate::utils::validity::HasValidityCheck;
+use crate::borrow_pcg::region_projection::LifetimeProjection;
+use crate::pcg::PcgNode;
 use crate::utils::CompilerCtxt;
+use crate::utils::display::DisplayWithCompilerCtxt;
+use crate::utils::validity::HasValidityCheck;
 use itertools::Itertools;
 
 /// Either a function call or a loop abstraction
@@ -55,8 +53,11 @@ pub struct AbstractionBlockEdge<'tcx, Input, Output> {
     pub(crate) outputs: Vec<Output>,
 }
 
-impl<'tcx, T: LabelPlace<'tcx>, U: LabelPlace<'tcx>> LabelEdgePlaces<'tcx>
-    for AbstractionBlockEdge<'tcx, T, U>
+impl<
+    'tcx,
+    T: LabelPlaceWithContext<'tcx, LabelNodeContext>,
+    U: LabelPlaceWithContext<'tcx, LabelNodeContext>,
+> LabelEdgePlaces<'tcx> for AbstractionBlockEdge<'tcx, T, U>
 {
     fn label_blocked_places(
         &mut self,
@@ -66,7 +67,8 @@ impl<'tcx, T: LabelPlace<'tcx>, U: LabelPlace<'tcx>> LabelEdgePlaces<'tcx>
     ) -> bool {
         let mut changed = false;
         for input in &mut self.inputs {
-            changed |= input.label_place(predicate, labeller, ctxt);
+            changed |=
+                input.label_place_with_context(predicate, labeller, LabelNodeContext::Other, ctxt);
         }
         changed
     }
@@ -79,22 +81,23 @@ impl<'tcx, T: LabelPlace<'tcx>, U: LabelPlace<'tcx>> LabelEdgePlaces<'tcx>
     ) -> bool {
         let mut changed = false;
         for output in &mut self.outputs {
-            changed |= output.label_place(predicate, labeller, ctxt);
+            changed |=
+                output.label_place_with_context(predicate, labeller, LabelNodeContext::Other, ctxt);
         }
         changed
     }
 }
 
 impl<
-        'tcx: 'a,
-        'a,
-        Input: LabelLifetimeProjection<'tcx>
-            + PCGNodeLike<'tcx>
-            + DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>,
-        Output: LabelLifetimeProjection<'tcx>
-            + PCGNodeLike<'tcx>
-            + DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>,
-    > LabelLifetimeProjection<'tcx> for AbstractionBlockEdge<'tcx, Input, Output>
+    'tcx: 'a,
+    'a,
+    Input: LabelLifetimeProjection<'tcx>
+        + PCGNodeLike<'tcx>
+        + DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>,
+    Output: LabelLifetimeProjection<'tcx>
+        + PCGNodeLike<'tcx>
+        + DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>,
+> LabelLifetimeProjection<'tcx> for AbstractionBlockEdge<'tcx, Input, Output>
 {
     fn label_lifetime_projection(
         &mut self,
@@ -159,8 +162,8 @@ impl<'tcx> AbstractionInputLike<'tcx> for LoopAbstractionInput<'tcx> {
         _ctxt: CompilerCtxt<'_, 'tcx, C>,
     ) -> bool {
         match node {
-            PCGNode::Place(p) => inputs.contains(&p.into()),
-            PCGNode::RegionProjection(region_projection) => match region_projection.base {
+            PcgNode::Place(p) => inputs.contains(&p.into()),
+            PcgNode::LifetimeProjection(region_projection) => match region_projection.base {
                 MaybeRemoteRegionProjectionBase::Place(maybe_remote_place) => {
                     inputs.contains(&(region_projection.with_base(maybe_remote_place).into()))
                 }
@@ -174,9 +177,9 @@ impl<'tcx> AbstractionInputLike<'tcx> for LoopAbstractionInput<'tcx> {
     }
 }
 
-impl<'tcx> From<RegionProjection<'tcx, MaybeRemotePlace<'tcx>>> for LoopAbstractionInput<'tcx> {
-    fn from(value: RegionProjection<'tcx, MaybeRemotePlace<'tcx>>) -> Self {
-        LoopAbstractionInput(PCGNode::RegionProjection(value.into()))
+impl<'tcx> From<LifetimeProjection<'tcx, MaybeRemotePlace<'tcx>>> for LoopAbstractionInput<'tcx> {
+    fn from(value: LifetimeProjection<'tcx, MaybeRemotePlace<'tcx>>) -> Self {
+        LoopAbstractionInput(PcgNode::LifetimeProjection(value.into()))
     }
 }
 
@@ -187,8 +190,8 @@ impl<'tcx> AbstractionInputLike<'tcx> for FunctionCallAbstractionInput<'tcx> {
         _ctxt: CompilerCtxt<'_, 'tcx, C>,
     ) -> bool {
         match node {
-            PCGNode::Place(_) => false,
-            PCGNode::RegionProjection(region_projection) => match region_projection.base {
+            PcgNode::Place(_) => false,
+            PcgNode::LifetimeProjection(region_projection) => match region_projection.base {
                 MaybeRemoteRegionProjectionBase::Place(MaybeRemotePlace::Local(rp)) => {
                     inputs.contains(&region_projection.with_base(rp).into())
                 }
@@ -212,7 +215,7 @@ impl<'tcx, Input: AbstractionInputLike<'tcx>, Output: Copy + PCGNodeLike<'tcx>> 
     fn blocked_nodes<'slf, BC: Copy>(
         &'slf self,
         _ctxt: CompilerCtxt<'_, 'tcx, BC>,
-    ) -> Box<dyn std::iter::Iterator<Item = PCGNode<'tcx>> + 'slf>
+    ) -> Box<dyn std::iter::Iterator<Item = PcgNode<'tcx>> + 'slf>
     where
         'tcx: 'slf,
     {
@@ -236,11 +239,11 @@ impl<'tcx, Input: AbstractionInputLike<'tcx>, Output: Copy + PCGNodeLike<'tcx>> 
 }
 
 impl<
-        'tcx,
-        'a,
-        Input: DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>,
-        Output: DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>,
-    > DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>
+    'tcx,
+    'a,
+    Input: DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>,
+    Output: DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>,
+> DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>
     for AbstractionBlockEdge<'tcx, Input, Output>
 {
     fn to_short_string(
@@ -262,15 +265,15 @@ impl<
 }
 
 impl<
-        'tcx: 'a,
-        'a,
-        Input: HasValidityCheck<'tcx>
-            + PCGNodeLike<'tcx>
-            + DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>,
-        Output: HasValidityCheck<'tcx>
-            + PCGNodeLike<'tcx>
-            + DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>,
-    > HasValidityCheck<'tcx> for AbstractionBlockEdge<'tcx, Input, Output>
+    'tcx: 'a,
+    'a,
+    Input: HasValidityCheck<'tcx>
+        + PCGNodeLike<'tcx>
+        + DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>,
+    Output: HasValidityCheck<'tcx>
+        + PCGNodeLike<'tcx>
+        + DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>,
+> HasValidityCheck<'tcx> for AbstractionBlockEdge<'tcx, Input, Output>
 {
     fn check_validity(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Result<(), String> {
         for input in self.inputs.iter() {
@@ -294,15 +297,11 @@ impl<
 }
 
 impl<
-        'tcx: 'a,
-        'a,
-        Input: Clone
-            + PCGNodeLike<'tcx>
-            + DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>,
-        Output: Clone
-            + PCGNodeLike<'tcx>
-            + DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>,
-    > AbstractionBlockEdge<'tcx, Input, Output>
+    'tcx: 'a,
+    'a,
+    Input: Clone + PCGNodeLike<'tcx> + DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>,
+    Output: Clone + PCGNodeLike<'tcx> + DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>,
+> AbstractionBlockEdge<'tcx, Input, Output>
 {
     pub(crate) fn new(
         inputs: Vec<Input>,
@@ -328,28 +327,5 @@ impl<Input: Clone, Output: Copy> AbstractionBlockEdge<'_, Input, Output> {
 
     pub fn inputs(&self) -> Vec<Input> {
         self.inputs.clone()
-    }
-}
-
-impl<'tcx> HasPcgElems<MaybeOldPlace<'tcx>> for LoopAbstractionInput<'tcx> {
-    fn pcg_elems(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
-        match &mut self.0 {
-            PCGNode::Place(p) => p.pcg_elems(),
-            PCGNode::RegionProjection(rp) => rp.base.pcg_elems(),
-        }
-    }
-}
-impl<'tcx, Input: HasPcgElems<MaybeOldPlace<'tcx>>, Output: HasPcgElems<MaybeOldPlace<'tcx>>>
-    HasPcgElems<MaybeOldPlace<'tcx>> for AbstractionBlockEdge<'tcx, Input, Output>
-{
-    fn pcg_elems(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
-        let mut result = vec![];
-        for input in self.inputs.iter_mut() {
-            result.extend(input.pcg_elems());
-        }
-        for output in self.outputs.iter_mut() {
-            result.extend(output.pcg_elems());
-        }
-        result
     }
 }

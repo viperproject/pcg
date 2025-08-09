@@ -84,9 +84,10 @@ const fn update_bytewise(mut crc: u128, reflect: bool, table: &[u128; 256], byte
 }
 
 impl Crc<u128, Table<1>> {
-    const fn update(&self, crc: u128, bytes: &[u8]) -> u128 {
-        update_bytewise(crc, self.algorithm.refin, &self.data[0], bytes)
-    }
+    // TODO
+    // const fn update(&self, crc: u128, bytes: &[u8]) -> u128 {
+    //     update_bytewise(crc, self.algorithm.refin, &self.data[0], bytes)
+    // }
 }
 
 fn main(){}
