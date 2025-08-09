@@ -83,7 +83,6 @@ impl<'state, 'mir: 'state, 'tcx> PlaceCollapser<'mir, 'tcx> for PlaceObtainer<'s
 
 impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
     fn restore_place(&mut self, place: Place<'tcx>) -> Result<(), PcgError> {
-
         // The place to restore could come from a local that was conditionally
         // allocated and therefore we can't get back to it, and certainly
         // shouldn't give it any capability
@@ -626,6 +625,11 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                 )
                 .into(),
             );
+            // If this place is a reference or contains references, reborrows of
+            // (postfixes of) place may have not yet expired, and therefore the borrowed
+            // caps are still in the PCG.
+            // This will remove them (since we're going to overwrite anyways)
+            self.pcg.capabilities.remove_all_strict_postfixes(place, self.ctxt);
         }
 
         self.expand_to(place, obtain_type, self.ctxt)?;

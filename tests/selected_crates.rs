@@ -161,10 +161,16 @@ fn test_selected_crates() {
 
     let test_cases = vec![
         SelectedCrateTestCase::new(
+            "pyo3-macros-backend",
+            "0.24.0",
+            Some("2025-03-13"),
+            TestCrateType::function("method::FnArg::<'a>::to_varargs_mut", Some(19)),
+        ),
+        SelectedCrateTestCase::new(
             "flume",
             "0.11.1",
             Some("2025-03-13"),
-            TestCrateType::function_debug_failure(
+            TestCrateType::function(
                 "<select::Selector<'a, T>::recv::RecvSelection<'a, T, F, U> as select::Selection<'a, T>>::init",
                 None,
             ),
@@ -173,7 +179,7 @@ fn test_selected_crates() {
             "regex-automata",
             "0.4.9",
             Some("2025-03-13"),
-            TestCrateType::function_debug_failure(
+            TestCrateType::function(
                 "<util::captures::GroupInfoAllNames<'a> as core::iter::Iterator>::next",
                 Some(33),
             ),

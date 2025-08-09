@@ -217,6 +217,14 @@ impl<'tcx> PlaceCapabilities<'tcx> {
         self.0.retain(|p, _| !place.is_prefix_of(*p));
     }
 
+    pub(crate) fn remove_all_strict_postfixes(
+        &mut self,
+        place: Place<'tcx>,
+        _ctxt: CompilerCtxt<'_, 'tcx>,
+    ) {
+        self.0.retain(|p, _| !place.is_strict_prefix_of(*p));
+    }
+
     pub(crate) fn remove_all_for_local(
         &mut self,
         local: mir::Local,
