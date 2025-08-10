@@ -84,6 +84,54 @@ impl SelectedCrateTestCase {
         }
     }
 
+    /// Format as semicolon-separated string: crate_name;version;date;function_name;num_bbs
+    fn to_semicolon_format(&self) -> String {
+        let date = self.crate_download_date.as_deref().unwrap_or("");
+        let function_name = self.function_name().unwrap_or("");
+        let num_bbs = self.num_bbs()
+            .map(|n| n.to_string())
+            .unwrap_or_default();
+
+        format!("{};{};{};{};{}",
+            self.crate_name,
+            self.crate_version,
+            date,
+            function_name,
+            num_bbs
+        )
+    }
+
+    /// Parse from semicolon-separated string: crate_name;version;date;function_name;num_bbs
+    fn from_semicolon_format(s: &str) -> Result<Self, String> {
+        let parts: Vec<&str> = s.split(';').collect();
+        if parts.len() != 5 {
+            return Err(format!("Expected 5 fields separated by semicolons, got {}", parts.len()));
+        }
+
+        let crate_name = parts[0].to_string();
+        let crate_version = parts[1].to_string();
+        let crate_download_date = if parts[2].is_empty() { None } else { Some(parts[2].to_string()) };
+        let function_name = parts[3];
+        let num_bbs = if parts[4].is_empty() {
+            None
+        } else {
+            Some(parts[4].parse::<usize>().map_err(|e| format!("Failed to parse num_bbs: {}", e))?)
+        };
+
+        let test_type = if function_name.is_empty() {
+            TestCrateType::EntireCrate
+        } else {
+            TestCrateType::function(function_name, num_bbs)
+        };
+
+        Ok(Self {
+            crate_name,
+            crate_version,
+            crate_download_date,
+            test_type,
+        })
+    }
+
     fn debug_failure(&self) {
         let visualization_env_vars = vec![
             (
@@ -1008,5 +1056,85 @@ fn test_selected_crates() {
         }
     }) {
         test_case.run();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_semicolon_format_roundtrip_entire_crate() {
+        let test_case = SelectedCrateTestCase::new(
+            "serde",
+            "1.0.123",
+            Some("2025-03-13"),
+            TestCrateType::EntireCrate,
+        );
+
+        let formatted = test_case.to_semicolon_format();
+        assert_eq!(formatted, "serde;1.0.123;2025-03-13;;");
+
+        let parsed = SelectedCrateTestCase::from_semicolon_format(&formatted).unwrap();
+        assert_eq!(parsed.crate_name, "serde");
+        assert_eq!(parsed.crate_version, "1.0.123");
+        assert_eq!(parsed.crate_download_date, Some("2025-03-13".to_string()));
+        assert!(matches!(parsed.test_type, TestCrateType::EntireCrate));
+    }
+
+    #[test]
+    fn test_semicolon_format_roundtrip_function_with_num_bbs() {
+        let test_case = SelectedCrateTestCase::new(
+            "regex",
+            "1.11.1",
+            Some("2025-03-13"),
+            TestCrateType::function("regex::exec::ExecBuilder::build", Some(42)),
+        );
+
+        let formatted = test_case.to_semicolon_format();
+        assert_eq!(formatted, "regex;1.11.1;2025-03-13;regex::exec::ExecBuilder::build;42");
+
+        let parsed = SelectedCrateTestCase::from_semicolon_format(&formatted).unwrap();
+        assert_eq!(parsed.crate_name, "regex");
+        assert_eq!(parsed.crate_version, "1.11.1");
+        assert_eq!(parsed.crate_download_date, Some("2025-03-13".to_string()));
+        assert_eq!(parsed.function_name(), Some("regex::exec::ExecBuilder::build"));
+        assert_eq!(parsed.num_bbs(), Some(42));
+    }
+
+    #[test]
+    fn test_semicolon_format_roundtrip_function_without_num_bbs() {
+        let test_case = SelectedCrateTestCase::new(
+            "tokio",
+            "1.42.0",
+            None,
+            TestCrateType::function("runtime::Runtime::new", None),
+        );
+
+        let formatted = test_case.to_semicolon_format();
+        assert_eq!(formatted, "tokio;1.42.0;;runtime::Runtime::new;");
+
+        let parsed = SelectedCrateTestCase::from_semicolon_format(&formatted).unwrap();
+        assert_eq!(parsed.crate_name, "tokio");
+        assert_eq!(parsed.crate_version, "1.42.0");
+        assert_eq!(parsed.crate_download_date, None);
+        assert_eq!(parsed.function_name(), Some("runtime::Runtime::new"));
+        assert_eq!(parsed.num_bbs(), None);
+    }
+
+    #[test]
+    fn test_semicolon_format_parse_error_wrong_field_count() {
+        let invalid = "serde;1.0.123;2025-03-13";
+        let result = SelectedCrateTestCase::from_semicolon_format(invalid);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Expected 5 fields"));
+    }
+
+    #[test]
+    fn test_semicolon_format_parse_error_invalid_num_bbs() {
+        let invalid = "serde;1.0.123;2025-03-13;some_function;not_a_number";
+        let result = SelectedCrateTestCase::from_semicolon_format(invalid);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Failed to parse num_bbs"));
     }
 }
