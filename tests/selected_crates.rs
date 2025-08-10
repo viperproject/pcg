@@ -1,6 +1,8 @@
 #![feature(let_chains)]
 #![allow(dead_code)]
 use itertools::Itertools;
+use std::fmt;
+use std::str::FromStr;
 
 mod common;
 
@@ -137,6 +139,85 @@ impl SelectedCrateTestCase {
                 panic!("Test failed");
             }
         }
+    }
+}
+
+impl fmt::Display for SelectedCrateTestCase {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{};{};{};{};{}",
+            self.crate_name,
+            self.crate_version,
+            self.crate_download_date.unwrap_or(""),
+            self.function_name().unwrap_or(""),
+            self.num_bbs().map(|n| n.to_string()).unwrap_or_default()
+        )
+    }
+}
+
+#[derive(Debug, PartialEq)]
+enum ParseError {
+    InvalidFormat,
+    InvalidNumBbs,
+}
+
+impl fmt::Display for ParseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ParseError::InvalidFormat => write!(f, "Invalid format: expected crate_name;version;date;function_name;num_bbs"),
+            ParseError::InvalidNumBbs => write!(f, "Invalid num_bbs: must be a valid number or empty"),
+        }
+    }
+}
+
+impl std::error::Error for ParseError {}
+
+impl FromStr for SelectedCrateTestCase {
+    type Err = ParseError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let parts: Vec<&str> = s.split(';').collect();
+        if parts.len() != 5 {
+            return Err(ParseError::InvalidFormat);
+        }
+
+        let crate_name = parts[0];
+        let crate_version = parts[1];
+        let crate_download_date = if parts[2].is_empty() {
+            None
+        } else {
+            Some(parts[2])
+        };
+        let function_name = parts[3];
+        let num_bbs = if parts[4].is_empty() {
+            None
+        } else {
+            parts[4].parse::<usize>().map_err(|_| ParseError::InvalidNumBbs)?
+        };
+
+        let test_type = if function_name.is_empty() {
+            TestCrateType::EntireCrate
+        } else {
+            TestCrateType::function(function_name, num_bbs)
+        };
+
+        // Note: This creates a SelectedCrateTestCase with &'static str references
+        // In practice, you'll need to leak the strings or use a different approach
+        // for dynamic parsing. For now, this shows the format structure.
+        Ok(SelectedCrateTestCase {
+            crate_name: Box::leak(crate_name.to_string().into_boxed_str()),
+            crate_version: Box::leak(crate_version.to_string().into_boxed_str()),
+            crate_download_date: crate_download_date.map(|d| Box::leak(d.to_string().into_boxed_str()) as &'static str),
+            test_type: if function_name.is_empty() {
+                TestCrateType::EntireCrate
+            } else {
+                TestCrateType::function(
+                    Box::leak(function_name.to_string().into_boxed_str()),
+                    num_bbs
+                )
+            },
+        })
     }
 }
 
@@ -999,5 +1080,126 @@ fn test_selected_crates() {
         }
     }) {
         test_case.run();
+    }
+}
+
+#[cfg(test)]
+mod format_tests {
+    use super::*;
+
+    #[test]
+    fn test_display_entire_crate() {
+        let test_case = SelectedCrateTestCase::new(
+            "test-crate",
+            "1.0.0",
+            Some("2025-03-13"),
+            TestCrateType::EntireCrate,
+        );
+        assert_eq!(test_case.to_string(), "test-crate;1.0.0;2025-03-13;;");
+    }
+
+    #[test]
+    fn test_display_function_with_bbs() {
+        let test_case = SelectedCrateTestCase::new(
+            "test-crate",
+            "1.0.0",
+            Some("2025-03-13"),
+            TestCrateType::function("test::function", Some(10)),
+        );
+        assert_eq!(test_case.to_string(), "test-crate;1.0.0;2025-03-13;test::function;10");
+    }
+
+    #[test]
+    fn test_display_function_without_bbs() {
+        let test_case = SelectedCrateTestCase::new(
+            "test-crate",
+            "1.0.0",
+            None,
+            TestCrateType::function("test::function", None),
+        );
+        assert_eq!(test_case.to_string(), "test-crate;1.0.0;;test::function;");
+    }
+
+    #[test]
+    fn test_parse_entire_crate() {
+        let input = "test-crate;1.0.0;2025-03-13;;";
+        let parsed: SelectedCrateTestCase = input.parse().unwrap();
+        assert_eq!(parsed.crate_name, "test-crate");
+        assert_eq!(parsed.crate_version, "1.0.0");
+        assert_eq!(parsed.crate_download_date, Some("2025-03-13"));
+        assert!(matches!(parsed.test_type, TestCrateType::EntireCrate));
+        assert_eq!(parsed.function_name(), None);
+        assert_eq!(parsed.num_bbs(), None);
+    }
+
+    #[test]
+    fn test_parse_function_with_bbs() {
+        let input = "test-crate;1.0.0;2025-03-13;test::function;10";
+        let parsed: SelectedCrateTestCase = input.parse().unwrap();
+        assert_eq!(parsed.crate_name, "test-crate");
+        assert_eq!(parsed.crate_version, "1.0.0");
+        assert_eq!(parsed.crate_download_date, Some("2025-03-13"));
+        assert_eq!(parsed.function_name(), Some("test::function"));
+        assert_eq!(parsed.num_bbs(), Some(10));
+    }
+
+    #[test]
+    fn test_parse_function_without_date_and_bbs() {
+        let input = "test-crate;1.0.0;;test::function;";
+        let parsed: SelectedCrateTestCase = input.parse().unwrap();
+        assert_eq!(parsed.crate_name, "test-crate");
+        assert_eq!(parsed.crate_version, "1.0.0");
+        assert_eq!(parsed.crate_download_date, None);
+        assert_eq!(parsed.function_name(), Some("test::function"));
+        assert_eq!(parsed.num_bbs(), None);
+    }
+
+    #[test]
+    fn test_roundtrip() {
+        let test_cases = vec![
+            SelectedCrateTestCase::new(
+                "test-crate",
+                "1.0.0",
+                Some("2025-03-13"),
+                TestCrateType::EntireCrate,
+            ),
+            SelectedCrateTestCase::new(
+                "another-crate",
+                "2.5.0",
+                None,
+                TestCrateType::function("some::function", Some(42)),
+            ),
+            SelectedCrateTestCase::new(
+                "third-crate",
+                "0.1.0",
+                Some("2025-01-01"),
+                TestCrateType::function("other::func", None),
+            ),
+        ];
+
+        for original in test_cases {
+            let formatted = original.to_string();
+            let parsed: SelectedCrateTestCase = formatted.parse().unwrap();
+            
+            // Verify the fields match
+            assert_eq!(parsed.crate_name, original.crate_name);
+            assert_eq!(parsed.crate_version, original.crate_version);
+            assert_eq!(parsed.crate_download_date, original.crate_download_date);
+            assert_eq!(parsed.function_name(), original.function_name());
+            assert_eq!(parsed.num_bbs(), original.num_bbs());
+        }
+    }
+
+    #[test]
+    fn test_parse_invalid_format() {
+        let invalid_inputs = vec![
+            "too;few;fields",
+            "too;many;fields;here;are;extra",
+            "crate;version;date;func;not_a_number",
+        ];
+
+        for input in invalid_inputs {
+            assert!(input.parse::<SelectedCrateTestCase>().is_err());
+        }
     }
 }
