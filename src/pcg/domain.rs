@@ -318,18 +318,25 @@ impl<'tcx> HasValidityCheck<'tcx> for PcgRef<'_, 'tcx> {
             }
         }
 
-        let leaf_places = self.leaf_places(ctxt);
 
-        for place in self.places(ctxt) {
-            if self.capabilities.get(place, ctxt) == Some(CapabilityKind::Exclusive)
-                && !leaf_places.contains(&place)
-            {
-                return Err(format!(
-                    "Place {} has exclusive capability but is not a leaf place",
-                    place.to_short_string(ctxt)
-                ));
-            }
-        }
+        // For now we don't do this, due to interactions with future nodes: we
+        // detect that a node is no longer blocked but still technically not a
+        // leaf due to historical reborrows that could have changed the value in
+        // its lifetime projections see format_fields in tracing-subscriber
+        //
+        // In the future we might want to change how this works
+        //
+        // let leaf_places = self.leaf_places(ctxt);
+        // for place in self.places(ctxt) {
+        //     if self.capabilities.get(place, ctxt) == Some(CapabilityKind::Exclusive)
+        //         && !leaf_places.contains(&place)
+        //     {
+        //         return Err(format!(
+        //             "Place {} has exclusive capability but is not a leaf place",
+        //             place.to_short_string(ctxt)
+        //         ));
+        //     }
+        // }
 
         for edge in self.borrow.graph.edges() {
             match edge.kind {
@@ -379,7 +386,12 @@ impl<'mir, 'tcx: 'mir> Pcg<'tcx> {
             .borrow
             .graph()
             .edges_blocking(place.into(), ctxt)
-            .any(|e| matches!(e.kind, BorrowPcgEdgeKind::BorrowPcgExpansion(_)))
+            .any(|e| {
+                matches!(
+                    e.kind,
+                    BorrowPcgEdgeKind::BorrowPcgExpansion(_)
+                )
+            })
         {
             return false;
         }

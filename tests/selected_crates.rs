@@ -161,6 +161,15 @@ fn test_selected_crates() {
 
     let test_cases = vec![
         SelectedCrateTestCase::new(
+            "tracing-subscriber",
+            "0.3.19",
+            Some("2025-03-13"),
+            TestCrateType::function(
+                "<fmt::format::pretty::Pretty as fmt::format::FormatFields<'writer>>::format_fields",
+                None,
+            ),
+        ),
+        SelectedCrateTestCase::new(
             "syn",
             "2.0.100",
             Some("2025-03-13"),

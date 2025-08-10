@@ -1,6 +1,7 @@
 import React from "react";
 import { BasicBlockData, CurrentPoint } from "../types";
 import ReactDOMServer from "react-dom/server";
+import { MirStmt } from "../api";
 
 interface BasicBlockTableProps {
   data: BasicBlockData;
@@ -11,6 +12,29 @@ interface BasicBlockTableProps {
 
 export function isStorageStmt(stmt: string) {
   return stmt.startsWith("StorageLive") || stmt.startsWith("StorageDead");
+}
+
+type TableRowProps = {
+  index: number | "T"; // Either the index of the statement or "T" for the terminator
+  stmt: MirStmt;
+  selected: boolean;
+  onClick: () => void;
+};
+
+function TableRow({ selected, onClick, stmt, index }: TableRowProps) {
+  const tooltip = `Loans invalidated at start: ${stmt.loans_invalidated_start.join(", ")}\nLoans invalidated at mid: ${stmt.loans_invalidated_mid.join(", ")}\nBorrows in scope at start: ${stmt.borrows_in_scope_start.join(", ")}\nBorrows in scope at mid: ${stmt.borrows_in_scope_mid.join(", ")}`;
+  return (
+    <tr
+      className={selected ? "highlight" : ""}
+      onClick={onClick}
+      title={tooltip}
+    >
+      <td>{index}</td>
+      <td>
+        <code>{stmt.stmt}</code>
+      </td>
+    </tr>
+  );
 }
 
 export default function BasicBlockTable({
@@ -37,17 +61,16 @@ export default function BasicBlockTable({
           </td>
         </tr>
         {data.stmts.map((stmt, i) => {
-          const tooltip = `Loans invalidated at start: ${stmt.loans_invalidated_start.join(", ")}\nLoans invalidated at mid: ${stmt.loans_invalidated_mid.join(", ")}\nBorrows in scope at start: ${stmt.borrows_in_scope_start.join(", ")}\nBorrows in scope at mid: ${stmt.borrows_in_scope_mid.join(", ")}`;
           return (
-            <tr
-              className={
+            <TableRow
+              key={i}
+              index={i}
+              stmt={stmt}
+              selected={
                 currentPoint.type === "stmt" &&
                 i === currentPoint.stmt &&
                 data.block === currentPoint.block
-                  ? "highlight"
-                  : ""
               }
-              key={i}
               onClick={() =>
                 setCurrentPoint({
                   type: "stmt",
@@ -56,22 +79,16 @@ export default function BasicBlockTable({
                   selectedAction: null,
                 })
               }
-              title={tooltip}
-            >
-              <td>{i}</td>
-              <td>
-                <code>{stmt.stmt}</code>
-              </td>
-            </tr>
+            />
           );
         })}
-        <tr
-          className={
+        <TableRow
+          index="T"
+          stmt={data.terminator}
+          selected={
             currentPoint.type === "stmt" &&
             currentPoint.stmt == data.stmts.length &&
             data.block === currentPoint.block
-              ? "highlight"
-              : ""
           }
           onClick={() =>
             setCurrentPoint({
@@ -81,12 +98,7 @@ export default function BasicBlockTable({
               selectedAction: null,
             })
           }
-        >
-          <td>T</td>
-          <td>
-            <code>{data.terminator}</code>
-          </td>
-        </tr>
+        />
       </tbody>
     </table>
   );

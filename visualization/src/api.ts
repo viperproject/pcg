@@ -17,7 +17,7 @@ export type MirGraphNode = {
   id: string;
   block: number;
   stmts: MirStmt[];
-  terminator: string;
+  terminator: MirStmt;
 };
 
 export type MirGraphEdge = {
