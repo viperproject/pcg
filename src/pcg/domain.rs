@@ -421,7 +421,7 @@ impl<'mir, 'tcx: 'mir> Pcg<'tcx> {
         &self.borrow
     }
 
-    pub(crate) fn owned_ensures(&mut self, t: Triple<'tcx>, ctxt: CompilerCtxt<'_, 'tcx>) {
+    pub(crate) fn ensure_triple(&mut self, t: Triple<'tcx>, ctxt: CompilerCtxt<'_, 'tcx>) {
         self.owned
             .locals_mut()
             .ensures(t, &mut self.capabilities, ctxt);

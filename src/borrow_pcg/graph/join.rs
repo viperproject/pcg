@@ -5,6 +5,7 @@ use crate::borrow_pcg::has_pcs_elem::{LabelLifetimeProjection, LabelLifetimeProj
 use crate::borrow_pcg::region_projection::LifetimeProjectionLabel;
 use crate::free_pcs::OwnedPcg;
 use crate::r#loop::PlaceUsages;
+use crate::pcg::ctxt::AnalysisCtxt;
 use crate::pcg::place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface};
 use crate::pcg::{BodyAnalysis, PCGNodeLike, PcgError, PcgNode, PcgUnsupportedError};
 use crate::pcg_validity_assert;

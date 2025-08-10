@@ -13,9 +13,9 @@ pub mod eval_stmt_data;
 pub(crate) mod incoming_states;
 pub(crate) mod initialized;
 pub(crate) mod iter;
-pub(crate) mod logging;
 pub mod json;
 pub(crate) mod liveness;
+pub(crate) mod logging;
 mod mutable;
 pub mod place;
 pub mod place_snapshot;
@@ -52,7 +52,8 @@ impl DebugImgcat {
     }
 }
 
-pub struct PcgSettings {
+#[derive(Clone)]
+pub struct PcgSettings<'a> {
     pub skip_bodies_with_loops: bool,
     pub max_basic_blocks: Option<usize>,
     pub max_nodes: Option<usize>,
@@ -62,8 +63,8 @@ pub struct PcgSettings {
     pub check_cycles: bool,
     pub validity_checks: bool,
     pub coupling_debug_imgcat: bool,
-    pub pcg_debug_block: Option<BasicBlock>,
-    pub debug_imgcat: Vec<DebugImgcat>,
+    pub debug_block: Option<BasicBlock>,
+    pub debug_imgcat: &'a [DebugImgcat],
     pub validity_checks_warn_only: bool,
     pub panic_on_error: bool,
     pub polonius: bool,
@@ -76,30 +77,44 @@ pub struct PcgSettings {
     pub skip_function: Option<String>,
 }
 
-impl PcgSettings {
+impl<'a> PcgSettings<'a> {
     fn new() -> Self {
         let mut processed_vars = HashSet::new();
 
         // Process all known settings
-        let skip_bodies_with_loops = Self::process_bool_var(&mut processed_vars, "PCG_SKIP_BODIES_WITH_LOOPS", false);
+        let skip_bodies_with_loops =
+            Self::process_bool_var(&mut processed_vars, "PCG_SKIP_BODIES_WITH_LOOPS", false);
         let max_basic_blocks = Self::process_usize_var(&mut processed_vars, "PCG_MAX_BASIC_BLOCKS");
         let max_nodes = Self::process_usize_var(&mut processed_vars, "PCG_MAX_NODES");
-        let test_crates_start_from = Self::process_usize_var(&mut processed_vars, "PCG_TEST_CRATES_START_FROM");
+        let test_crates_start_from =
+            Self::process_usize_var(&mut processed_vars, "PCG_TEST_CRATES_START_FROM");
         let num_test_crates = Self::process_usize_var(&mut processed_vars, "PCG_NUM_TEST_CRATES");
-        let test_crate_parallelism = Self::process_usize_var(&mut processed_vars, "PCG_TEST_CRATE_PARALLELISM");
+        let test_crate_parallelism =
+            Self::process_usize_var(&mut processed_vars, "PCG_TEST_CRATE_PARALLELISM");
         let check_cycles = Self::process_bool_var(&mut processed_vars, "PCG_CHECK_CYCLES", false);
-        let validity_checks = Self::process_bool_var(&mut processed_vars, "PCG_VALIDITY_CHECKS", cfg!(debug_assertions));
-        let coupling_debug_imgcat = Self::process_bool_var(&mut processed_vars, "PCG_COUPLING_DEBUG_IMGCAT", false);
+        let validity_checks = Self::process_bool_var(
+            &mut processed_vars,
+            "PCG_VALIDITY_CHECKS",
+            cfg!(debug_assertions),
+        );
+        let coupling_debug_imgcat =
+            Self::process_bool_var(&mut processed_vars, "PCG_COUPLING_DEBUG_IMGCAT", false);
         let pcg_debug_block = Self::process_debug_block(&mut processed_vars);
         let debug_imgcat = Self::process_debug_imgcat(&mut processed_vars);
-        let validity_checks_warn_only = Self::process_bool_var(&mut processed_vars, "PCG_VALIDITY_CHECKS_WARN_ONLY", false);
-        let panic_on_error = Self::process_bool_var(&mut processed_vars, "PCG_PANIC_ON_ERROR", false);
+        let validity_checks_warn_only =
+            Self::process_bool_var(&mut processed_vars, "PCG_VALIDITY_CHECKS_WARN_ONLY", false);
+        let panic_on_error =
+            Self::process_bool_var(&mut processed_vars, "PCG_PANIC_ON_ERROR", false);
         let polonius = Self::process_bool_var(&mut processed_vars, "PCG_POLONIUS", false);
-                let dump_mir_dataflow = Self::process_bool_var(&mut processed_vars, "PCG_DUMP_MIR_DATAFLOW", false);
+        let dump_mir_dataflow =
+            Self::process_bool_var(&mut processed_vars, "PCG_DUMP_MIR_DATAFLOW", false);
         let visualization = Self::process_bool_var(&mut processed_vars, "PCG_VISUALIZATION", false);
-                let visualization_data_dir = Self::process_string_var(&mut processed_vars, "PCG_VISUALIZATION_DATA_DIR");
-        let check_annotations = Self::process_bool_var(&mut processed_vars, "PCG_CHECK_ANNOTATIONS", false);
-        let emit_annotations = Self::process_bool_var(&mut processed_vars, "PCG_EMIT_ANNOTATIONS", false);
+        let visualization_data_dir =
+            Self::process_string_var(&mut processed_vars, "PCG_VISUALIZATION_DATA_DIR");
+        let check_annotations =
+            Self::process_bool_var(&mut processed_vars, "PCG_CHECK_ANNOTATIONS", false);
+        let emit_annotations =
+            Self::process_bool_var(&mut processed_vars, "PCG_EMIT_ANNOTATIONS", false);
         let check_function = Self::process_string_var(&mut processed_vars, "PCG_CHECK_FUNCTION");
         let skip_function = Self::process_string_var(&mut processed_vars, "PCG_SKIP_FUNCTION");
 
@@ -116,7 +131,7 @@ impl PcgSettings {
             check_cycles,
             validity_checks,
             coupling_debug_imgcat,
-            pcg_debug_block,
+            debug_block: pcg_debug_block,
             debug_imgcat,
             validity_checks_warn_only,
             panic_on_error,
@@ -139,9 +154,11 @@ impl PcgSettings {
     fn process_usize_var(processed: &mut HashSet<String>, var_name: &str) -> Option<usize> {
         processed.insert(var_name.to_string());
         match std::env::var(var_name) {
-            Ok(val) => Some(val.parse().unwrap_or_else(|_| {
-                panic!("{} must be a valid usize, got: '{}'", var_name, val)
-            })),
+            Ok(val) => {
+                Some(val.parse().unwrap_or_else(|_| {
+                    panic!("{} must be a valid usize, got: '{}'", var_name, val)
+                }))
+            }
             Err(_) => None,
         }
     }
@@ -162,7 +179,10 @@ impl PcgSettings {
                     panic!("PCG_DEBUG_BLOCK must start with 'bb'");
                 }
                 let block_id: usize = val[2..].parse().unwrap_or_else(|_| {
-                    panic!("PCG_DEBUG_BLOCK must be in format 'bbN' where N is a number, got: '{}'", val)
+                    panic!(
+                        "PCG_DEBUG_BLOCK must be in format 'bbN' where N is a number, got: '{}'",
+                        val
+                    )
                 });
                 Some(block_id.into())
             }
@@ -170,11 +190,12 @@ impl PcgSettings {
         }
     }
 
-    fn process_debug_imgcat(processed: &mut HashSet<String>) -> Vec<DebugImgcat> {
+    fn process_debug_imgcat(processed: &mut HashSet<String>) -> &'static [DebugImgcat] {
         processed.insert("PCG_DEBUG_IMGCAT".to_string());
         match std::env::var("PCG_DEBUG_IMGCAT") {
             Ok(val) => {
-                val.split(',')
+                let vec: Vec<DebugImgcat> = val
+                    .split(',')
                     .map(|s| s.trim())
                     .flat_map(|s| {
                         if s.to_lowercase() == "true" || s.to_lowercase() == "all" {
@@ -189,9 +210,11 @@ impl PcgSettings {
                             panic!("Unexpected value for PCG_DEBUG_IMGCAT: {}", s);
                         }
                     })
-                    .collect()
+                    .collect();
+                // We are getting this from an env var, so we might as well leak it
+                Box::leak(vec.into_boxed_slice())
             }
-            Err(_) => vec![],
+            Err(_) => &[],
         }
     }
 
@@ -217,7 +240,7 @@ impl PcgSettings {
 }
 
 lazy_static! {
-    pub static ref SETTINGS: PcgSettings = PcgSettings::new();
+    pub static ref SETTINGS: PcgSettings<'static> = PcgSettings::new();
 
     // Backward-compatible references to individual settings
     pub static ref SKIP_BODIES_WITH_LOOPS: bool = SETTINGS.skip_bodies_with_loops;
@@ -229,8 +252,8 @@ lazy_static! {
     pub static ref CHECK_CYCLES: bool = SETTINGS.check_cycles;
     pub static ref VALIDITY_CHECKS: bool = SETTINGS.validity_checks;
     pub static ref COUPLING_DEBUG_IMGCAT: bool = SETTINGS.coupling_debug_imgcat;
-    pub static ref PCG_DEBUG_BLOCK: Option<BasicBlock> = SETTINGS.pcg_debug_block;
-    pub static ref DEBUG_IMGCAT: Vec<DebugImgcat> = SETTINGS.debug_imgcat.clone();
+    pub static ref PCG_DEBUG_BLOCK: Option<BasicBlock> = SETTINGS.debug_block;
+    pub static ref DEBUG_IMGCAT: &'static [DebugImgcat] = SETTINGS.debug_imgcat;
     pub static ref VALIDITY_CHECKS_WARN_ONLY: bool = SETTINGS.validity_checks_warn_only;
     pub static ref PANIC_ON_ERROR: bool = SETTINGS.panic_on_error;
     pub static ref POLONIUS: bool = SETTINGS.polonius;

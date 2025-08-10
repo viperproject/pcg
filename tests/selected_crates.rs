@@ -84,42 +84,56 @@ impl SelectedCrateTestCase {
         }
     }
 
-    /// Format as semicolon-separated string: crate_name;version;date;function_name;num_bbs
+    /// Format as semicolon-separated string: crate_name;version;date;function_name;num_bbs;debug_failure
     fn to_semicolon_format(&self) -> String {
         let date = self.crate_download_date.as_deref().unwrap_or("");
         let function_name = self.function_name().unwrap_or("");
-        let num_bbs = self.num_bbs()
-            .map(|n| n.to_string())
-            .unwrap_or_default();
+        let num_bbs = self.num_bbs().map(|n| n.to_string()).unwrap_or_default();
+        let debug_failure = match &self.test_type {
+            TestCrateType::Function(f) if f.debug_failure => "debug_failure",
+            _ => "",
+        };
 
-        format!("{};{};{};{};{}",
-            self.crate_name,
-            self.crate_version,
-            date,
-            function_name,
-            num_bbs
+        format!(
+            "{};{};{};{};{};{}",
+            self.crate_name, self.crate_version, date, function_name, num_bbs, debug_failure
         )
     }
 
     /// Parse from semicolon-separated string: crate_name;version;date;function_name;num_bbs
     fn from_semicolon_format(s: &str) -> Result<Self, String> {
         let parts: Vec<&str> = s.split(';').collect();
-        if parts.len() != 5 {
-            return Err(format!("Expected 5 fields separated by semicolons, got {}", parts.len()));
+        if parts.len() < 5 {
+            return Err(format!(
+                "Expected at least 5 fields separated by semicolons, but input {} only has {}",
+                s,
+                parts.len()
+            ));
         }
 
         let crate_name = parts[0].to_string();
         let crate_version = parts[1].to_string();
-        let crate_download_date = if parts[2].is_empty() { None } else { Some(parts[2].to_string()) };
+        let crate_download_date = if parts[2].is_empty() {
+            None
+        } else {
+            Some(parts[2].to_string())
+        };
         let function_name = parts[3];
         let num_bbs = if parts[4].is_empty() {
             None
         } else {
-            Some(parts[4].parse::<usize>().map_err(|e| format!("Failed to parse num_bbs: {}", e))?)
+            Some(
+                parts[4]
+                    .parse::<usize>()
+                    .map_err(|e| format!("Failed to parse num_bbs: {}", e))?,
+            )
         };
+        let debug_failure = parts.len() > 5 && parts[5] == "debug_failure";
 
         let test_type = if function_name.is_empty() {
             TestCrateType::EntireCrate
+        } else if debug_failure {
+            TestCrateType::function_debug_failure(function_name, num_bbs)
         } else {
             TestCrateType::function(function_name, num_bbs)
         };
@@ -207,15 +221,12 @@ fn test_selected_crates() {
         ("PCG_VISUALIZATION".to_string(), "true".to_string()),
     ];
 
-    let test_cases = vec![
+    let custom_test_cases = vec![
         SelectedCrateTestCase::new(
             "regex-automata",
             "0.4.9",
             Some("2025-03-13"),
-            TestCrateType::function(
-                "hybrid::dfa::Lazy::<'i, 'c>::reset_cache",
-                Some(11),
-            ),
+            TestCrateType::function("hybrid::dfa::Lazy::<'i, 'c>::reset_cache", Some(11)),
         ),
         SelectedCrateTestCase::new(
             "tracing-subscriber",
@@ -1044,6 +1055,13 @@ fn test_selected_crates() {
         SelectedCrateTestCase::new("rustls", "0.23.23", None, TestCrateType::EntireCrate),
     ];
 
+    let mut test_cases: Vec<SelectedCrateTestCase> =
+        vec!["gimli;0.31.1;2025-03-13;read::unit::EntriesTree::<'abbrev, 'unit, R>::root;26"]
+            .into_iter()
+            .map(|s| SelectedCrateTestCase::from_semicolon_format(s).unwrap())
+            .collect();
+    test_cases.extend(custom_test_cases);
+
     for test_case in test_cases.into_iter().sorted_by_key(|tc| {
         if let TestCrateType::Function(f) = &tc.test_type {
             if f.debug_failure {
@@ -1073,7 +1091,7 @@ mod tests {
         );
 
         let formatted = test_case.to_semicolon_format();
-        assert_eq!(formatted, "serde;1.0.123;2025-03-13;;");
+        assert_eq!(formatted, "serde;1.0.123;2025-03-13;;;");
 
         let parsed = SelectedCrateTestCase::from_semicolon_format(&formatted).unwrap();
         assert_eq!(parsed.crate_name, "serde");
@@ -1092,13 +1110,19 @@ mod tests {
         );
 
         let formatted = test_case.to_semicolon_format();
-        assert_eq!(formatted, "regex;1.11.1;2025-03-13;regex::exec::ExecBuilder::build;42");
+        assert_eq!(
+            formatted,
+            "regex;1.11.1;2025-03-13;regex::exec::ExecBuilder::build;42;"
+        );
 
         let parsed = SelectedCrateTestCase::from_semicolon_format(&formatted).unwrap();
         assert_eq!(parsed.crate_name, "regex");
         assert_eq!(parsed.crate_version, "1.11.1");
         assert_eq!(parsed.crate_download_date, Some("2025-03-13".to_string()));
-        assert_eq!(parsed.function_name(), Some("regex::exec::ExecBuilder::build"));
+        assert_eq!(
+            parsed.function_name(),
+            Some("regex::exec::ExecBuilder::build")
+        );
         assert_eq!(parsed.num_bbs(), Some(42));
     }
 
@@ -1112,7 +1136,7 @@ mod tests {
         );
 
         let formatted = test_case.to_semicolon_format();
-        assert_eq!(formatted, "tokio;1.42.0;;runtime::Runtime::new;");
+        assert_eq!(formatted, "tokio;1.42.0;;runtime::Runtime::new;;");
 
         let parsed = SelectedCrateTestCase::from_semicolon_format(&formatted).unwrap();
         assert_eq!(parsed.crate_name, "tokio");
@@ -1127,12 +1151,12 @@ mod tests {
         let invalid = "serde;1.0.123;2025-03-13";
         let result = SelectedCrateTestCase::from_semicolon_format(invalid);
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Expected 5 fields"));
+        assert!(result.unwrap_err().contains("Expected 6 fields"));
     }
 
     #[test]
     fn test_semicolon_format_parse_error_invalid_num_bbs() {
-        let invalid = "serde;1.0.123;2025-03-13;some_function;not_a_number";
+        let invalid = "serde;1.0.123;2025-03-13;some_function;not_a_number;";
         let result = SelectedCrateTestCase::from_semicolon_format(invalid);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Failed to parse num_bbs"));
@@ -1149,7 +1173,10 @@ mod tests {
         );
 
         let formatted = test_case.to_semicolon_format();
-        assert_eq!(formatted, "test_crate;1.2.3;2025-03-13;test::function::name;15");
+        assert_eq!(
+            formatted,
+            "test_crate;1.2.3;2025-03-13;test::function::name;15;"
+        );
 
         // Verify it can be parsed back
         let parsed = SelectedCrateTestCase::from_semicolon_format(&formatted).unwrap();
@@ -1157,5 +1184,66 @@ mod tests {
         assert_eq!(parsed.crate_version, test_case.crate_version);
         assert_eq!(parsed.function_name(), test_case.function_name());
         assert_eq!(parsed.num_bbs(), test_case.num_bbs());
+    }
+
+    #[test]
+    fn test_semicolon_format_with_debug_failure() {
+        // Test that debug_failure is correctly serialized and deserialized
+        let test_case = SelectedCrateTestCase::new(
+            "debug_crate",
+            "2.0.0",
+            Some("2025-03-14"),
+            TestCrateType::function_debug_failure("debug::function", Some(10)),
+        );
+
+        let formatted = test_case.to_semicolon_format();
+        assert_eq!(
+            formatted,
+            "debug_crate;2.0.0;2025-03-14;debug::function;10;debug_failure"
+        );
+
+        // Verify it can be parsed back with debug_failure set
+        let parsed = SelectedCrateTestCase::from_semicolon_format(&formatted).unwrap();
+        assert_eq!(parsed.crate_name, "debug_crate");
+        assert_eq!(parsed.crate_version, "2.0.0");
+        assert_eq!(parsed.crate_download_date, Some("2025-03-14".to_string()));
+        assert_eq!(parsed.function_name(), Some("debug::function"));
+        assert_eq!(parsed.num_bbs(), Some(10));
+
+        // Verify debug_failure is set correctly
+        if let TestCrateType::Function(f) = &parsed.test_type {
+            assert!(f.debug_failure, "debug_failure should be true");
+        } else {
+            panic!("Expected Function test type");
+        }
+    }
+
+    #[test]
+    fn test_semicolon_format_parse_debug_failure_string() {
+        // Test parsing a string with debug_failure set
+        let input = "test;1.0.0;2025-03-14;test::func;5;debug_failure";
+        let parsed = SelectedCrateTestCase::from_semicolon_format(input).unwrap();
+
+        if let TestCrateType::Function(f) = &parsed.test_type {
+            assert!(
+                f.debug_failure,
+                "debug_failure should be true when 'debug_failure' is in the 6th field"
+            );
+        } else {
+            panic!("Expected Function test type");
+        }
+
+        // Test parsing without debug_failure
+        let input_no_debug = "test;1.0.0;2025-03-14;test::func;5;";
+        let parsed_no_debug = SelectedCrateTestCase::from_semicolon_format(input_no_debug).unwrap();
+
+        if let TestCrateType::Function(f) = &parsed_no_debug.test_type {
+            assert!(
+                !f.debug_failure,
+                "debug_failure should be false when 6th field is empty"
+            );
+        } else {
+            panic!("Expected Function test type");
+        }
     }
 }

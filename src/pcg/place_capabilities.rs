@@ -7,24 +7,27 @@ use crate::{
         state::{BorrowStateMutRef, BorrowsStateLike},
     },
     free_pcs::CapabilityKind,
-    pcg::PcgError,
+    pcg::{PcgError, ctxt::AnalysisCtxt},
     pcg_validity_assert,
     rustc_interface::{data_structures::fx::FxHashMap, middle::mir},
     utils::{
         CompilerCtxt, HasPlace, Place,
         display::{DebugLines, DisplayWithCompilerCtxt},
+        logging::{self, LogPredicate},
         validity::HasValidityCheck,
     },
 };
 
 pub(crate) trait PlaceCapabilitiesInterface<'tcx> {
     fn get(&self, place: Place<'tcx>, ctxt: CompilerCtxt<'_, 'tcx>) -> Option<CapabilityKind>;
-    fn insert(
+    fn insert<'slf>(
         &mut self,
         place: Place<'tcx>,
         capability: CapabilityKind,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> bool;
+        ctxt: impl AnalysisCtxt<'slf, 'tcx>,
+    ) -> bool
+    where
+        'tcx: 'slf;
     fn remove(
         &mut self,
         place: Place<'tcx>,
@@ -45,17 +48,27 @@ impl<'tcx> PlaceCapabilitiesInterface<'tcx> for PlaceCapabilities<'tcx> {
         self.0.remove(&place)
     }
 
-    fn insert(
+    fn insert<'slf>(
         &mut self,
         place: Place<'tcx>,
         capability: CapabilityKind,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> bool {
+        ctxt: impl AnalysisCtxt<'slf, 'tcx>,
+    ) -> bool
+    where
+        'tcx: 'slf,
+    {
         pcg_validity_assert!(
-            !place.projects_shared_ref(ctxt) || capability.is_read(),
+            !place.projects_shared_ref(ctxt.ctxt()) || capability.is_read(),
             "Place {} projects a shared ref, but has capability {:?}",
-            place.to_short_string(ctxt),
+            place.to_short_string(ctxt.ctxt()),
             capability
+        );
+        logging::log!(
+            LogPredicate::DebugBlock,
+            ctxt,
+            "Inserting capability {:?} for {}",
+            capability,
+            place.to_short_string(ctxt.ctxt())
         );
         self.0.insert(place, capability) != Some(capability)
     }

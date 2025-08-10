@@ -473,7 +473,7 @@ impl<'tcx> Place<'tcx> {
         }
     }
 
-    pub(crate) fn projects_shared_ref(self, repacker: CompilerCtxt<'_, 'tcx>) -> bool {
+    pub(crate) fn projects_shared_ref(self, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
         self.projects_ty(
             |typ| {
                 typ.ty
@@ -481,7 +481,7 @@ impl<'tcx> Place<'tcx> {
                     .map(|m| m.is_not())
                     .unwrap_or_default()
             },
-            repacker,
+            ctxt,
         )
         .is_some()
     }

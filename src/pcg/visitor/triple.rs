@@ -41,8 +41,9 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         Ok(())
     }
 
+    #[tracing::instrument(skip(self, triple))]
     pub(crate) fn ensure_triple(&mut self, triple: Triple<'tcx>) -> Result<(), PcgError> {
-        self.pcg.owned_ensures(triple, self.ctxt);
+        self.pcg.ensure_triple(triple, self.ctxt);
         Ok(())
     }
 }

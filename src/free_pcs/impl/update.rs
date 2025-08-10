@@ -106,6 +106,18 @@ impl<'tcx> OwnedPcgData<'tcx> {
             }
             PlaceCondition::Capability(place, cap) => {
                 place_capabilities.insert(place, cap, ctxt);
+                // It's possible that the place could have been already expanded
+                // exclusively (when it could have originally been expanded for
+                // read), in which case we pretend we did the right thing all
+                // along
+                if cap == CapabilityKind::Read {
+                    for (p, _) in place_capabilities
+                        .capabilities_for_strict_postfixes_of(place)
+                        .collect::<Vec<_>>()
+                    {
+                        place_capabilities.insert(p, CapabilityKind::Read, ctxt);
+                    }
+                }
             }
             PlaceCondition::ExpandTwoPhase(place) => {
                 place_capabilities.insert(place, CapabilityKind::Read, ctxt);

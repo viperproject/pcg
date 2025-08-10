@@ -15,9 +15,17 @@ use crate::{
         region_projection::LifetimeProjectionLabel,
     },
     free_pcs::OwnedPcg,
-    pcg::{BodyAnalysis, PcgError, place_capabilities::PlaceCapabilitiesInterface},
+    pcg::{
+        BodyAnalysis, PcgError,
+        ctxt::{AnalysisCtxt, WithCtxt},
+        place_capabilities::PlaceCapabilitiesInterface,
+    },
     pcg_validity_assert,
-    utils::place::maybe_remote::MaybeRemotePlace,
+    utils::{
+        display::DisplayWithCompilerCtxt,
+        logging::{self, LogPredicate},
+        place::maybe_remote::MaybeRemotePlace,
+    },
 };
 use crate::{
     borrow_pcg::edge::kind::BorrowPcgEdgeKind, utils::place::maybe_old::MaybeLabelledPlace,
@@ -414,7 +422,6 @@ impl<'tcx> BorrowsState<'tcx> {
         self.graph.edges_blocking(node, repacker).collect()
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn add_borrow(
         &mut self,
         blocked_place: Place<'tcx>,
@@ -441,32 +448,43 @@ impl<'tcx> BorrowsState<'tcx> {
             region,
             ctxt,
         );
+        let ctxt = WithCtxt::new(ctxt, location.block);
+        logging::log!(
+            LogPredicate::DebugBlock,
+            ctxt,
+            "Inserting borrow edge {}",
+            borrow_edge.to_short_string(ctxt.ctxt())
+        );
         assert!(self.graph.insert(
             BorrowEdge::Local(borrow_edge).to_borrow_pcg_edge(self.path_conditions.clone()),
-            ctxt
+            ctxt.ctxt()
         ));
 
         match kind {
             BorrowKind::Mut {
                 kind: MutBorrowKind::Default | MutBorrowKind::ClosureCapture,
             } => {
-                let _ = capabilities.remove(blocked_place, ctxt);
+                let _ = capabilities.remove(blocked_place, ctxt.ctxt());
             }
             _ => {
-                match capabilities.get(blocked_place, ctxt) {
+                let blocked_place_capability = capabilities.get(blocked_place, ctxt.ctxt());
+                logging::log!(
+                    LogPredicate::DebugBlock,
+                    ctxt,
+                    "Blocked place {} has capability {:?}",
+                    blocked_place.to_short_string(ctxt.ctxt()),
+                    blocked_place_capability
+                );
+                match blocked_place_capability {
                     Some(CapabilityKind::Exclusive) => {
                         assert!(capabilities.insert(blocked_place, CapabilityKind::Read, ctxt));
                     }
                     Some(CapabilityKind::Read) => {
                         // Do nothing, this just adds another shared borrow
                     }
-                    None => {
-                        // Some projections are currently incomplete (e.g. ConstantIndex)
-                        // therefore we don't expect a capability here. For more information
-                        // see the comment in `Place::expand_one_level`.
-                        // TODO: Make such projections complete
-                    }
                     other => {
+                        // Shouldn't be None or Write, due to capability updates
+                        // based on the TripleWalker analysis
                         pcg_validity_assert!(
                             false,
                             "{:?}: Unexpected capability for borrow blocked place {:?}: {:?}",
