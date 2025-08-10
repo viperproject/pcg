@@ -187,18 +187,13 @@ pub(crate) struct PcgRef<'pcg, 'tcx> {
 }
 
 impl<'pcg, 'tcx> PcgRef<'pcg, 'tcx> {
+
     fn places(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> HashSet<Place<'tcx>> {
         let mut places = self.owned.places(ctxt);
         places.extend(self.borrow.graph.places(ctxt));
         places
     }
 
-    fn leaf_places(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> HashSet<Place<'tcx>> {
-        let mut leaf_places = self.owned.leaf_places(ctxt);
-        leaf_places.retain(|p| !self.borrow.graph.places(ctxt).contains(p));
-        leaf_places.extend(self.borrow.graph.leaf_places(ctxt));
-        leaf_places
-    }
 
     pub(crate) fn render_debug_graph(
         &self,
@@ -276,6 +271,21 @@ pub(crate) trait PcgRefLike<'tcx> {
 
     fn is_acyclic(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
         self.borrows_graph().frozen_graph().is_acyclic(ctxt)
+    }
+
+    fn owned_pcg(&self) -> &OwnedPcg<'tcx> {
+        self.as_ref().owned
+    }
+
+    fn leaf_places(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> HashSet<Place<'tcx>> {
+        let mut leaf_places = self.owned_pcg().leaf_places(ctxt);
+        leaf_places.retain(|p| !self.borrows_graph().places(ctxt).contains(p));
+        leaf_places.extend(self.borrows_graph().leaf_places(ctxt));
+        leaf_places
+    }
+
+    fn is_leaf_place(&self, place: Place<'tcx>, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
+        self.leaf_places(ctxt).contains(&place)
     }
 }
 

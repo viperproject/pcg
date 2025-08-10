@@ -212,7 +212,7 @@ fn test_selected_crates() {
             "regex-automata",
             "0.4.9",
             Some("2025-03-13"),
-            TestCrateType::function_debug_failure(
+            TestCrateType::function(
                 "hybrid::dfa::Lazy::<'i, 'c>::reset_cache",
                 Some(11),
             ),

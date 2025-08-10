@@ -208,9 +208,9 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                 .into(),
             )?;
             let ref_place = deref_place.parent_place().unwrap();
-            // Perhaps the place isn't yet a leaf in the borrows graph, (e.g. the ref itself is conditionally borrowed)
+            // Perhaps the place isn't yet a leaf(e.g. the ref itself is conditionally borrowed)
             // In that case we shouldn't restore its caps
-            if !self.pcg.borrow.graph.contains(ref_place, self.ctxt) {
+            if self.pcg.is_leaf_place(ref_place, self.ctxt) {
                 self.restore_place(
                     ref_place,
                     &format!("{}: remove_deref_edges_to: restore parent place", context),
