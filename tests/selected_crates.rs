@@ -1137,4 +1137,25 @@ mod tests {
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Failed to parse num_bbs"));
     }
+
+    #[test]
+    fn test_semicolon_format_used_in_env_var() {
+        // Test that the semicolon format is correctly used when running tests
+        let test_case = SelectedCrateTestCase::new(
+            "test_crate",
+            "1.2.3",
+            Some("2025-03-13"),
+            TestCrateType::function("test::function::name", Some(15)),
+        );
+
+        let formatted = test_case.to_semicolon_format();
+        assert_eq!(formatted, "test_crate;1.2.3;2025-03-13;test::function::name;15");
+
+        // Verify it can be parsed back
+        let parsed = SelectedCrateTestCase::from_semicolon_format(&formatted).unwrap();
+        assert_eq!(parsed.crate_name, test_case.crate_name);
+        assert_eq!(parsed.crate_version, test_case.crate_version);
+        assert_eq!(parsed.function_name(), test_case.function_name());
+        assert_eq!(parsed.num_bbs(), test_case.num_bbs());
+    }
 }
