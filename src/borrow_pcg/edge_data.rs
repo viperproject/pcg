@@ -134,7 +134,6 @@ impl<'tcx> LabelPlacePredicate<'tcx> {
                         p.is_ref(ctxt)
                     }
                 };
-                let mut seen_deref_target = false;
                 if let Some(iter) = candidate.iter_projections_after(*place, ctxt) {
                     let mut seen_deref_target = false;
                     // If we want to label deref postfixes of e.g. "foo"

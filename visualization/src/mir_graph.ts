@@ -63,7 +63,7 @@ export function layoutSizedNodes(
     edges,
     height,
   };
-};
+}
 
 export function layoutUnsizedNodes(
   nodes: MirGraphNode[],

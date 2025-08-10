@@ -233,15 +233,15 @@ pub enum RunOnCrateOptions {
     RunPCG {
         target: Target,
         validity_checks: bool,
-        function: Option<&'static str>,
+        function: Option<String>,
         extra_env_vars: Vec<(String, String)>,
     },
 }
 
 impl RunOnCrateOptions {
-    pub fn function(&self) -> Option<&'static str> {
+    pub fn function(&self) -> Option<&str> {
         match self {
-            RunOnCrateOptions::RunPCG { function, .. } => *function,
+            RunOnCrateOptions::RunPCG { function, .. } => function.as_deref(),
             RunOnCrateOptions::TypecheckOnly { .. } => None,
         }
     }

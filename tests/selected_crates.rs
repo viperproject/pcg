@@ -11,15 +11,15 @@ fn pcg_max_nodes(n: usize) -> Vec<(String, String)> {
 
 #[derive(Debug)]
 struct TestCrateFunction {
-    function_name: &'static str,
+    function_name: String,
     debug_failure: bool,
     metadata: TestFunctionMetadata,
 }
 
 impl TestCrateFunction {
-    fn new(function_name: &'static str, debug_failure: bool, num_bbs: Option<usize>) -> Self {
+    fn new(function_name: impl Into<String>, debug_failure: bool, num_bbs: Option<usize>) -> Self {
         Self {
-            function_name,
+            function_name: function_name.into(),
             debug_failure,
             metadata: TestFunctionMetadata { num_bbs },
         }
@@ -33,11 +33,11 @@ enum TestCrateType {
 }
 
 impl TestCrateType {
-    fn function(function_name: &'static str, num_bbs: Option<usize>) -> Self {
+    fn function(function_name: impl Into<String>, num_bbs: Option<usize>) -> Self {
         Self::Function(TestCrateFunction::new(function_name, false, num_bbs))
     }
 
-    fn function_debug_failure(function_name: &'static str, num_bbs: Option<usize>) -> Self {
+    fn function_debug_failure(function_name: impl Into<String>, num_bbs: Option<usize>) -> Self {
         Self::Function(TestCrateFunction::new(function_name, true, num_bbs))
     }
 }
@@ -49,23 +49,23 @@ struct TestFunctionMetadata {
 
 #[derive(Debug)]
 struct SelectedCrateTestCase {
-    crate_name: &'static str,
-    crate_version: &'static str,
-    crate_download_date: Option<&'static str>,
+    crate_name: String,
+    crate_version: String,
+    crate_download_date: Option<String>,
     test_type: TestCrateType,
 }
 
 impl SelectedCrateTestCase {
     fn new(
-        crate_name: &'static str,
-        crate_version: &'static str,
-        crate_download_date: Option<&'static str>,
+        crate_name: impl Into<String>,
+        crate_version: impl Into<String>,
+        crate_download_date: Option<&str>,
         test_type: TestCrateType,
     ) -> Self {
         Self {
-            crate_name,
-            crate_version,
-            crate_download_date,
+            crate_name: crate_name.into(),
+            crate_version: crate_version.into(),
+            crate_download_date: crate_download_date.map(|s| s.to_string()),
             test_type,
         }
     }
@@ -77,10 +77,10 @@ impl SelectedCrateTestCase {
         }
     }
 
-    fn function_name(&self) -> Option<&'static str> {
+    fn function_name(&self) -> Option<&str> {
         match &self.test_type {
             TestCrateType::EntireCrate => None,
-            TestCrateType::Function(function) => Some(function.function_name),
+            TestCrateType::Function(function) => Some(&function.function_name),
         }
     }
 
@@ -97,13 +97,13 @@ impl SelectedCrateTestCase {
             ("PCG_VISUALIZATION".to_string(), "true".to_string()),
         ];
         common::ensure_successful_run_on_crate(
-            self.crate_name,
-            self.crate_version,
-            self.crate_download_date,
+            &self.crate_name,
+            &self.crate_version,
+            self.crate_download_date.as_deref(),
             common::RunOnCrateOptions::RunPCG {
                 target: common::Target::Debug,
                 validity_checks: true,
-                function: self.function_name(),
+                function: self.function_name().map(|s| s.to_string()),
                 extra_env_vars: visualization_env_vars,
             },
         );
@@ -117,13 +117,13 @@ impl SelectedCrateTestCase {
             panic!("Stop for failure debugging");
         }
         let result = common::run_on_crate(
-            self.crate_name,
-            self.crate_version,
-            self.crate_download_date,
+            &self.crate_name,
+            &self.crate_version,
+            self.crate_download_date.as_deref(),
             common::RunOnCrateOptions::RunPCG {
                 target: common::Target::Debug,
                 validity_checks: true,
-                function: self.function_name(),
+                function: self.function_name().map(|s| s.to_string()),
                 extra_env_vars: vec![],
             },
         );
@@ -160,6 +160,15 @@ fn test_selected_crates() {
     ];
 
     let test_cases = vec![
+        SelectedCrateTestCase::new(
+            "regex-automata",
+            "0.4.9",
+            Some("2025-03-13"),
+            TestCrateType::function_debug_failure(
+                "hybrid::dfa::Lazy::<'i, 'c>::reset_cache",
+                Some(11),
+            ),
+        ),
         SelectedCrateTestCase::new(
             "tracing-subscriber",
             "0.3.19",
