@@ -270,8 +270,6 @@ impl<'tcx> BodyAndBorrows<'tcx> for borrowck::BodyWithBorrowckFacts<'tcx> {
 pub struct PcgCtxt<'mir, 'tcx> {
     compiler_ctxt: CompilerCtxt<'mir, 'tcx>,
     move_data: MoveData<'tcx>,
-    #[allow(dead_code)]
-    arena: bumpalo::Bump,
 }
 
 fn gather_moves<'tcx>(body: &Body<'tcx>, tcx: ty::TyCtxt<'tcx>) -> MoveData<'tcx> {
@@ -288,7 +286,6 @@ impl<'mir, 'tcx> PcgCtxt<'mir, 'tcx> {
         Self {
             compiler_ctxt: ctxt,
             move_data: gather_moves(ctxt.body(), ctxt.tcx()),
-            arena: bumpalo::Bump::new(),
         }
     }
 }

@@ -166,7 +166,6 @@ impl NodeType {
     }
 }
 
-#[allow(dead_code)]
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub(crate) enum GraphEdge {
     Abstract {
@@ -201,11 +200,6 @@ pub(crate) enum GraphEdge {
         source: NodeId,
         target: NodeId,
         kind: BorrowFlowEdgeKind,
-    },
-    HyperedgeSameEndpoint {
-        source: NodeId,
-        target: NodeId,
-        label: String,
     },
 }
 
@@ -298,17 +292,6 @@ impl GraphEdge {
                     options,
                 }
             }
-            GraphEdge::HyperedgeSameEndpoint {
-                source,
-                target,
-                label,
-            } => DotEdge {
-                from: source.to_string(),
-                to: target.to_string(),
-                options: EdgeOptions::undirected()
-                    .with_style("dashed".to_string())
-                    .with_label(label.clone()),
-            },
         }
     }
 }

@@ -188,13 +188,6 @@ pub(crate) struct PcgRef<'pcg, 'tcx> {
 }
 
 impl<'tcx> PcgRef<'_, 'tcx> {
-    #[allow(dead_code)]
-    fn places(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> HashSet<Place<'tcx>> {
-        let mut places = self.owned.places(ctxt);
-        places.extend(self.borrow.graph.places(ctxt));
-        places
-    }
-
     pub(crate) fn render_debug_graph(
         &self,
         location: mir::Location,

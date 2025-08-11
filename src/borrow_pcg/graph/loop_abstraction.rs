@@ -1,5 +1,3 @@
-use std::borrow::Cow;
-
 use derive_more::From;
 
 use crate::{
@@ -573,10 +571,6 @@ impl<'mir, 'tcx> PlaceExpander<'mir, 'tcx> for AbsExpander<'_, 'mir, 'tcx> {
 
     fn location(&self) -> mir::Location {
         self.loop_head_location()
-    }
-
-    fn debug_capabilities(&self) -> std::borrow::Cow<'_, PlaceCapabilities<'tcx>> {
-        Cow::Owned(PlaceCapabilities::default())
     }
 }
 

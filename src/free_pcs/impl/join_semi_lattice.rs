@@ -83,28 +83,10 @@ impl<'pcg, 'tcx> JoinOwnedData<'pcg, 'tcx, &'pcg mut OwnedPcg<'tcx>> {
 }
 
 impl<'tcx> LocalExpansions<'tcx> {
-    #[allow(dead_code)]
-    pub(crate) fn contains_expansion(&self, expansion: &ExpandedPlace<'tcx>) -> bool {
-        self.expansions.iter().any(|ep| ep == expansion)
-    }
-
     pub(crate) fn expansions_shortest_first(&self) -> impl Iterator<Item = &ExpandedPlace<'tcx>> {
         self.expansions
             .iter()
             .sorted_by_key(|ep| ep.place.projection().len())
-    }
-
-    #[allow(dead_code)]
-    pub(crate) fn expansions_longest_first(&self) -> impl Iterator<Item = &ExpandedPlace<'tcx>> {
-        self.expansions
-            .iter()
-            .sorted_by_key(|ep| ep.place.projection().len())
-            .rev()
-    }
-
-    #[allow(dead_code)]
-    pub(crate) fn is_leaf(&self, place: Place<'tcx>, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
-        self.leaf_places(ctxt).contains(&place)
     }
 
     pub(crate) fn perform_expand_action(

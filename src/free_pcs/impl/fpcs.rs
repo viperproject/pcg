@@ -54,11 +54,6 @@ impl<'tcx> OwnedPcg<'tcx> {
         self.data.as_ref().unwrap().leaf_places(ctxt)
     }
 
-    #[allow(dead_code)]
-    pub(crate) fn places(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> HashSet<Place<'tcx>> {
-        self.data.as_ref().unwrap().places(ctxt)
-    }
-
     pub fn locals(&self) -> &OwnedPcgData<'tcx> {
         self.data.as_ref().unwrap()
     }
@@ -145,15 +140,6 @@ impl<'tcx> OwnedPcgData<'tcx> {
 
     pub(crate) fn num_locals(&self) -> usize {
         self.0.len()
-    }
-
-    #[allow(dead_code)]
-    pub(crate) fn places(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> HashSet<Place<'tcx>> {
-        self.0
-            .iter()
-            .filter(|c| !c.is_unallocated())
-            .flat_map(|c| c.get_allocated().places(ctxt))
-            .collect()
     }
 
     pub(crate) fn leaf_places(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> HashSet<Place<'tcx>> {

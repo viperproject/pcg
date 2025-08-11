@@ -21,7 +21,6 @@ use crate::utils::data_structures::HashSet;
 use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::maybe_old::MaybeLabelledPlace;
 use crate::utils::{CompilerCtxt, HasPlace};
-use std::borrow::Cow;
 use std::cmp::Ordering;
 
 use crate::utils::{Place, SnapshotLocation};
@@ -736,11 +735,5 @@ impl<'pcg, 'mir: 'pcg, 'tcx> PlaceExpander<'mir, 'tcx> for PlaceObtainer<'pcg, '
         self.pcg
             .capabilities
             .update_for_deref(ref_place, capability, analysis_ctxt)
-    }
-
-    fn debug_capabilities(
-        &self,
-    ) -> std::borrow::Cow<'_, crate::pcg::place_capabilities::PlaceCapabilities<'tcx>> {
-        Cow::Borrowed(self.pcg.capabilities)
     }
 }

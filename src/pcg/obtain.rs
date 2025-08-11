@@ -1,5 +1,3 @@
-use std::borrow::Cow;
-
 use crate::{
     action::{BorrowPcgAction, OwnedPcgAction, PcgAction},
     borrow_checker::r#impl::get_reserve_location,
@@ -391,11 +389,6 @@ pub(crate) trait HasSnapshotLocation {
     fn prev_snapshot_location(&self) -> SnapshotLocation;
 }
 
-#[allow(dead_code)]
-pub(crate) trait HasBlock {
-    fn block(&self) -> mir::BasicBlock;
-}
-
 pub(crate) trait RenderDebugGraph {
     fn render_debug_graph(&self, debug_imgcat: Option<DebugImgcat>, comment: &str);
 }
@@ -514,9 +507,6 @@ pub(crate) trait PlaceExpander<'mir, 'tcx>:
         }
         Ok(true)
     }
-
-    #[allow(dead_code)]
-    fn debug_capabilities(&self) -> Cow<'_, PlaceCapabilities<'tcx>>;
 
     fn expand_place_one_level(
         &mut self,

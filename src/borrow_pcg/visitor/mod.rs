@@ -8,8 +8,6 @@ use crate::utils::CompilerCtxt;
 
 struct LifetimeExtractor<'tcx> {
     lifetimes: Vec<ty::Region<'tcx>>,
-    #[allow(dead_code)]
-    tcx: ty::TyCtxt<'tcx>,
 }
 
 impl<'tcx> TypeVisitor<ty::TyCtxt<'tcx>> for LifetimeExtractor<'tcx> {
@@ -53,24 +51,9 @@ impl<'tcx> TypeVisitor<ty::TyCtxt<'tcx>> for LifetimeExtractor<'tcx> {
 /// 'd>`.
 pub(crate) fn extract_regions<'tcx, C: Copy>(
     ty: ty::Ty<'tcx>,
-    repacker: CompilerCtxt<'_, 'tcx, C>,
+    _ctxt: CompilerCtxt<'_, 'tcx, C>,
 ) -> IndexVec<RegionIdx, PcgRegion> {
-    let mut visitor = LifetimeExtractor {
-        lifetimes: vec![],
-        tcx: repacker.tcx(),
-    };
+    let mut visitor = LifetimeExtractor { lifetimes: vec![] };
     ty.visit_with(&mut visitor);
     IndexVec::from_iter(visitor.lifetimes.iter().map(|r| (*r).into()))
-}
-
-#[allow(unused)]
-pub(crate) fn extract_inner_regions<'tcx>(
-    ty: ty::Ty<'tcx>,
-    repacker: CompilerCtxt<'_, 'tcx>,
-) -> IndexVec<RegionIdx, PcgRegion> {
-    if let ty::TyKind::Ref(_, ty, _) = ty.kind() {
-        extract_regions(*ty, repacker)
-    } else {
-        extract_regions(ty, repacker)
-    }
 }

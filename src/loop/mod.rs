@@ -232,21 +232,6 @@ impl<'tcx, BC: Copy> DisplayWithCompilerCtxt<'tcx, BC> for PlaceUsages<'tcx> {
     }
 }
 
-#[allow(dead_code)]
-struct ExistingRelatedPlaceUsages<'tcx>(PlaceUsages<'tcx>);
-
-impl ExistingRelatedPlaceUsages<'_> {
-    #[allow(dead_code)]
-    fn max_usage(&self) -> PlaceUsageType {
-        let mut iter = self.0.iter();
-        let mut max_usage = iter.next().unwrap().usage;
-        for place_usage in iter {
-            max_usage.join(&place_usage.usage);
-        }
-        max_usage
-    }
-}
-
 impl<'tcx> PlaceUsages<'tcx> {
     pub(crate) fn iter_places(&self) -> impl Iterator<Item = Place<'tcx>> + '_ {
         self.0.keys().copied()
@@ -278,28 +263,6 @@ impl<'tcx> PlaceUsages<'tcx> {
             })
         });
         clone
-    }
-
-    #[allow(dead_code)]
-    fn prefix_place_usages(&self, place: Place<'tcx>) -> Option<ExistingRelatedPlaceUsages<'tcx>> {
-        let mut clone = self.clone();
-        clone.0.retain(|p, _| p.is_prefix_of(place));
-        if clone.0.is_empty() {
-            None
-        } else {
-            Some(ExistingRelatedPlaceUsages(clone))
-        }
-    }
-
-    #[allow(dead_code)]
-    fn postfix_place_usages(&self, place: Place<'tcx>) -> Option<ExistingRelatedPlaceUsages<'tcx>> {
-        let mut clone = self.clone();
-        clone.0.retain(|p, _| place.is_prefix_of(*p));
-        if clone.0.is_empty() {
-            None
-        } else {
-            Some(ExistingRelatedPlaceUsages(clone))
-        }
     }
 
     #[must_use]
