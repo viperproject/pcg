@@ -1,0 +1,17 @@
+# Development Dockerfile with NixOS and Flakes
+FROM nixos/nix:latest
+
+# Enable experimental features for flakes support
+RUN mkdir -p /etc/nix && \
+    echo "experimental-features = nix-command flakes" >> /etc/nix/nix.conf
+
+# Set working directory
+WORKDIR /workspace
+
+COPY rust-toolchain shell.nix flake.nix flake.lock ./
+
+# Pre-fetch dependencies to cache them in a layer
+RUN nix develop --command echo "Dependencies cached"
+
+CMD ["nix", "develop"]
+
