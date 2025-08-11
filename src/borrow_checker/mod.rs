@@ -277,7 +277,6 @@ pub type InScopeBorrows = crate::rustc_interface::index::bit_set::BitSet<BorrowI
 #[rustversion::since(2025-03-02)]
 pub type InScopeBorrows = crate::rustc_interface::index::bit_set::MixedBitSet<BorrowIndex>;
 
-
 /// An interface to the results of the borrow-checker analysis. The PCG queries
 /// this interface as part of its analysis, for example, to identify when borrows
 /// expire.

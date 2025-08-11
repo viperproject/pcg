@@ -35,11 +35,7 @@ pub(crate) struct RustBorrowCheckerData<'mir, 'tcx: 'mir> {
 }
 
 impl<'mir, 'tcx: 'mir> RustBorrowCheckerData<'mir, 'tcx> {
-    pub(crate) fn borrows_in_scope_at(
-        &self,
-        location: Location,
-        before: bool,
-    ) -> InScopeBorrows {
+    pub(crate) fn borrows_in_scope_at(&self, location: Location, before: bool) -> InScopeBorrows {
         if before {
             self.in_scope_borrows
                 .borrow_mut()
