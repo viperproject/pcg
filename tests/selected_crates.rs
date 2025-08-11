@@ -1055,14 +1055,13 @@ fn test_selected_crates() {
         SelectedCrateTestCase::new("rustls", "0.23.23", None, TestCrateType::EntireCrate),
     ];
 
-    let mut test_cases: Vec<SelectedCrateTestCase> =
-        vec![
-            "bindgen;0.71.1;2025-03-13;ir::context::BindgenContext::find_used_template_parameters;35;debug_failure",
-            "gimli;0.31.1;2025-03-13;read::unit::EntriesTree::<'abbrev, 'unit, R>::root;26"
-            ]
-            .into_iter()
-            .map(|s| SelectedCrateTestCase::from_semicolon_format(s).unwrap())
-            .collect();
+    let mut test_cases: Vec<SelectedCrateTestCase> = vec![
+        "bindgen;0.71.1;2025-03-13;ir::context::BindgenContext::find_used_template_parameters;35",
+        "gimli;0.31.1;2025-03-13;read::unit::EntriesTree::<'abbrev, 'unit, R>::root;26",
+    ]
+    .into_iter()
+    .map(|s| SelectedCrateTestCase::from_semicolon_format(s).unwrap())
+    .collect();
     test_cases.extend(custom_test_cases);
 
     for test_case in test_cases.into_iter().sorted_by_key(|tc| {

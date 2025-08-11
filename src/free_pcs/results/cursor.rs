@@ -75,10 +75,6 @@ impl<'mir, 'tcx, A: Allocator + Copy> PcgAnalysis<'mir, 'tcx, A> {
         self.cursor.analysis().0.ctxt
     }
 
-    pub(crate) fn analysis_ctxt(&self) -> AnalysisCtxt<'mir, 'tcx> {
-        AnalysisCtxt::new(self.ctxt(), self.curr_stmt.unwrap().block)
-    }
-
     /// Returns the free pcs for the location `exp_loc` and iterates the cursor
     /// to the *end* of that location.
     ///
@@ -107,6 +103,7 @@ impl<'mir, 'tcx, A: Allocator + Copy> PcgAnalysis<'mir, 'tcx, A> {
     }
     pub(crate) fn terminator(&mut self) -> Result<PcgTerminator<'tcx>, PcgError> {
         let location = self.curr_stmt.unwrap();
+        let analysis_ctxt = AnalysisCtxt::new(self.ctxt(), location.block);
         assert!(location == self.end_stmt.unwrap());
         self.curr_stmt = None;
         self.end_stmt = None;
@@ -140,7 +137,7 @@ impl<'mir, 'tcx, A: Allocator + Copy> PcgAnalysis<'mir, 'tcx, A> {
 
                 let owned_bridge = from_post_main
                     .owned
-                    .bridge(&to.entry_state.owned, &from_post_main.capabilities, self.analysis_ctxt())
+                    .bridge(&to.entry_state.owned, &from_post_main.capabilities, analysis_ctxt)
                     .unwrap();
 
                 let mut borrow_actions = BorrowPcgActions::new();

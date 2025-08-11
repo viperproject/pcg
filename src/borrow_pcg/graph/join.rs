@@ -319,7 +319,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             &loop_blocker_places,
             loop_head,
             path_conditions.clone(),
-            ctxt.ctxt,
+            ctxt,
         );
 
         abstraction_graph.render_debug_graph(

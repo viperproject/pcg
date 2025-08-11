@@ -8,7 +8,7 @@ use crate::{
     borrow_pcg::{
         action::BorrowPcgActionKind,
         borrow_pcg_edge::{BorrowPcgEdgeLike, BorrowPcgEdgeRef, LocalNode, ToBorrowsEdge},
-        edge::abstraction::{AbstractionBlockEdge, r#loop::LoopAbstraction},
+        edge::abstraction::{r#loop::LoopAbstraction, AbstractionBlockEdge},
         edge_data::EdgeData,
         graph::BorrowsGraph,
         has_pcs_elem::LabelLifetimeProjectionPredicate,
@@ -19,23 +19,17 @@ use crate::{
         state::BorrowStateMutRef,
     },
     free_pcs::{CapabilityKind, OwnedPcg, RepackOp},
-    r#loop::{PlaceUsage, PlaceUsages},
+    r#loop::{PlaceUsage, PlaceUsageType, PlaceUsages},
     pcg::{
-        LocalNodeLike, PCGNodeLike, PcgMutRef, PcgNode, PcgRefLike,
-        obtain::{
+        ctxt::AnalysisCtxt, obtain::{
             ActionApplier, HasSnapshotLocation, ObtainType, PlaceExpander, PlaceObtainer,
             RenderDebugGraph,
-        },
-        place_capabilities::PlaceCapabilities,
+        }, place_capabilities::PlaceCapabilities, LocalNodeLike, PCGNodeLike, PcgMutRef, PcgNode, PcgRefLike
     },
     pcg_validity_assert,
     rustc_interface::middle::mir::{self},
     utils::{
-        CompilerCtxt, DebugImgcat, LocalMutationIsAllowed, Place, SnapshotLocation,
-        data_structures::{HashMap, HashSet},
-        display::DisplayWithCompilerCtxt,
-        maybe_old::MaybeLabelledPlace,
-        remote::RemotePlace,
+        data_structures::{HashMap, HashSet}, display::DisplayWithCompilerCtxt, logging::{self, LogPredicate}, maybe_old::MaybeLabelledPlace, remote::RemotePlace, CompilerCtxt, DebugImgcat, LocalMutationIsAllowed, Place, SnapshotLocation
     },
 };
 
@@ -124,8 +118,9 @@ impl<'tcx> BorrowsGraph<'tcx> {
         candidate_blockers: &PlaceUsages<'tcx>,
         loop_head: mir::BasicBlock,
         path_conditions: ValidityConditions,
-        ctxt: CompilerCtxt<'mir, 'tcx>,
+        analysis_ctxt: AnalysisCtxt<'mir, 'tcx>,
     ) -> ConstructAbstractionGraphResult<'tcx> {
+        let ctxt = analysis_ctxt.ctxt;
         let mut graph = BorrowsGraph::default();
         let mut capability_updates = HashMap::default();
         let mut to_label = HashSet::default();
@@ -175,7 +170,8 @@ impl<'tcx> BorrowsGraph<'tcx> {
             }
         }
 
-        for blocked_place in loop_blocked_places.iter_places() {
+        for blocked_place_usage in loop_blocked_places.iter() {
+            let blocked_place = blocked_place_usage.place;
             let blockers = candidate_blockers
                 .iter_places()
                 .filter(|blocker| {
@@ -189,10 +185,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 for blocker in blockers.iter() {
                     add_block_edges(&mut expander, blocked_place.into(), *blocker, ctxt);
                 }
-                if blocked_place
-                    .is_mutable(LocalMutationIsAllowed::No, ctxt)
-                    .is_ok()
-                {
+                if blocked_place_usage.usage == PlaceUsageType::Mutate {
                     capability_updates.insert(blocked_place, None);
                 } else {
                     capability_updates.insert(blocked_place, Some(CapabilityKind::Read));
@@ -277,7 +270,9 @@ impl<'tcx> BorrowsGraph<'tcx> {
         }
         tracing::debug!("Completed loop abstraction");
         for (place, capability) in capability_updates.iter() {
-            tracing::debug!(
+            logging::log!(
+                LogPredicate::DebugBlock,
+                analysis_ctxt,
                 "capability update for {}: {:?}",
                 place.to_short_string(ctxt),
                 capability
