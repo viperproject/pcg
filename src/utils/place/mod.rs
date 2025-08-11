@@ -30,9 +30,6 @@ use crate::{
     utils::data_structures::HashSet,
 };
 
-// #[cfg(feature = "debug_info")]
-// use super::debug_info::DebugInfo;
-
 use super::{CompilerCtxt, display::DisplayWithCompilerCtxt, validity::HasValidityCheck};
 use crate::utils::json::ToJsonWithCompilerCtxt;
 use crate::{
@@ -57,7 +54,6 @@ pub struct Place<'tcx>(
     #[deref]
     #[deref_mut]
     PlaceRef<'tcx>,
-    // #[cfg(feature = "debug_info")] DebugInfo<'static>,
 );
 
 impl<'tcx> From<Place<'tcx>> for PlaceRef<'tcx> {
@@ -270,12 +266,6 @@ impl<'tcx> Place<'tcx> {
 }
 
 impl<'tcx> Place<'tcx> {
-    #[cfg(feature = "debug_info")]
-    pub fn new(local: Local, projection: &'tcx [PlaceElem<'tcx>]) -> Self {
-        Self(PlaceRef { local, projection })
-    }
-
-    #[cfg(not(feature = "debug_info"))]
     pub fn new(local: Local, projection: &'tcx [PlaceElem<'tcx>]) -> Self {
         Self(PlaceRef { local, projection })
     }
@@ -737,11 +727,6 @@ impl<'tcx> Place<'tcx> {
     pub(crate) fn is_prefix_or_postfix_of(self, other: Self) -> bool {
         self.is_prefix_of(other) || other.is_prefix_of(self)
     }
-
-    // #[cfg(feature = "debug_info")]
-    // pub fn debug_info(&self) -> DebugInfo<'static> {
-    //     self.1
-    // }
 }
 
 impl Debug for Place<'_> {
@@ -873,21 +858,11 @@ impl Hash for Place<'_> {
 }
 
 impl<'tcx> From<PlaceRef<'tcx>> for Place<'tcx> {
-    #[cfg(feature = "debug_info")]
-    fn from(value: PlaceRef<'tcx>) -> Self {
-        Self(value)
-    }
-    #[cfg(not(feature = "debug_info"))]
     fn from(value: PlaceRef<'tcx>) -> Self {
         Self(value)
     }
 }
 impl<'tcx> From<MirPlace<'tcx>> for Place<'tcx> {
-    #[cfg(feature = "debug_info")]
-    fn from(value: MirPlace<'tcx>) -> Self {
-        Self(value.as_ref())
-    }
-    #[cfg(not(feature = "debug_info"))]
     fn from(value: MirPlace<'tcx>) -> Self {
         Self(value.as_ref())
     }

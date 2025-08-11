@@ -127,6 +127,9 @@ impl<'tcx> Analysis<'tcx> for PlaceLivenessAnalysis {
     }
 }
 
+/// Place liveness analysis based on what currently exists in the compiler.
+/// However ours is specialized for information relevant to borrows. In particular,
+/// we currently give the drops special treatment.
 #[derive(Clone)]
 pub(crate) struct PlaceLiveness<'mir, 'tcx> {
     cursor: Rc<RefCell<ResultsCursor<'mir, 'tcx, AnalysisEngine<PlaceLivenessAnalysis>>>>,
@@ -205,6 +208,23 @@ impl DefUse {
                 place.is_indirect().then_some(DefUse::Use)
             }
 
+            // We don't count drops as use in our analysis because drop
+            // implementations can sometimes require that the lifetimes of
+            // references within a place to still be active and sometimes not.
+            //
+            // In the case where the lifetime are allowed to expire, if we treat
+            // the drop as a use, the PCG would over-approximate the extent of
+            // the lifetime, leading to incorrect graphs. This
+            // over-approximation can prevent the construction of the PCG (when
+            // the compiler wants to e.g. access a place that the PCG still
+            // thinks is borrowed)
+            //
+            // Instead, by not treating the drop as a use, we under-approximate
+            // the extents. However because this only occurs in drops, the PCG construction
+            // itself will not fail (we don't currently require lifetimes to be live for drops)
+            // However, this is still probably incorrect technically.
+            // TODO: We should also identify whether the drop requires lifetimes to be live and count
+            // usages accordingly.
             PlaceContext::MutatingUse(MutatingUseContext::Drop) => None,
 
             // All other contexts are uses...
