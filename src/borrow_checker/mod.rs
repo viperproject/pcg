@@ -16,7 +16,6 @@ use crate::rustc_interface::borrowck::{
     BorrowIndex, BorrowSet, LocationTable, PlaceConflictBias, places_conflict,
 };
 use crate::rustc_interface::data_structures::fx::{FxIndexMap, FxIndexSet};
-use crate::rustc_interface::RustBitSet;
 use crate::rustc_interface::middle::mir::{self, Location};
 use crate::rustc_interface::middle::ty::RegionVid;
 use crate::utils::CompilerCtxt;

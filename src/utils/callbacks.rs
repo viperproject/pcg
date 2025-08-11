@@ -31,7 +31,6 @@ use crate::{
         },
         session::{config::ErrorOutputType, EarlyDiagCtxt, Session},
         span::SpanSnippetError,
-        RustBitSet,
     }, utils::{DEBUG_BLOCK, MAX_BASIC_BLOCKS, SKIP_BODIES_WITH_LOOPS}, validity_checks_enabled, PcgCtxt, PcgOutput
 };
 

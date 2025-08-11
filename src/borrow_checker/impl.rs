@@ -10,7 +10,6 @@ use crate::rustc_interface::borrowck::{
     RegionInferenceContext, RichLocation,
 };
 use crate::rustc_interface::dataflow::compute_fixpoint;
-use crate::rustc_interface::RustBitSet;
 use crate::rustc_interface::middle::mir::{self, Location, RETURN_PLACE};
 use crate::rustc_interface::middle::ty;
 use crate::rustc_interface::mir_dataflow::ResultsCursor;
