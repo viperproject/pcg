@@ -1,17 +1,40 @@
-# Development Dockerfile with NixOS and Flakes
-FROM nixos/nix:latest
+# Development Dockerfile with standard Rust setup
+FROM rust:1.75
 
-# Enable experimental features for flakes support
-RUN mkdir -p /etc/nix && \
-    echo "experimental-features = nix-command flakes" >> /etc/nix/nix.conf
+# Install required dependencies for development
+RUN apt-get update && apt-get install -y \
+    pkg-config \
+    golang-go \
+    tmux \
+    vim \
+    graphviz \
+    nodejs \
+    npm \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install latest pprof for profiling
+RUN go install github.com/google/pprof@latest
 
 # Set working directory
 WORKDIR /workspace
 
-COPY rust-toolchain shell.nix flake.nix flake.lock ./
+# Copy rust-toolchain to ensure correct Rust version
+COPY rust-toolchain ./
 
-# Pre-fetch dependencies to cache them in a layer
-RUN nix develop --command echo "Dependencies cached"
+# Install the correct Rust toolchain based on rust-toolchain file
+RUN rustup toolchain install $(cat rust-toolchain) && \
+    rustup default $(cat rust-toolchain) && \
+    rustup component add rustfmt clippy
 
-CMD ["nix", "develop"]
+# Set up Rust environment variables
+ENV PATH="/usr/local/cargo/bin:${PATH}"
+ENV RUSTUP_HOME="/usr/local/rustup"
+ENV CARGO_HOME="/usr/local/cargo"
+ENV RUST_BACKTRACE=1
+
+# Create tmp directory with proper permissions
+RUN mkdir -p tmp && chmod 777 tmp
+
+# Default command for development
+CMD ["/bin/bash"]
 
