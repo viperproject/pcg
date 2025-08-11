@@ -51,10 +51,10 @@ impl<'tcx> EdgesToRemove<'tcx> {
                 if let Some(deref_edges) = self.deref_edges.get_mut(&deref.deref_place) {
                     deref_edges
                         .value
-                        .insert(Conditioned::new(deref.clone(), edge.conditions().clone()));
+                        .insert(Conditioned::new(*deref, edge.conditions().clone()));
                 } else {
                     self.deref_edges.insert(deref.deref_place, WithReason {
-                        value: vec![Conditioned::new(deref.clone(), edge.conditions().clone())]
+                        value: vec![Conditioned::new(*deref, edge.conditions().clone())]
                             .into_iter()
                             .collect(),
                         reason,

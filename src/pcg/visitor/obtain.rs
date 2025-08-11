@@ -62,7 +62,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceCollapser<'mir, 'tcx> for PlaceObtainer<'s
     }
 
     fn capabilities(&mut self) -> &mut crate::pcg::place_capabilities::PlaceCapabilities<'tcx> {
-        &mut self.pcg.capabilities
+        self.pcg.capabilities
     }
 
     fn leaf_places(
@@ -196,7 +196,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
     ) -> Result<(), PcgError> {
         for edge in edges {
             let borrow_edge: BorrowPcgEdge<'tcx> =
-                BorrowPcgEdge::new(edge.value.clone().into(), edge.conditions);
+                BorrowPcgEdge::new(edge.value.into(), edge.conditions);
             self.record_and_apply_action(
                 BorrowPcgAction::remove_edge(borrow_edge, context).into(),
             )?;
@@ -206,7 +206,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
             self.apply_action(
                 BorrowPcgAction::label_place_and_update_related_capabilities(
                     deref_place,
-                    self.prev_snapshot_location().into(),
+                    self.prev_snapshot_location(),
                     LabelPlaceReason::Collapse,
                 )
                 .into(),
@@ -233,7 +233,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
         if let BorrowPcgEdgeKind::Deref(deref) = edge.kind() {
             return self.remove_deref_edges_to(
                 deref.deref_place,
-                vec![Conditioned::new(deref.clone(), edge.conditions.clone())]
+                vec![Conditioned::new(*deref, edge.conditions.clone())]
                     .into_iter()
                     .collect(),
                 context,
@@ -267,7 +267,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                     self.apply_action(
                         BorrowPcgAction::label_place_and_update_related_capabilities(
                             deref.deref_place.place(),
-                            self.prev_snapshot_location().into(),
+                            self.prev_snapshot_location(),
                             LabelPlaceReason::Collapse,
                         )
                         .into(),
@@ -741,6 +741,6 @@ impl<'pcg, 'mir: 'pcg, 'tcx> PlaceExpander<'mir, 'tcx> for PlaceObtainer<'pcg, '
     fn debug_capabilities(
         &self,
     ) -> std::borrow::Cow<'_, crate::pcg::place_capabilities::PlaceCapabilities<'tcx>> {
-        Cow::Borrowed(&self.pcg.capabilities)
+        Cow::Borrowed(self.pcg.capabilities)
     }
 }

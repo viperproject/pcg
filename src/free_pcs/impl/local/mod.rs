@@ -169,6 +169,7 @@ impl<'tcx> LocalExpansions<'tcx> {
         self.leaf_places(ctxt).contains(&place)
     }
 
+    #[allow(dead_code)]
     pub(crate) fn places(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> HashSet<Place<'tcx>> {
         self.expansions
             .iter()
@@ -231,7 +232,6 @@ impl<'tcx> LocalExpansions<'tcx> {
         let mut places = self
             .all_descendants_of(place, ctxt)
             .difference(&self.leaf_places(ctxt))
-            .into_iter()
             .sorted_by_key(|place| place.projection().len())
             .rev()
             .cloned()

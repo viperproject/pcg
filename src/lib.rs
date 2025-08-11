@@ -270,6 +270,7 @@ impl<'tcx> BodyAndBorrows<'tcx> for borrowck::BodyWithBorrowckFacts<'tcx> {
 pub struct PcgCtxt<'mir, 'tcx> {
     compiler_ctxt: CompilerCtxt<'mir, 'tcx>,
     move_data: MoveData<'tcx>,
+    #[allow(dead_code)]
     arena: bumpalo::Bump,
 }
 

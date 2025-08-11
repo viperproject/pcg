@@ -54,6 +54,7 @@ impl<'tcx> OwnedPcg<'tcx> {
         self.data.as_ref().unwrap().leaf_places(ctxt)
     }
 
+    #[allow(dead_code)]
     pub(crate) fn places(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> HashSet<Place<'tcx>> {
         self.data.as_ref().unwrap().places(ctxt)
     }
@@ -139,14 +140,14 @@ impl<'tcx> OwnedPcgData<'tcx> {
     ) -> std::result::Result<(), String> {
         self.0
             .iter()
-            .map(|c| c.check_validity(capabilities, ctxt))
-            .collect()
+            .try_for_each(|c| c.check_validity(capabilities, ctxt))
     }
 
     pub(crate) fn num_locals(&self) -> usize {
         self.0.len()
     }
 
+    #[allow(dead_code)]
     pub(crate) fn places(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> HashSet<Place<'tcx>> {
         self.0
             .iter()

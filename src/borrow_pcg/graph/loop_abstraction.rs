@@ -212,8 +212,8 @@ impl<'tcx> BorrowsGraph<'tcx> {
         );
 
         expander.expand_to_places(
-            &loop_blocked_places,
-            &loop_blocked_places.joined_with(&candidate_blockers),
+            loop_blocked_places,
+            &loop_blocked_places.joined_with(candidate_blockers),
         );
 
         expander.render_debug_graph(
@@ -348,6 +348,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         result
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn expand_places_for_abstraction<'mir>(
         &mut self,
         loop_head_block: mir::BasicBlock,
@@ -466,7 +467,7 @@ struct AbsExpander<'pcg, 'mir, 'tcx> {
     ctxt: CompilerCtxt<'mir, 'tcx>,
 }
 
-impl<'mir, 'tcx> RenderDebugGraph for AbsExpander<'_, 'mir, 'tcx> {
+impl RenderDebugGraph for AbsExpander<'_, '_, '_> {
     fn render_debug_graph(&self, debug_imgcat: Option<DebugImgcat>, comment: &str) {
         self.graph.render_debug_graph(
             self.loop_head_block,
@@ -502,7 +503,7 @@ impl<'tcx> AbsExpander<'_, '_, 'tcx> {
     }
 }
 
-impl<'mir, 'tcx> ActionApplier<'tcx> for AbsExpander<'_, 'mir, 'tcx> {
+impl<'tcx> ActionApplier<'tcx> for AbsExpander<'_, '_, 'tcx> {
     fn apply_action(&mut self, action: PcgAction<'tcx>) -> Result<bool, crate::pcg::PcgError> {
         tracing::debug!("applying action: {}", action.debug_line(self.ctxt));
         match action {
@@ -520,7 +521,7 @@ impl<'mir, 'tcx> ActionApplier<'tcx> for AbsExpander<'_, 'mir, 'tcx> {
                 BorrowPcgActionKind::Restore(_) => todo!(),
                 BorrowPcgActionKind::MakePlaceOld(_) => todo!(),
                 BorrowPcgActionKind::RemoveEdge(borrow_pcg_edge) => {
-                    self.graph.remove(&borrow_pcg_edge.kind());
+                    self.graph.remove(borrow_pcg_edge.kind());
                     Ok(true)
                 }
             },
@@ -579,7 +580,7 @@ impl<'mir, 'tcx> PlaceExpander<'mir, 'tcx> for AbsExpander<'_, 'mir, 'tcx> {
     }
 }
 
-impl<'pcg, 'mir, 'tcx> HasSnapshotLocation for AbsExpander<'pcg, 'mir, 'tcx> {
+impl HasSnapshotLocation for AbsExpander<'_, '_, '_> {
     fn prev_snapshot_location(&self) -> SnapshotLocation {
         SnapshotLocation::Loop(self.loop_head_block)
     }

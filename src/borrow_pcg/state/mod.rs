@@ -429,6 +429,7 @@ impl<'tcx> BorrowsState<'tcx> {
         self.graph.edges_blocking(node, repacker).collect()
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn add_borrow(
         &mut self,
         blocked_place: Place<'tcx>,

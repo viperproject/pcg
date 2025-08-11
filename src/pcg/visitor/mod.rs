@@ -224,7 +224,7 @@ impl<'tcx> FallableVisitor<'tcx> for PcgVisitor<'_, '_, 'tcx> {
     }
 }
 
-impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
+impl<'state, 'mir: 'state> PlaceObtainer<'state, 'mir, '_> {
     fn collapse_iteration(
         &mut self,
         local: mir::Local,

@@ -116,8 +116,8 @@ impl<'tcx> HasValidityCheck<'tcx> for PlaceCapabilities<'tcx> {
             }
             for i in 0..caps_from_local.len() - 1 {
                 let (place, parent_cap) = caps_from_local[i];
-                for j in i + 1..caps_from_local.len() {
-                    let (other_place, other_cap) = caps_from_local[j];
+                for (other_place, other_cap) in caps_from_local.iter().skip(i + 1) {
+                    let (other_place, other_cap) = (*other_place, *other_cap);
                     if place.is_prefix_of(other_place)
                         && !allowed_child_cap(place, parent_cap, other_cap, ctxt)
                     {

@@ -250,11 +250,7 @@ fn format_stmt<'tcx>(stmt: &Statement<'tcx>, repacker: CompilerCtxt<'_, 'tcx>) -
     }
 }
 
-fn mk_mir_stmt<'tcx>(
-    stmt: String,
-    location: mir::Location,
-    ctxt: CompilerCtxt<'_, 'tcx>,
-) -> MirStmt {
+fn mk_mir_stmt(stmt: String, location: mir::Location, ctxt: CompilerCtxt<'_, '_>) -> MirStmt {
     let bc = ctxt.bc.rust_borrow_checker().unwrap();
     let location_table = ctxt.bc.rust_borrow_checker().unwrap().location_table();
     let invalidated_at = &bc.input_facts().loan_invalidated_at;

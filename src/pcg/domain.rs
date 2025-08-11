@@ -187,7 +187,8 @@ pub(crate) struct PcgRef<'pcg, 'tcx> {
     pub(crate) capabilities: &'pcg PlaceCapabilities<'tcx>,
 }
 
-impl<'pcg, 'tcx> PcgRef<'pcg, 'tcx> {
+impl<'tcx> PcgRef<'_, 'tcx> {
+    #[allow(dead_code)]
     fn places(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> HashSet<Place<'tcx>> {
         let mut places = self.owned.places(ctxt);
         places.extend(self.borrow.graph.places(ctxt));

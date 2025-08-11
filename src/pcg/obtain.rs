@@ -45,13 +45,13 @@ pub(crate) struct PlaceObtainer<'state, 'mir, 'tcx> {
     pub(crate) debug_data: Option<&'state mut PcgDebugData>,
 }
 
-impl<'state, 'mir, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
+impl<'mir, 'tcx> PlaceObtainer<'_, 'mir, 'tcx> {
     pub(crate) fn analysis_ctxt(&self) -> AnalysisCtxt<'mir, 'tcx> {
         AnalysisCtxt::new(self.ctxt, self.location.block)
     }
 }
 
-impl<'state, 'mir, 'tcx> RenderDebugGraph for PlaceObtainer<'state, 'mir, 'tcx> {
+impl RenderDebugGraph for PlaceObtainer<'_, '_, '_> {
     fn render_debug_graph(&self, debug_imgcat: Option<DebugImgcat>, comment: &str) {
         self.pcg
             .as_ref()
@@ -59,7 +59,7 @@ impl<'state, 'mir, 'tcx> RenderDebugGraph for PlaceObtainer<'state, 'mir, 'tcx> 
     }
 }
 
-impl<'state, 'mir, 'tcx> HasSnapshotLocation for PlaceObtainer<'state, 'mir, 'tcx> {
+impl HasSnapshotLocation for PlaceObtainer<'_, '_, '_> {
     fn prev_snapshot_location(&self) -> SnapshotLocation {
         self.prev_snapshot_location
     }
@@ -225,7 +225,7 @@ pub(crate) trait PlaceCollapser<'mir, 'tcx>:
                     if let Some(p) = e.blocked_place.as_current_place()
                         && place_predicate(p) =>
                 {
-                    Some(e.clone())
+                    Some(*e)
                 }
                 _ => None,
             })
@@ -236,11 +236,7 @@ pub(crate) trait PlaceCollapser<'mir, 'tcx>:
                 "Disconnecting deref projection {}",
                 rp.to_short_string(ctxt)
             );
-            let conditions = self
-                .borrows_state()
-                .graph
-                .remove(&rp.clone().into())
-                .unwrap();
+            let conditions = self.borrows_state().graph.remove(&rp.into()).unwrap();
             let label = self.prev_snapshot_location();
             rp.blocked_place.label_place_with_context(
                 &LabelPlacePredicate::Exact(rp.blocked_place.place()),
@@ -258,7 +254,7 @@ pub(crate) trait PlaceCollapser<'mir, 'tcx>:
             );
             self.apply_action(
                 BorrowPcgAction::add_edge(
-                    BorrowPcgEdge::new(rp.clone().into(), conditions.clone()),
+                    BorrowPcgEdge::new(rp.into(), conditions.clone()),
                     format!(
                         "label_deref_projections_of_postfix_places. Shared refs only: {}",
                         shared_refs_only
@@ -308,13 +304,10 @@ pub(crate) trait PlaceCollapser<'mir, 'tcx>:
                 .expansions_from(place)
                 .cloned()
                 .collect::<Vec<_>>();
-            self.apply_action(PcgAction::Owned(
-                OwnedPcgAction::new(
-                    RepackOp::Collapse(RepackCollapse::new(place, capability)),
-                    Some(context.clone()),
-                )
-                .into(),
-            ))?;
+            self.apply_action(PcgAction::Owned(OwnedPcgAction::new(
+                RepackOp::Collapse(RepackCollapse::new(place, capability)),
+                Some(context.clone()),
+            )))?;
             for pe in expansions {
                 for rp in place.lifetime_projections(ctxt) {
                     let rp_expansion: Vec<LocalLifetimeProjection<'tcx>> = place
@@ -398,6 +391,7 @@ pub(crate) trait HasSnapshotLocation {
     fn prev_snapshot_location(&self) -> SnapshotLocation;
 }
 
+#[allow(dead_code)]
 pub(crate) trait HasBlock {
     fn block(&self) -> mir::BasicBlock;
 }
@@ -454,7 +448,7 @@ pub(crate) trait PlaceExpander<'mir, 'tcx>:
     ) -> LabelForLifetimeProjection {
         use LabelForLifetimeProjection::*;
         if obtain_type.should_label_rp(rp.rebase(), ctxt) {
-            NewLabelAtCurrentLocation(self.prev_snapshot_location().into())
+            NewLabelAtCurrentLocation(self.prev_snapshot_location())
         } else {
             match self.label_for_shared_expansion_of_rp(rp, ctxt) {
                 Some(label) => ExistingLabelOfTwoPhaseReservation(label),
@@ -475,9 +469,7 @@ pub(crate) trait PlaceExpander<'mir, 'tcx>:
             .first()
             .map(|borrow| {
                 let borrow_reserve_location = get_reserve_location(borrow);
-                let snapshot_location =
-                    SnapshotLocation::after_statement_at(borrow_reserve_location, ctxt);
-                snapshot_location
+                SnapshotLocation::after_statement_at(borrow_reserve_location, ctxt)
             })
     }
 
@@ -523,6 +515,7 @@ pub(crate) trait PlaceExpander<'mir, 'tcx>:
         Ok(true)
     }
 
+    #[allow(dead_code)]
     fn debug_capabilities(&self) -> Cow<'_, PlaceCapabilities<'tcx>>;
 
     fn expand_place_one_level(
@@ -551,7 +544,7 @@ pub(crate) trait PlaceExpander<'mir, 'tcx>:
             let deref = DerefEdge::new(base, blocked_lifetime_projection_label, ctxt);
             self.render_debug_graph(None, "expand_place_one_level: before apply action");
             let action = BorrowPcgAction::add_edge(
-                BorrowPcgEdge::new(deref.clone().into(), self.path_conditions()),
+                BorrowPcgEdge::new(deref.into(), self.path_conditions()),
                 "expand_place_one_level: add deref edge",
                 ctxt,
             );

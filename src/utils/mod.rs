@@ -76,7 +76,7 @@ pub struct PcgSettings<'a> {
     pub skip_function: Option<String>,
 }
 
-impl<'a> PcgSettings<'a> {
+impl PcgSettings<'_> {
     fn new() -> Self {
         let mut processed_vars = HashSet::new();
 

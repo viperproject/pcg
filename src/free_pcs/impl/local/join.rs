@@ -37,7 +37,7 @@ impl<'pcg: 'exp, 'exp, 'tcx> JoinOwnedData<'pcg, 'tcx, &'exp mut LocalExpansions
                 RepackExpand::new(base_place, other_expansion.guide(), CapabilityKind::Read);
             self.owned
                 .perform_expand_action(action, self.capabilities, ctxt)?;
-            return Ok(vec![RepackOp::Expand(action).into()]);
+            Ok(vec![RepackOp::Expand(action)])
         } else if other
             .owned
             .contains_descendent_leaf_node_without_capability(
@@ -111,7 +111,7 @@ impl<'pcg: 'exp, 'exp, 'tcx> JoinOwnedData<'pcg, 'tcx, &'exp mut LocalExpansions
             if self_cap >= CapabilityKind::Read
                 && other.capabilities.get(place, ctxt.ctxt) == Some(CapabilityKind::Read)
             {
-                copy_read_capabilities(&other.capabilities, &mut self.capabilities, place, ctxt);
+                copy_read_capabilities(other.capabilities, self.capabilities, place, ctxt);
             }
         }
     }
@@ -135,7 +135,7 @@ impl<'pcg: 'exp, 'exp, 'tcx> JoinOwnedData<'pcg, 'tcx, &'exp mut LocalExpansions
             let expand_action = RepackExpand::new(place, guide, expand_cap);
             self.owned
                 .perform_expand_action(expand_action, self.capabilities, ctxt)?;
-            actions.push(RepackOp::Expand(expand_action).into());
+            actions.push(RepackOp::Expand(expand_action));
             let place_expansion = place.expansion(guide, ctxt.ctxt);
             for expansion_place in place.expansion_places(&place_expansion, ctxt.ctxt).unwrap() {
                 if other
@@ -146,7 +146,7 @@ impl<'pcg: 'exp, 'exp, 'tcx> JoinOwnedData<'pcg, 'tcx, &'exp mut LocalExpansions
                     self.merge_owned_tree_leaf_places(other, expansion_place, ctxt);
                 }
             }
-            return Ok(actions);
+            Ok(actions)
         } else {
             tracing::info!(
                 "No join expansion from place {}",
@@ -182,7 +182,7 @@ impl<'pcg: 'exp, 'exp, 'tcx> JoinOwnedData<'pcg, 'tcx, &'exp mut LocalExpansions
                 self.capabilities.get(place, ctxt.ctxt) == Some(CapabilityKind::Write)
             );
             pcg_validity_assert!(!actions.is_empty());
-            return Ok(actions);
+            Ok(actions)
         }
     }
 
@@ -239,7 +239,7 @@ impl<'pcg: 'exp, 'exp, 'tcx> JoinOwnedData<'pcg, 'tcx, &'exp mut LocalExpansions
                             RepackExpand::new(place, other_expansion.guide(), self_cap);
                         self.owned
                             .perform_expand_action(expand_action, self.capabilities, ctxt)?;
-                        actions.push(RepackOp::Expand(expand_action).into());
+                        actions.push(RepackOp::Expand(expand_action));
                     }
                     pcg_validity_assert!(!actions.is_empty());
                     // Short circuit here... we took an action in either branch
@@ -272,7 +272,7 @@ impl<'pcg: 'exp, 'exp, 'tcx> JoinOwnedData<'pcg, 'tcx, &'exp mut LocalExpansions
                 actions.extend(iteration_actions);
             }
         }
-        return Ok(actions);
+        Ok(actions)
     }
 
     fn render_debug_graph<'a, 'slf>(&'slf self, comment: &str, ctxt: impl HasCompilerCtxt<'a, 'tcx>)
@@ -283,7 +283,7 @@ impl<'pcg: 'exp, 'exp, 'tcx> JoinOwnedData<'pcg, 'tcx, &'exp mut LocalExpansions
         self.borrows.graph.render_debug_graph(
             self.block,
             Some(crate::utils::DebugImgcat::JoinOwned),
-            &self.capabilities,
+            self.capabilities,
             comment,
             ctxt.ctxt(),
         );
@@ -311,14 +311,14 @@ impl<'pcg: 'exp, 'exp, 'tcx> JoinOwnedData<'pcg, 'tcx, &'exp mut LocalExpansions
                     Some(CapabilityKind::Read) => {
                         // One or both has read cap, have all of the expansions be read
                         copy_read_capabilities(
-                            &mut self.capabilities,
-                            &mut other.capabilities,
+                            self.capabilities,
+                            other.capabilities,
                             local_place,
                             ctxt,
                         );
                         copy_read_capabilities(
-                            &mut other.capabilities,
-                            &mut self.capabilities,
+                            other.capabilities,
+                            self.capabilities,
                             local_place,
                             ctxt,
                         );
@@ -412,7 +412,7 @@ fn copy_read_capabilities<'tcx>(
     ctxt: AnalysisCtxt<'_, 'tcx>,
 ) {
     cap_target.insert(place, CapabilityKind::Read, ctxt);
-    for (p, c) in cap_source.capabilities_for_strict_postfixes_of(place.into()) {
+    for (p, c) in cap_source.capabilities_for_strict_postfixes_of(place) {
         pcg_validity_assert!(c.is_read());
         cap_target.insert(p, c, ctxt);
     }

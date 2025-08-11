@@ -118,7 +118,7 @@ impl<'tcx> LabelPlacePredicate<'tcx> {
                 if candidate == *predicate_place
                     && label_context == LabelNodeContext::TargetOfExpansion
                 {
-                    return *label_place_in_expansion;
+                    *label_place_in_expansion
                 } else {
                     predicate_place.is_prefix_of(candidate)
                 }

@@ -230,12 +230,12 @@ pub struct ConstantIndex {
     pub(crate) from_end: bool,
 }
 
-impl<'tcx> Into<PlaceElem<'tcx>> for ConstantIndex {
-    fn into(self) -> PlaceElem<'tcx> {
+impl From<ConstantIndex> for PlaceElem<'_> {
+    fn from(val: ConstantIndex) -> Self {
         PlaceElem::ConstantIndex {
-            offset: self.offset,
-            min_length: self.min_length,
-            from_end: self.from_end,
+            offset: val.offset,
+            min_length: val.min_length,
+            from_end: val.from_end,
         }
     }
 }
@@ -248,7 +248,7 @@ impl ConstantIndex {
     ) -> Vec<Place<'tcx>> {
         self.other_elems()
             .into_iter()
-            .map(|e| from.project_deeper(e, ctxt).unwrap().into())
+            .map(|e| from.project_deeper(e, ctxt).unwrap())
             .collect()
     }
 

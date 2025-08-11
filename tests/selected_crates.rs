@@ -208,12 +208,12 @@ fn test_selected_crates() {
     // Create tmp directory if it doesn't exist
     std::fs::create_dir_all("tmp").unwrap();
 
-    let warn_only_vars = vec![(
+    let warn_only_vars = [(
         "PCG_VALIDITY_CHECKS_WARN_ONLY".to_string(),
         "true".to_string(),
     )];
 
-    let visualization_env_vars = vec![
+    let visualization_env_vars = [
         (
             "PCG_VISUALIZATION_DATA_DIR".to_string(),
             "../../visualization/data".to_string(),

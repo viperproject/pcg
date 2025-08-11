@@ -24,7 +24,7 @@ impl HasSnapshotLocation for JoinObtainer<'_, '_, '_, '_, '_> {
     }
 }
 
-impl<'pcg, 'mir, 'tcx> ActionApplier<'tcx> for JoinObtainer<'_, '_, '_, 'mir, 'tcx> {
+impl<'tcx> ActionApplier<'tcx> for JoinObtainer<'_, '_, '_, '_, 'tcx> {
     fn apply_action(&mut self, action: PcgAction<'tcx>) -> Result<bool, PcgError> {
         match action {
             PcgAction::Borrow(action) => {
@@ -62,9 +62,9 @@ impl<'pcg, 'mir, 'tcx> ActionApplier<'tcx> for JoinObtainer<'_, '_, '_, 'mir, 't
     }
 }
 
-impl<'pcg, 'mir, 'tcx> PlaceCollapser<'mir, 'tcx> for JoinObtainer<'_, '_, '_, 'mir, 'tcx> {
+impl<'mir, 'tcx> PlaceCollapser<'mir, 'tcx> for JoinObtainer<'_, '_, '_, 'mir, 'tcx> {
     fn get_local_expansions(&self, _local: mir::Local) -> &LocalExpansions<'tcx> {
-        &self.data.owned
+        self.data.owned
     }
 
     fn borrows_state(&mut self) -> BorrowStateMutRef<'_, 'tcx> {

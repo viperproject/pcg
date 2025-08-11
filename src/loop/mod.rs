@@ -220,7 +220,7 @@ impl<'tcx, BC: Copy> DisplayWithCompilerCtxt<'tcx, BC> for PlaceUsage<'tcx> {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub(crate) struct PlaceUsages<'tcx>(HashMap<Place<'tcx>, PlaceUsageType>);
 
 impl<'tcx, BC: Copy> DisplayWithCompilerCtxt<'tcx, BC> for PlaceUsages<'tcx> {
@@ -232,9 +232,11 @@ impl<'tcx, BC: Copy> DisplayWithCompilerCtxt<'tcx, BC> for PlaceUsages<'tcx> {
     }
 }
 
+#[allow(dead_code)]
 struct ExistingRelatedPlaceUsages<'tcx>(PlaceUsages<'tcx>);
 
-impl<'tcx> ExistingRelatedPlaceUsages<'tcx> {
+impl ExistingRelatedPlaceUsages<'_> {
+    #[allow(dead_code)]
     fn max_usage(&self) -> PlaceUsageType {
         let mut iter = self.0.iter();
         let mut max_usage = iter.next().unwrap().usage;
@@ -278,6 +280,7 @@ impl<'tcx> PlaceUsages<'tcx> {
         clone
     }
 
+    #[allow(dead_code)]
     fn prefix_place_usages(&self, place: Place<'tcx>) -> Option<ExistingRelatedPlaceUsages<'tcx>> {
         let mut clone = self.clone();
         clone.0.retain(|p, _| p.is_prefix_of(place));
@@ -288,6 +291,7 @@ impl<'tcx> PlaceUsages<'tcx> {
         }
     }
 
+    #[allow(dead_code)]
     fn postfix_place_usages(&self, place: Place<'tcx>) -> Option<ExistingRelatedPlaceUsages<'tcx>> {
         let mut clone = self.clone();
         clone.0.retain(|p, _| place.is_prefix_of(*p));
@@ -339,12 +343,6 @@ impl<'tcx> PlaceUsages<'tcx> {
             place: *p,
             usage: *usage,
         })
-    }
-}
-
-impl Default for PlaceUsages<'_> {
-    fn default() -> Self {
-        Self(HashMap::default())
     }
 }
 

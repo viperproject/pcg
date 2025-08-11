@@ -279,6 +279,7 @@ impl<'mir, 'tcx: 'mir> NllBorrowCheckerImpl<'mir, 'tcx> {
         }
     }
 
+    #[allow(dead_code)]
     fn ctxt(&self) -> CompilerCtxt<'mir, 'tcx, &Self> {
         CompilerCtxt::new(
             self.borrow_checker_data.body,

@@ -4,7 +4,7 @@ use crate::{pcg_validity_assert, validity_checks_enabled};
 
 #[allow(unused)]
 pub(crate) trait IterExt<T: Copy + std::fmt::Debug>: Iterator<Item = T> {
-    fn find_zero_or_one<'tcx>(&mut self, f: impl Fn(&T) -> bool) -> Option<T>
+    fn find_zero_or_one(&mut self, f: impl Fn(&T) -> bool) -> Option<T>
     where
         Self: Sized,
     {
