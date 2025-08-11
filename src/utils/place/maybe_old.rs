@@ -29,7 +29,7 @@ pub enum MaybeLabelledPlace<'tcx> {
 }
 
 impl<'tcx> MaybeLabelledPlace<'tcx> {
-    pub(crate) fn as_current_place(self) -> Option<Place<'tcx>> {
+    pub fn as_current_place(self) -> Option<Place<'tcx>> {
         match self {
             MaybeLabelledPlace::Current(place) => Some(place),
             MaybeLabelledPlace::Labelled(_) => None,

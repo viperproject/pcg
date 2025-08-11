@@ -308,7 +308,7 @@ impl<T: std::fmt::Display> std::fmt::Display for PcgNode<'_, T> {
 }
 
 impl<'tcx> LocalNode<'tcx> {
-    pub(crate) fn as_current_place(self) -> Option<Place<'tcx>> {
+    pub fn as_current_place(self) -> Option<Place<'tcx>> {
         match self {
             LocalNode::Place(MaybeLabelledPlace::Current(place)) => Some(place),
             _ => None,
