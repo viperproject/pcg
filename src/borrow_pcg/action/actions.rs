@@ -6,7 +6,7 @@ use crate::borrow_pcg::unblock_graph::BorrowPcgUnblockAction;
 use crate::rustc_interface::data_structures::fx::FxHashSet;
 use crate::utils::CompilerCtxt;
 use crate::utils::json::ToJsonWithCompilerCtxt;
-use crate::{Weaken, pcg_validity_assert, validity_checks_enabled};
+use crate::{Weaken, pcg_validity_assert};
 
 use super::BorrowPcgActionKind;
 
@@ -66,16 +66,13 @@ impl<'tcx> BorrowPcgActions<'tcx> {
         self.0.last()
     }
 
-    pub(crate) fn push(&mut self, action: BorrowPcgAction<'tcx>, _ctxt: CompilerCtxt<'_, 'tcx>) {
-        if validity_checks_enabled()
-            && let Some(last) = self.last()
-        {
-            pcg_validity_assert!(
-                last != &action,
-                "Action {:?} to be pushed is the same as the last pushed action, this is probably a bug.",
-                action
-            );
-        }
+    pub(crate) fn push(&mut self, action: BorrowPcgAction<'tcx>, ctxt: CompilerCtxt<'_, 'tcx>) {
+        pcg_validity_assert!(
+            self.last() != Some(&action),
+            [ctxt],
+            "Action {:?} to be pushed is the same as the last pushed action, this is probably a bug.",
+            action
+        );
         self.0.push(action);
     }
 }

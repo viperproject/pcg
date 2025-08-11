@@ -16,10 +16,16 @@ use crate::{
     },
 };
 
+/// A PCG Hyperedge from the a reference-typed place, and a lifetime projection
+/// to the dereferenced place.
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
 pub struct DerefEdge<'tcx> {
     pub(crate) blocked_place: MaybeLabelledPlace<'tcx>,
     pub(crate) deref_place: MaybeLabelledPlace<'tcx>,
+    /// The lifetime projection that is blocked in this edge. In general, this
+    /// will not be labelled if `blocked_place` is a shared reference, and
+    /// labelled with the MIR location of the dereference if `blocked_place` is
+    /// a mutable reference.
     pub(crate) blocked_lifetime_projection: LocalLifetimeProjection<'tcx>,
 }
 

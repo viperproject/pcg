@@ -356,12 +356,8 @@ impl<'tcx> PcgNode<'tcx> {
             BlockedNode::LifetimeProjection(_) => None,
         }
     }
-
-    #[allow(unused)]
-    pub(crate) fn as_maybe_old_place(&self) -> Option<MaybeLabelledPlace<'tcx>> {
-        self.as_place()?.try_into().ok()
-    }
 }
+
 impl<'tcx> From<mir::Place<'tcx>> for BlockedNode<'tcx> {
     fn from(place: mir::Place<'tcx>) -> Self {
         BlockedNode::Place(place.into())

@@ -294,10 +294,15 @@ pub trait RustBorrowCheckerInterface<'tcx> {
     ///
     /// However, as referenced in the above link, there are some subtleties
     /// related to places that will be dropped. Follow the link for more details.
+    ///
+    /// Note that the return place and its lifetime projections will always be
+    /// live.
     fn is_live(&self, node: PcgNode<'tcx>, location: Location) -> bool;
 
     fn borrow_set(&self) -> &BorrowSet<'tcx>;
 
+    /// Returns the set of borrows that are live either before or after
+    /// `location`.
     fn borrows_in_scope_at(&self, location: Location, before: bool) -> InScopeBorrows;
 
     fn borrow_in_scope_at(&self, borrow_index: BorrowIndex, location: Location) -> bool {
