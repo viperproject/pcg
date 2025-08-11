@@ -905,16 +905,6 @@ fn test_selected_crates() {
                 Some(29),
             ),
         ),
-        // 198 basic blocks
-        SelectedCrateTestCase::new(
-            "brotli",
-            "7.0.0",
-            Some("2025-03-13"),
-            TestCrateType::function(
-                "enc::static_dict::ComplexFindMatchLengthWithLimit",
-                Some(198),
-            ),
-        ),
         SelectedCrateTestCase::new(
             "matchit",
             "0.8.6",

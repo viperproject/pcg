@@ -441,7 +441,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                             "Invalid abstraction graph",
                             ctxt,
                         );
-                        pcg_validity_assert!(false, "edge already in path");
+                        pcg_validity_assert!(false, [ctxt], "edge already in path");
                         // panic!("edge already in path");
                         // For debugging, just stop here and we can try to visualize the graph
                         break 'outer;
