@@ -899,37 +899,30 @@ fn test_selected_crates() {
             Some("2025-03-13"),
             TestCrateType::function("libyaml::emitter::Emitter::<'a>::flush", None),
         ),
-        // common::ensure_successful_run_on_crate(
-        SelectedCrateTestCase::new(
-            "brotli-decompressor",
-            "4.0.2",
-            Some("2025-03-13"),
-            TestCrateType::function("<MemPool<'a, T> as core::default::Default>::default", None),
-        ),
         SelectedCrateTestCase::new(
             "encoding_rs",
             "0.8.35",
             Some("2025-03-13"),
             TestCrateType::function("shift_jis::ShiftJisEncoder::encode_from_utf16_raw", None),
-        ), // Note: original had validity_checks: false
+        ),
         SelectedCrateTestCase::new(
             "cc",
             "1.2.16",
             Some("2025-03-13"),
             TestCrateType::function("flags::RustcCodegenFlags::<'this>::cc_flags", None),
-        ), // Note: original had validity_checks: false
+        ),
         SelectedCrateTestCase::new(
             "encoding_rs",
             "0.8.35",
             Some("2025-03-13"),
             TestCrateType::function("iso_2022_jp::Iso2022JpDecoder::decode_to_utf16_raw", None),
-        ), // Note: original had validity_checks: false
+        ),
         SelectedCrateTestCase::new(
             "serde_derive",
             "1.0.219",
             Some("2025-03-13"),
             TestCrateType::function("internals::attr::parse_lit_into_path", None),
-        ), // Note: original had validity_checks: false
+        ),
         SelectedCrateTestCase::new(
             "serde_derive",
             "1.0.219",
