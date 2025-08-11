@@ -11,6 +11,7 @@ use crate::{
     },
     pcg::{
         PcgError,
+        ctxt::AnalysisCtxt,
         place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface},
     },
     pcg_validity_assert, pcg_validity_expect_some,
@@ -28,7 +29,7 @@ impl<'pcg, 'tcx> JoinOwnedData<'pcg, 'tcx, &'pcg mut OwnedPcgLocal<'tcx>> {
     pub(crate) fn join(
         &mut self,
         mut other: JoinOwnedData<'pcg, 'tcx, &'pcg OwnedPcgLocal<'tcx>>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
+        ctxt: AnalysisCtxt<'_, 'tcx>,
     ) -> Result<bool, PcgError> {
         match (&mut self.owned, &mut other.owned) {
             (OwnedPcgLocal::Unallocated, OwnedPcgLocal::Unallocated) => Ok(false),
@@ -63,7 +64,7 @@ impl<'pcg, 'tcx> JoinOwnedData<'pcg, 'tcx, &'pcg mut OwnedPcg<'tcx>> {
     pub(crate) fn join(
         &mut self,
         mut other: JoinOwnedData<'pcg, 'tcx, &'pcg OwnedPcg<'tcx>>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
+        ctxt: AnalysisCtxt<'_, 'tcx>,
     ) -> Result<bool, PcgError> {
         let mut owned_pcg_data = self.map_owned(|owned| owned.locals_mut());
         let mut other_owned_pcg_data = other.map_owned(|owned| owned.locals());
@@ -107,22 +108,28 @@ impl<'tcx> LocalExpansions<'tcx> {
         &mut self,
         expand: RepackExpand<'tcx>,
         capabilities: &mut PlaceCapabilities<'tcx>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
+        ctxt: AnalysisCtxt<'_, 'tcx>,
     ) -> Result<(), PcgError> {
-        let target_places = expand.target_places(ctxt);
+        let target_places = expand.target_places(ctxt.ctxt);
         self.insert_expansion(
             expand.from,
-            PlaceExpansion::from_places(target_places.clone(), ctxt),
+            PlaceExpansion::from_places(target_places.clone(), ctxt.ctxt),
         );
         let source_cap = if expand.capability.is_read() {
             expand.capability
         } else {
-            capabilities.get(expand.from, ctxt).unwrap_or_else(|| {
-                pcg_validity_assert!(false, "no cap for {}", expand.from.to_short_string(ctxt));
-                // panic!("no cap for {}", expand.from.to_short_string(ctxt));
-                // For debugging, assume exclusive, we can visualize the graph to see what's going on
-                CapabilityKind::Exclusive
-            })
+            capabilities
+                .get(expand.from, ctxt.ctxt)
+                .unwrap_or_else(|| {
+                    pcg_validity_assert!(
+                        false,
+                        "no cap for {}",
+                        expand.from.to_short_string(ctxt.ctxt)
+                    );
+                    // panic!("no cap for {}", expand.from.to_short_string(ctxt));
+                    // For debugging, assume exclusive, we can visualize the graph to see what's going on
+                    CapabilityKind::Exclusive
+                })
         };
         for target_place in target_places {
             capabilities.insert(target_place, source_cap, ctxt);
@@ -178,9 +185,9 @@ impl<'tcx> LocalExpansions<'tcx> {
         &mut self,
         collapse: RepackCollapse<'tcx>,
         place_capabilities: &mut PlaceCapabilities<'tcx>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
+        ctxt: AnalysisCtxt<'_, 'tcx>,
     ) -> Result<(), PcgError> {
-        let expansion_places = self.all_children_of(collapse.to, ctxt);
+        let expansion_places = self.all_children_of(collapse.to, ctxt.ctxt);
         let retained_cap = expansion_places
             .iter()
             .fold(CapabilityKind::Exclusive, |acc, place| {
@@ -190,14 +197,14 @@ impl<'tcx> LocalExpansions<'tcx> {
                     fallback: CapabilityKind::Exclusive,
                     [ctxt],
                     "Expected capability for {}",
-                    place.to_short_string(ctxt)
+                    place.to_short_string(ctxt.ctxt)
                 );
                 pcg_validity_assert!(
                     removed_cap >= collapse.capability,
                     [ctxt],
                     "Expected removed cap {:?} for {} to be at least {:?}",
                     removed_cap,
-                    place.to_short_string(ctxt),
+                    place.to_short_string(ctxt.ctxt),
                     collapse.capability
                 );
                 let joined_cap = removed_cap.minimum(acc);
@@ -216,7 +223,7 @@ impl<'tcx> LocalExpansions<'tcx> {
             retained_cap,
             collapse.capability
         );
-        self.remove_all_expansions_from(collapse.to, ctxt);
+        self.remove_all_expansions_from(collapse.to, ctxt.ctxt);
         place_capabilities.insert(collapse.to, retained_cap, ctxt);
         Ok(())
     }

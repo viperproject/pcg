@@ -452,11 +452,12 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
         action: PcgAction<'tcx>,
     ) -> Result<bool, PcgError> {
         tracing::debug!("Applying Action: {}", action.debug_line(self.ctxt));
+        let analysis_ctxt = self.analysis_ctxt();
         let result = match &action {
             PcgAction::Borrow(action) => {
                 self.pcg
                     .borrow
-                    .apply_action(action.clone(), self.pcg.capabilities, self.ctxt)?
+                    .apply_action(action.clone(), self.pcg.capabilities, self.analysis_ctxt())?
             }
             PcgAction::Owned(owned_action) => match owned_action.kind {
                 RepackOp::RegainLoanedCapability(place, capability_kind) => {
@@ -464,7 +465,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                         place,
                         capability_kind,
                         self.pcg.borrow.as_mut_ref(),
-                        self.ctxt,
+                        analysis_ctxt,
                     )?;
                     true
                 }
@@ -472,7 +473,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                     self.pcg.owned.perform_expand_action(
                         expand,
                         self.pcg.capabilities,
-                        self.ctxt,
+                        self.analysis_ctxt(),
                     )?;
                     true
                 }
@@ -487,7 +488,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                     for target_place in target_places {
                         self.pcg
                             .capabilities
-                            .insert(target_place, CapabilityKind::Read, self.ctxt);
+                            .insert(target_place, CapabilityKind::Read, self.analysis_ctxt());
                     }
                     true
                 }
@@ -497,7 +498,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                     capability_projections.perform_collapse_action(
                         collapse,
                         self.pcg.capabilities,
-                        self.ctxt,
+                        analysis_ctxt,
                     )?;
                     true
                 }
@@ -705,11 +706,12 @@ impl<'pcg, 'mir: 'pcg, 'tcx> PlaceExpander<'mir, 'tcx> for PlaceObtainer<'pcg, '
         &mut self,
         expansion: &BorrowPcgExpansion<'tcx>,
         block_type: BlockType,
-        ctxt: crate::utils::CompilerCtxt<'_, 'tcx>,
+        _ctxt: crate::utils::CompilerCtxt<'_, 'tcx>,
     ) -> Result<bool, PcgError> {
+        let analysis_ctxt = self.analysis_ctxt();
         self.pcg
             .capabilities
-            .update_for_expansion(expansion, block_type, ctxt)
+            .update_for_expansion(expansion, block_type, analysis_ctxt)
     }
 
     fn location(&self) -> mir::Location {
@@ -722,9 +724,10 @@ impl<'pcg, 'mir: 'pcg, 'tcx> PlaceExpander<'mir, 'tcx> for PlaceObtainer<'pcg, '
         capability: CapabilityKind,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> Result<bool, PcgError> {
+        let analysis_ctxt = self.analysis_ctxt();
         self.pcg
             .capabilities
-            .update_for_deref(ref_place, capability, ctxt)
+            .update_for_deref(ref_place, capability, analysis_ctxt)
     }
 
     fn debug_capabilities(

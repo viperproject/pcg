@@ -65,7 +65,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
 
         self.pcg
             .capabilities
-            .insert(target, CapabilityKind::Exclusive, self.ctxt);
+            .insert(target, CapabilityKind::Exclusive, self.analysis_ctxt());
         match rvalue {
             Rvalue::Aggregate(
                 box (mir::AggregateKind::Adt(..)

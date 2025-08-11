@@ -14,7 +14,10 @@ use crate::{
         borrow_pcg_edge::{BorrowPcgEdge, BorrowPcgEdgeRef},
         region_projection::MaybeRemoteRegionProjectionBase,
     },
-    pcg::{EvalStmtPhase, Pcg, PcgEngine, PcgError, PcgNode, PcgSuccessor, successor_blocks},
+    pcg::{
+        EvalStmtPhase, Pcg, PcgEngine, PcgError, PcgNode, PcgSuccessor, ctxt::AnalysisCtxt,
+        successor_blocks,
+    },
     rustc_interface::{
         data_structures::fx::FxHashSet,
         dataflow::AnalysisEngine,
@@ -70,6 +73,10 @@ impl<'mir, 'tcx, A: Allocator + Copy> PcgAnalysis<'mir, 'tcx, A> {
 
     pub fn ctxt(&self) -> CompilerCtxt<'mir, 'tcx> {
         self.cursor.analysis().0.ctxt
+    }
+
+    pub(crate) fn analysis_ctxt(&self) -> AnalysisCtxt<'mir, 'tcx> {
+        AnalysisCtxt::new(self.ctxt(), self.curr_stmt.unwrap().block)
     }
 
     /// Returns the free pcs for the location `exp_loc` and iterates the cursor
@@ -133,7 +140,7 @@ impl<'mir, 'tcx, A: Allocator + Copy> PcgAnalysis<'mir, 'tcx, A> {
 
                 let owned_bridge = from_post_main
                     .owned
-                    .bridge(&to.entry_state.owned, &from_post_main.capabilities, ctxt)
+                    .bridge(&to.entry_state.owned, &from_post_main.capabilities, self.analysis_ctxt())
                     .unwrap();
 
                 let mut borrow_actions = BorrowPcgActions::new();

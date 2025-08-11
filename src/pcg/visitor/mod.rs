@@ -5,6 +5,7 @@ use crate::borrow_pcg::edge::outlives::{BorrowFlowEdge, BorrowFlowEdgeKind};
 use crate::borrow_pcg::region_projection::{LifetimeProjection, PcgRegion};
 use crate::free_pcs::{CapabilityKind, OwnedPcg, RepackExpand};
 use crate::pcg::PcgDebugData;
+use crate::pcg::ctxt::AnalysisCtxt;
 use crate::pcg::obtain::{PlaceCollapser, PlaceObtainer};
 use crate::pcg::place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface};
 use crate::pcg::triple::TripleWalker;
@@ -39,6 +40,10 @@ pub(crate) struct PcgVisitor<'pcg, 'mir, 'tcx> {
 }
 
 impl<'pcg, 'mir, 'tcx> PcgVisitor<'pcg, 'mir, 'tcx> {
+    fn analysis_ctxt(&self) -> AnalysisCtxt<'mir, 'tcx> {
+        AnalysisCtxt::new(self.ctxt, self.location().block)
+    }
+
     fn prev_snapshot_location(&self) -> SnapshotLocation {
         SnapshotLocation::before(self.analysis_location)
     }
@@ -266,9 +271,11 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
             if place.projection.is_empty()
                 && self.pcg.capabilities.get(place, self.ctxt) == Some(CapabilityKind::Read)
             {
-                self.pcg
-                    .capabilities
-                    .insert(place, CapabilityKind::Exclusive, self.ctxt);
+                self.pcg.capabilities.insert(
+                    place,
+                    CapabilityKind::Exclusive,
+                    self.analysis_ctxt(),
+                );
             }
         }
         Ok(true)
@@ -453,7 +460,7 @@ impl<'tcx> OwnedPcg<'tcx> {
         &mut self,
         expand: RepackExpand<'tcx>,
         capabilities: &mut PlaceCapabilities<'tcx>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
+        ctxt: AnalysisCtxt<'_, 'tcx>,
     ) -> Result<(), PcgError> {
         let expansions = self.locals_mut()[expand.local()].get_allocated_mut();
         expansions.perform_expand_action(expand, capabilities, ctxt)

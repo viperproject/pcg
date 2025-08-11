@@ -1,18 +1,16 @@
 use crate::{
     action::PcgAction,
     borrow_pcg::state::{BorrowStateMutRef, BorrowsStateLike},
-    free_pcs::{LocalExpansions, RepackOp, join::data::JoinOwnedData},
+    free_pcs::{join::data::JoinOwnedData, LocalExpansions, RepackOp},
     pcg::{
-        PcgError,
-        obtain::{ActionApplier, HasSnapshotLocation, PlaceCollapser},
-        place_capabilities::PlaceCapabilities,
+        ctxt::AnalysisCtxt, obtain::{ActionApplier, HasSnapshotLocation, PlaceCollapser}, place_capabilities::PlaceCapabilities, PcgError
     },
     rustc_interface::middle::mir,
-    utils::{CompilerCtxt, Place, SnapshotLocation, data_structures::HashSet},
+    utils::{data_structures::HashSet, CompilerCtxt, Place, SnapshotLocation},
 };
 
 pub(crate) struct JoinObtainer<'pcg: 'exp, 'exp, 'slf, 'mir, 'tcx> {
-    pub(crate) ctxt: CompilerCtxt<'mir, 'tcx>,
+    pub(crate) ctxt: AnalysisCtxt<'mir, 'tcx>,
     pub(crate) data: &'slf mut JoinOwnedData<'pcg, 'tcx, &'exp mut LocalExpansions<'tcx>>,
     pub(crate) actions: Vec<RepackOp<'tcx>>,
 }
@@ -26,11 +24,11 @@ impl HasSnapshotLocation for JoinObtainer<'_, '_, '_, '_, '_> {
 impl<'pcg, 'mir, 'tcx> ActionApplier<'tcx> for JoinObtainer<'_, '_, '_, 'mir, 'tcx> {
     fn apply_action(&mut self, action: PcgAction<'tcx>) -> Result<bool, PcgError> {
         match action {
-            PcgAction::Borrow(action) => {
-                self.data
-                    .borrows
-                    .apply_action(action.clone(), self.data.capabilities, self.ctxt)
-            }
+            PcgAction::Borrow(action) => self.data.borrows.apply_action(
+                action.clone(),
+                self.data.capabilities,
+                self.ctxt,
+            ),
             PcgAction::Owned(action) => match action.kind {
                 RepackOp::StorageDead(_) => todo!(),
                 RepackOp::IgnoreStorageDead(_) => todo!(),

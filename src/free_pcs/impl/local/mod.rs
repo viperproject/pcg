@@ -12,8 +12,7 @@ use crate::{
     borrow_pcg::borrow_pcg_expansion::PlaceExpansion,
     free_pcs::{RepackCollapse, RepackGuide},
     pcg::{
-        PcgUnsupportedError,
-        place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface},
+        ctxt::AnalysisCtxt, place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface}, PcgUnsupportedError
     },
     rustc_interface::middle::mir::Local,
     utils::data_structures::HashSet,
@@ -244,17 +243,17 @@ impl<'tcx> LocalExpansions<'tcx> {
         to: Place<'tcx>,
         _for_cap: Option<CapabilityKind>,
         capabilities: &mut PlaceCapabilities<'tcx>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
+        ctxt: AnalysisCtxt<'_, 'tcx>,
     ) -> std::result::Result<Vec<RepackOp<'tcx>>, PcgInternalError> {
         if !self.contains_expansion_from(to) {
             return Ok(vec![]);
         }
-        let places_to_collapse = self.places_to_collapse_for_obtain_of(to, ctxt);
+        let places_to_collapse = self.places_to_collapse_for_obtain_of(to, ctxt.ctxt);
         let ops: Vec<RepackOp<'tcx>> = places_to_collapse
             .into_iter()
             .map(|place| {
                 let retained_cap = self
-                    .get_retained_capability_of_children(place, capabilities, ctxt)
+                    .get_retained_capability_of_children(place, capabilities, ctxt.ctxt)
                     .unwrap();
                 let action = RepackCollapse::new(place, retained_cap);
                 self.perform_collapse_action(action, capabilities, ctxt)

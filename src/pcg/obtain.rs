@@ -25,14 +25,11 @@ use crate::{
     free_pcs::{CapabilityKind, ExpandedPlace, LocalExpansions, RepackCollapse, RepackOp},
     r#loop::PlaceUsageType,
     pcg::{
-        PCGNodeLike, PcgDebugData, PcgError, PcgMutRef, PcgRefLike,
-        place_capabilities::{BlockType, PlaceCapabilities, PlaceCapabilitiesInterface},
+        ctxt::AnalysisCtxt, place_capabilities::{BlockType, PlaceCapabilities, PlaceCapabilitiesInterface}, PCGNodeLike, PcgDebugData, PcgError, PcgMutRef, PcgRefLike
     },
     rustc_interface::middle::mir,
     utils::{
-        CompilerCtxt, DebugImgcat, HasPlace, PCG_DEBUG_BLOCK, Place, ProjectionKind,
-        ShallowExpansion, SnapshotLocation, data_structures::HashSet,
-        display::DisplayWithCompilerCtxt,
+        data_structures::HashSet, display::DisplayWithCompilerCtxt, CompilerCtxt, DebugImgcat, HasPlace, Place, ProjectionKind, ShallowExpansion, SnapshotLocation, PCG_DEBUG_BLOCK
     },
 };
 
@@ -43,6 +40,12 @@ pub(crate) struct PlaceObtainer<'state, 'mir, 'tcx> {
     pub(crate) location: mir::Location,
     pub(crate) prev_snapshot_location: SnapshotLocation,
     pub(crate) debug_data: Option<&'state mut PcgDebugData>,
+}
+
+impl<'state, 'mir, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
+    pub(crate) fn analysis_ctxt(&self) -> AnalysisCtxt<'mir, 'tcx> {
+        AnalysisCtxt::new(self.ctxt, self.location.block)
+    }
 }
 
 impl<'state, 'mir, 'tcx> RenderDebugGraph for PlaceObtainer<'state, 'mir, 'tcx> {

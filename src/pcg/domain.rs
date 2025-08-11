@@ -26,12 +26,13 @@ use crate::{
     free_pcs::{CapabilityKind, join::data::JoinOwnedData},
     r#loop::{LoopAnalysis, LoopPlaceUsageAnalysis, PlaceUsages},
     pcg::{
+        ctxt::AnalysisCtxt,
         dot_graphs::{PcgDotGraphsForBlock, ToGraph, generate_dot_graph},
         place_capabilities::PlaceCapabilitiesInterface,
         triple::Triple,
     },
     rustc_interface::{
-        middle::mir::{self, BasicBlock},
+        middle::mir::{self, BasicBlock, START_BLOCK},
         mir_dataflow::{JoinSemiLattice, fmt::DebugWithContext, move_paths::MoveData},
     },
     utils::{
@@ -187,13 +188,11 @@ pub(crate) struct PcgRef<'pcg, 'tcx> {
 }
 
 impl<'pcg, 'tcx> PcgRef<'pcg, 'tcx> {
-
     fn places(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> HashSet<Place<'tcx>> {
         let mut places = self.owned.places(ctxt);
         places.extend(self.borrow.graph.places(ctxt));
         places
     }
-
 
     pub(crate) fn render_debug_graph(
         &self,
@@ -328,7 +327,6 @@ impl<'tcx> HasValidityCheck<'tcx> for PcgRef<'_, 'tcx> {
             }
         }
 
-
         // For now we don't do this, due to interactions with future nodes: we
         // detect that a node is no longer blocked but still technically not a
         // leaf due to historical reborrows that could have changed the value in
@@ -396,12 +394,7 @@ impl<'mir, 'tcx: 'mir> Pcg<'tcx> {
             .borrow
             .graph()
             .edges_blocking(place.into(), ctxt)
-            .any(|e| {
-                matches!(
-                    e.kind,
-                    BorrowPcgEdgeKind::BorrowPcgExpansion(_)
-                )
-            })
+            .any(|e| matches!(e.kind, BorrowPcgEdgeKind::BorrowPcgExpansion(_)))
         {
             return false;
         }
@@ -421,7 +414,7 @@ impl<'mir, 'tcx: 'mir> Pcg<'tcx> {
         &self.borrow
     }
 
-    pub(crate) fn ensure_triple(&mut self, t: Triple<'tcx>, ctxt: CompilerCtxt<'_, 'tcx>) {
+    pub(crate) fn ensure_triple(&mut self, t: Triple<'tcx>, ctxt: AnalysisCtxt<'_, 'tcx>) {
         self.owned
             .locals_mut()
             .ensures(t, &mut self.capabilities, ctxt);
@@ -434,7 +427,7 @@ impl<'mir, 'tcx: 'mir> Pcg<'tcx> {
         self_block: BasicBlock,
         other_block: BasicBlock,
         body_analysis: &BodyAnalysis<'mir, 'tcx>,
-        ctxt: CompilerCtxt<'mir, 'tcx>,
+        ctxt: AnalysisCtxt<'mir, 'tcx>,
     ) -> std::result::Result<bool, PcgError> {
         let mut other_capabilities = other.capabilities.clone();
         let mut other_borrows = other.borrow.clone();
@@ -454,7 +447,9 @@ impl<'mir, 'tcx: 'mir> Pcg<'tcx> {
         // For edges in the other graph that actually belong to it,
         // add the path condition that leads them to this block
         let mut other = other.clone();
-        other.borrow.add_cfg_edge(other_block, self_block, ctxt);
+        other
+            .borrow
+            .add_cfg_edge(other_block, self_block, ctxt.ctxt);
         res |= self.capabilities.join(&other_capabilities);
         res |= self.borrow.join(
             &other.borrow,
@@ -463,7 +458,7 @@ impl<'mir, 'tcx: 'mir> Pcg<'tcx> {
             body_analysis,
             &mut self.capabilities,
             &mut self.owned,
-            ctxt,
+            ctxt.ctxt,
         )?;
         Ok(res)
     }
@@ -477,8 +472,9 @@ impl<'mir, 'tcx: 'mir> Pcg<'tcx> {
         result
     }
     pub(crate) fn initialize_as_start_block(&mut self, repacker: CompilerCtxt<'_, 'tcx>) {
+        let analysis_ctxt = AnalysisCtxt::new(repacker, START_BLOCK);
         self.owned
-            .initialize_as_start_block(&mut self.capabilities, repacker);
+            .initialize_as_start_block(&mut self.capabilities, analysis_ctxt);
         self.borrow
             .initialize_as_start_block(&mut self.capabilities, repacker);
     }
@@ -829,7 +825,7 @@ impl<A: Allocator + Clone> JoinSemiLattice for PcgDomain<'_, '_, A> {
             self_block,
             other_block,
             &self.body_analysis,
-            self.ctxt,
+            AnalysisCtxt::new(self.ctxt, self_block),
         ) {
             Ok(changed) => changed,
             Err(e) => {

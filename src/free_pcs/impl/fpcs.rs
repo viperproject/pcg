@@ -9,14 +9,13 @@ use std::fmt::{Debug, Formatter, Result};
 use crate::{
     free_pcs::RepackOp,
     pcg::{
-        PcgError,
-        place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface},
+        ctxt::AnalysisCtxt, place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface}, PcgError
     },
     rustc_interface::{
         index::{Idx, IndexVec},
         middle::mir::{self, Local, RETURN_PLACE},
     },
-    utils::{Place, data_structures::HashSet},
+    utils::{data_structures::HashSet, Place},
 };
 use derive_more::{Deref, DerefMut};
 
@@ -69,40 +68,40 @@ impl<'tcx> OwnedPcg<'tcx> {
         &self,
         other: &Self,
         place_capabilities: &PlaceCapabilities<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx>,
+        ctxt: AnalysisCtxt<'_, 'tcx>,
     ) -> std::result::Result<Vec<RepackOp<'tcx>>, PcgError> {
         self.data.as_ref().unwrap().bridge(
             other.data.as_ref().unwrap(),
             place_capabilities,
-            repacker,
+            ctxt,
         )
     }
 
     pub(crate) fn initialize_as_start_block(
         &mut self,
         capabilities: &mut PlaceCapabilities<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx>,
+        ctxt: AnalysisCtxt<'_, 'tcx>,
     ) {
-        let always_live = repacker.always_live_locals();
+        let always_live = ctxt.ctxt.always_live_locals();
         let return_local = RETURN_PLACE;
-        let last_arg = Local::new(repacker.body().arg_count);
+        let last_arg = Local::new(ctxt.body().arg_count);
         let capability_summary = IndexVec::from_fn_n(
             |local: mir::Local| {
                 if local == return_local {
-                    capabilities.insert(local.into(), CapabilityKind::Write, repacker);
+                    capabilities.insert(local.into(), CapabilityKind::Write, ctxt);
                     OwnedPcgLocal::new(local)
                 } else if local <= last_arg {
-                    capabilities.insert(local.into(), CapabilityKind::Exclusive, repacker);
+                    capabilities.insert(local.into(), CapabilityKind::Exclusive, ctxt);
                     OwnedPcgLocal::new(local)
                 } else if always_live.contains(local) {
-                    capabilities.insert(local.into(), CapabilityKind::Write, repacker);
+                    capabilities.insert(local.into(), CapabilityKind::Write, ctxt);
                     OwnedPcgLocal::new(local)
                 } else {
                     // Other locals are unallocated
                     OwnedPcgLocal::Unallocated
                 }
             },
-            repacker.local_count(),
+            ctxt.ctxt.local_count(),
         );
         self.data = Some(OwnedPcgData(capability_summary));
     }

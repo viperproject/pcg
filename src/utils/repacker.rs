@@ -143,6 +143,10 @@ impl ProjectionKind {
     }
 }
 
+pub(crate) trait HasCompilerCtxt<'a, 'tcx> {
+    fn ctxt(&self) -> CompilerCtxt<'a, 'tcx>;
+}
+
 #[derive(Copy, Clone)]
 pub struct CompilerCtxt<'a, 'tcx, T = &'a dyn BorrowCheckerInterface<'tcx>> {
     pub(super) mir: &'a Body<'tcx>,

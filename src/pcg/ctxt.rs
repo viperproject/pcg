@@ -1,51 +1,39 @@
-use crate::rustc_interface::middle::mir;
+use crate::rustc_interface::middle::{mir, ty};
 use crate::utils::logging::LogPredicate;
-use crate::utils::{CompilerCtxt, PcgSettings, SETTINGS};
-
-pub(crate) trait AnalysisCtxt<'a, 'tcx>: Copy {
-    fn ctxt(self) -> CompilerCtxt<'a, 'tcx>;
-    fn matches(&self, predicate: LogPredicate) -> bool;
-}
-
-impl<'a, 'tcx> AnalysisCtxt<'a, 'tcx> for CompilerCtxt<'a, 'tcx> {
-    fn ctxt(self) -> CompilerCtxt<'a, 'tcx> {
-        self
-    }
-
-    fn matches(&self, predicate: LogPredicate) -> bool {
-        match predicate {
-            LogPredicate::DebugBlock => false,
-        }
-    }
-}
+use crate::utils::{CompilerCtxt, HasCompilerCtxt, PcgSettings, SETTINGS};
 
 #[derive(Copy, Clone)]
-pub(crate) struct WithCtxt<'a, 'tcx, T: Copy> {
+pub(crate) struct AnalysisCtxt<'a, 'tcx> {
     pub(crate) ctxt: CompilerCtxt<'a, 'tcx>,
     pub(crate) settings: &'a PcgSettings<'a>,
-    pub(crate) extra_ctxt: T,
+    pub(crate) block: mir::BasicBlock,
 }
 
-impl<'a, 'tcx, T: Copy> WithCtxt<'a, 'tcx, T> {
-    pub(crate) fn new(ctxt: CompilerCtxt<'a, 'tcx>, extra_ctxt: T) -> Self {
+impl<'a, 'tcx> HasCompilerCtxt<'a, 'tcx> for AnalysisCtxt<'a, 'tcx> {
+    fn ctxt(&self) -> CompilerCtxt<'a, 'tcx> {
+        self.ctxt
+    }
+}
+
+impl<'a, 'tcx> AnalysisCtxt<'a, 'tcx> {
+    pub(crate) fn tcx(&self) -> ty::TyCtxt<'tcx> {
+        self.ctxt.tcx()
+    }
+    pub(crate) fn body(&self) -> &'a mir::Body<'tcx> {
+        self.ctxt.body()
+    }
+    pub(crate) fn new(ctxt: CompilerCtxt<'a, 'tcx>, block: mir::BasicBlock) -> Self {
         Self {
             ctxt,
             settings: &SETTINGS,
-            extra_ctxt,
+            block,
         }
     }
-}
-
-impl<'a, 'tcx> AnalysisCtxt<'a, 'tcx> for WithCtxt<'a, 'tcx, mir::BasicBlock> {
-    fn ctxt(self) -> CompilerCtxt<'a, 'tcx> {
-        self.ctxt
-    }
-
-    fn matches(&self, predicate: LogPredicate) -> bool {
+    pub(crate) fn matches(&self, predicate: LogPredicate) -> bool {
         match predicate {
             LogPredicate::DebugBlock => {
                 if let Some(debug_block) = self.settings.debug_block {
-                    debug_block == self.extra_ctxt
+                    debug_block == self.block
                 } else {
                     false
                 }

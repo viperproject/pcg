@@ -11,7 +11,8 @@ use crate::pcg::{BodyAnalysis, PCGNodeLike, PcgError, PcgNode, PcgUnsupportedErr
 use crate::pcg_validity_assert;
 use crate::utils::data_structures::HashSet;
 use crate::utils::display::DisplayWithCompilerCtxt;
-use crate::utils::{CompilerCtxt, DebugImgcat, PCG_DEBUG_BLOCK, Place, SnapshotLocation};
+use crate::utils::logging::LogPredicate;
+use crate::utils::{CompilerCtxt, DebugImgcat, PCG_DEBUG_BLOCK, Place, SnapshotLocation, logging};
 use crate::visualization::dot_graph::DotGraph;
 use crate::visualization::generate_borrows_dot_graph;
 use crate::{
@@ -96,6 +97,8 @@ impl<'tcx> BorrowsGraph<'tcx> {
             // self.render_debug_graph(ctxt, &format!("Self graph: {self_block:?}"));
             // other.render_debug_graph(ctxt, &format!("Other graph: {other_block:?}"));
 
+            let analysis_ctxt = AnalysisCtxt::new(ctxt, self_block);
+
             self.join_loop(
                 self_block,
                 used_places,
@@ -103,7 +106,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 owned,
                 path_conditions,
                 body_analysis,
-                ctxt,
+                analysis_ctxt,
             )?;
             let result = *self != old_self;
             if borrows_imgcat_debug(self_block, Some(DebugImgcat::JoinLoop))
@@ -198,9 +201,14 @@ impl<'tcx> BorrowsGraph<'tcx> {
         owned: &mut OwnedPcg<'tcx>,
         path_conditions: ValidityConditions,
         body_analysis: &BodyAnalysis<'mir, 'tcx>,
-        ctxt: CompilerCtxt<'mir, 'tcx>,
+        ctxt: AnalysisCtxt<'mir, 'tcx>,
     ) -> Result<(), PcgError> {
-        tracing::debug!("used places: {}", used_places.to_short_string(ctxt));
+        logging::log!(
+            LogPredicate::DebugBlock,
+            ctxt,
+            "used places: {}",
+            used_places.to_short_string(ctxt.ctxt)
+        );
         // p_loop
         let live_loop_places = used_places.usages_where(|p| {
             body_analysis.is_live_and_initialized_at(
@@ -213,39 +221,45 @@ impl<'tcx> BorrowsGraph<'tcx> {
         });
 
         if !live_loop_places
-            .usages_where(|p| p.place.contains_unsafe_deref(ctxt))
+            .usages_where(|p| p.place.contains_unsafe_deref(ctxt.ctxt))
             .is_empty()
         {
             return Err(PcgUnsupportedError::DerefUnsafePtr.into());
         }
 
-        tracing::info!(
+        logging::log!(
+            LogPredicate::DebugBlock,
+            ctxt,
             "live loop places: {}",
-            live_loop_places.to_short_string(ctxt)
+            live_loop_places.to_short_string(ctxt.ctxt)
         );
 
         let loop_blocked_places = live_loop_places.usages_where(|p| {
-            ctxt.bc.is_directly_blocked(
+            ctxt.ctxt.bc.is_directly_blocked(
                 p.place,
                 mir::Location {
                     block: loop_head,
                     statement_index: 0,
                 },
-                ctxt,
+                ctxt.ctxt,
             )
         });
 
-        tracing::info!(
+        logging::log!(
+            LogPredicate::DebugBlock,
+            ctxt,
             "loop_blocked_places: {}",
-            loop_blocked_places.to_short_string(ctxt)
+            loop_blocked_places.to_short_string(ctxt.ctxt)
         );
 
         let loop_blocker_places =
-            live_loop_places.usages_where(|p| !p.place.regions(ctxt).is_empty());
+            live_loop_places.usages_where(|p| !p.place.regions(ctxt.ctxt).is_empty());
 
-        tracing::info!(
+        logging::log!(
+            LogPredicate::DebugBlock,
+            ctxt,
             "loop_blocker_places: {}",
-            loop_blocker_places.to_short_string(ctxt)
+            loop_blocker_places.to_short_string(ctxt.ctxt)
         );
 
         let expand_places = loop_blocker_places.joined_with(&loop_blocked_places);
@@ -257,23 +271,28 @@ impl<'tcx> BorrowsGraph<'tcx> {
             capabilities,
             owned,
             path_conditions.clone(),
-            ctxt,
+            ctxt.ctxt,
         );
         self.render_debug_graph(
             loop_head,
             Some(DebugImgcat::JoinLoop),
             capabilities,
             "G_Pre'",
-            ctxt,
+            ctxt.ctxt,
         );
 
         // p_roots
         let live_roots = live_loop_places
             .iter()
-            .flat_map(|p| self.get_borrow_roots(p.place, loop_head, ctxt))
+            .flat_map(|p| self.get_borrow_roots(p.place, loop_head, ctxt.ctxt))
             .collect::<HashSet<_>>();
 
-        tracing::debug!("live roots: {}", live_roots.to_short_string(ctxt));
+        logging::log!(
+            LogPredicate::DebugBlock,
+            ctxt,
+            "live roots: {}",
+            live_roots.to_short_string(ctxt.ctxt)
+        );
 
         let root_places = live_roots
             .iter()
@@ -283,7 +302,12 @@ impl<'tcx> BorrowsGraph<'tcx> {
             })
             .collect::<HashSet<_>>();
 
-        tracing::info!("root places: {}", root_places.to_short_string(ctxt));
+        logging::log!(
+            LogPredicate::DebugBlock,
+            ctxt,
+            "root places: {}",
+            root_places.to_short_string(ctxt.ctxt)
+        );
 
         let ConstructAbstractionGraphResult {
             graph: abstraction_graph,
@@ -295,7 +319,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             &loop_blocker_places,
             loop_head,
             path_conditions.clone(),
-            ctxt,
+            ctxt.ctxt,
         );
 
         abstraction_graph.render_debug_graph(
@@ -303,7 +327,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             Some(DebugImgcat::JoinLoop),
             capabilities,
             "Abstraction graph",
-            ctxt,
+            ctxt.ctxt,
         );
 
         for rp in to_label.iter() {
@@ -313,7 +337,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                     Some(LifetimeProjectionLabel::Location(SnapshotLocation::Loop(
                         loop_head,
                     ))),
-                    ctxt,
+                    ctxt.ctxt,
                 )
                 .to_filter_mut_result()
             });
@@ -327,21 +351,21 @@ impl<'tcx> BorrowsGraph<'tcx> {
             }
         }
 
-        let abstraction_graph_pcg_nodes = abstraction_graph.nodes(ctxt);
-        let to_cut = self.identify_subgraph_to_cut(loop_head, abstraction_graph_pcg_nodes, ctxt);
+        let abstraction_graph_pcg_nodes = abstraction_graph.nodes(ctxt.ctxt);
+        let to_cut = self.identify_subgraph_to_cut(loop_head, abstraction_graph_pcg_nodes, ctxt.ctxt);
         to_cut.render_debug_graph(
             loop_head,
             Some(DebugImgcat::JoinLoop),
             capabilities,
             "To cut",
-            ctxt,
+            ctxt.ctxt,
         );
         self.render_debug_graph(
             loop_head,
             Some(DebugImgcat::JoinLoop),
             capabilities,
             "Self before cut",
-            ctxt,
+            ctxt.ctxt,
         );
         for edge in to_cut.edges() {
             self.remove(edge.kind());
@@ -351,15 +375,15 @@ impl<'tcx> BorrowsGraph<'tcx> {
             Some(DebugImgcat::JoinLoop),
             capabilities,
             "Self after cut",
-            ctxt,
+            ctxt.ctxt,
         );
         for edge in abstraction_graph.into_edges() {
-            self.insert(edge, ctxt);
+            self.insert(edge, ctxt.ctxt);
         }
-        let self_places = self.places(ctxt);
-        for place in to_cut.places(ctxt) {
-            if !place.is_owned(ctxt)
-                && capabilities.get(place, ctxt).is_some()
+        let self_places = self.places(ctxt.ctxt);
+        for place in to_cut.places(ctxt.ctxt) {
+            if !place.is_owned(ctxt.ctxt)
+                && capabilities.get(place, ctxt.ctxt).is_some()
                 && !self_places.contains(&place)
             {
                 capabilities.remove(place, ctxt);
@@ -370,7 +394,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             Some(DebugImgcat::JoinLoop),
             capabilities,
             "Final graph",
-            ctxt,
+            ctxt.ctxt,
         );
         Ok(())
     }

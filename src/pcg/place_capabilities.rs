@@ -20,18 +20,18 @@ use crate::{
 
 pub(crate) trait PlaceCapabilitiesInterface<'tcx> {
     fn get(&self, place: Place<'tcx>, ctxt: CompilerCtxt<'_, 'tcx>) -> Option<CapabilityKind>;
-    fn insert<'slf>(
+
+    fn insert(
         &mut self,
         place: Place<'tcx>,
         capability: CapabilityKind,
-        ctxt: impl AnalysisCtxt<'slf, 'tcx>,
-    ) -> bool
-    where
-        'tcx: 'slf;
+        ctxt: AnalysisCtxt<'_, 'tcx>,
+    ) -> bool;
+
     fn remove(
         &mut self,
         place: Place<'tcx>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
+        ctxt: AnalysisCtxt<'_, 'tcx>,
     ) -> Option<CapabilityKind>;
 }
 
@@ -43,24 +43,27 @@ impl<'tcx> PlaceCapabilitiesInterface<'tcx> for PlaceCapabilities<'tcx> {
     fn remove(
         &mut self,
         place: Place<'tcx>,
-        _ctxt: CompilerCtxt<'_, 'tcx>,
+        ctxt: AnalysisCtxt<'_, 'tcx>,
     ) -> Option<CapabilityKind> {
+        logging::log!(
+            LogPredicate::DebugBlock,
+            ctxt,
+            "Removing capability for {}",
+            place.to_short_string(ctxt.ctxt)
+        );
         self.0.remove(&place)
     }
 
-    fn insert<'slf>(
+    fn insert(
         &mut self,
         place: Place<'tcx>,
         capability: CapabilityKind,
-        ctxt: impl AnalysisCtxt<'slf, 'tcx>,
-    ) -> bool
-    where
-        'tcx: 'slf,
-    {
+        ctxt: AnalysisCtxt<'_, 'tcx>,
+    ) -> bool {
         pcg_validity_assert!(
-            !place.projects_shared_ref(ctxt.ctxt()) || capability.is_read(),
+            !place.projects_shared_ref(ctxt.ctxt) || capability.is_read(),
             "Place {} projects a shared ref, but has capability {:?}",
-            place.to_short_string(ctxt.ctxt()),
+            place.to_short_string(ctxt.ctxt),
             capability
         );
         logging::log!(
@@ -68,7 +71,7 @@ impl<'tcx> PlaceCapabilitiesInterface<'tcx> for PlaceCapabilities<'tcx> {
             ctxt,
             "Inserting capability {:?} for {}",
             capability,
-            place.to_short_string(ctxt.ctxt())
+            place.to_short_string(ctxt.ctxt)
         );
         self.0.insert(place, capability) != Some(capability)
     }
@@ -197,14 +200,14 @@ impl<'tcx> PlaceCapabilities<'tcx> {
         place: Place<'tcx>,
         capability: CapabilityKind,
         mut borrows: BorrowStateMutRef<'_, 'tcx>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
+        ctxt: AnalysisCtxt<'_, 'tcx>,
     ) -> Result<(), PcgError> {
         self.insert((*place).into(), capability, ctxt);
         if capability == CapabilityKind::Exclusive {
             borrows.label_region_projection(
                 &LabelLifetimeProjectionPredicate::AllPlaceholderPostfixes(place),
                 None,
-                ctxt,
+                ctxt.ctxt,
             );
         }
         Ok(())
@@ -250,15 +253,15 @@ impl<'tcx> PlaceCapabilities<'tcx> {
         &mut self,
         ref_place: Place<'tcx>,
         capability: CapabilityKind,
-        ctxt: CompilerCtxt<'_, 'tcx>,
+        ctxt: AnalysisCtxt<'_, 'tcx>,
     ) -> Result<bool, PcgError> {
-        if capability.is_read() || ref_place.is_shared_ref(ctxt) {
+        if capability.is_read() || ref_place.is_shared_ref(ctxt.ctxt) {
             self.insert(ref_place, CapabilityKind::Read, ctxt);
-            self.insert(ref_place.project_deref(ctxt), CapabilityKind::Read, ctxt);
+            self.insert(ref_place.project_deref(ctxt.ctxt), CapabilityKind::Read, ctxt);
         } else {
             self.insert(ref_place, CapabilityKind::Write, ctxt);
             self.insert(
-                ref_place.project_deref(ctxt),
+                ref_place.project_deref(ctxt.ctxt),
                 CapabilityKind::Exclusive,
                 ctxt,
             );
@@ -271,15 +274,15 @@ impl<'tcx> PlaceCapabilities<'tcx> {
         &mut self,
         expansion: &BorrowPcgExpansion<'tcx>,
         block_type: BlockType,
-        ctxt: CompilerCtxt<'_, 'tcx>,
+        ctxt: AnalysisCtxt<'_, 'tcx>,
     ) -> Result<bool, PcgError> {
         let mut changed = false;
         // We dont change if only expanding region projections
         if expansion.base.is_place() {
             let base = expansion.base;
-            let base_capability = self.get(base.place(), ctxt);
+            let base_capability = self.get(base.place(), ctxt.ctxt);
             let expanded_capability = if let Some(capability) = base_capability {
-                block_type.expansion_capability(base.place(), capability, ctxt)
+                block_type.expansion_capability(base.place(), capability, ctxt.ctxt)
             } else {
                 // TODO
                 // pcg_validity_assert!(
@@ -303,7 +306,7 @@ impl<'tcx> PlaceCapabilities<'tcx> {
         &mut self,
         blocked_place: Place<'tcx>,
         block_type: BlockType,
-        ctxt: CompilerCtxt<'_, 'tcx>,
+        ctxt: AnalysisCtxt<'_, 'tcx>,
     ) -> bool {
         let retained_capability = block_type.blocked_place_retained_capability();
         if let Some(capability) = retained_capability {

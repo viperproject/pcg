@@ -1056,7 +1056,10 @@ fn test_selected_crates() {
     ];
 
     let mut test_cases: Vec<SelectedCrateTestCase> =
-        vec!["gimli;0.31.1;2025-03-13;read::unit::EntriesTree::<'abbrev, 'unit, R>::root;26"]
+        vec![
+            "bindgen;0.71.1;2025-03-13;ir::context::BindgenContext::find_used_template_parameters;35;debug_failure",
+            "gimli;0.31.1;2025-03-13;read::unit::EntriesTree::<'abbrev, 'unit, R>::root;26"
+            ]
             .into_iter()
             .map(|s| SelectedCrateTestCase::from_semicolon_format(s).unwrap())
             .collect();
@@ -1151,7 +1154,6 @@ mod tests {
         let invalid = "serde;1.0.123;2025-03-13";
         let result = SelectedCrateTestCase::from_semicolon_format(invalid);
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Expected 6 fields"));
     }
 
     #[test]

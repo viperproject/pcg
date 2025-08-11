@@ -7,11 +7,10 @@
 use crate::{
     free_pcs::{CapabilityKind, LocalExpansions, OwnedPcgLocal},
     pcg::{
-        place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface},
-        triple::{PlaceCondition, Triple},
+        ctxt::AnalysisCtxt, place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface}, triple::{PlaceCondition, Triple}
     },
     pcg_validity_assert,
-    utils::{CompilerCtxt, LocalMutationIsAllowed, display::DisplayWithCompilerCtxt},
+    utils::{display::DisplayWithCompilerCtxt, CompilerCtxt, LocalMutationIsAllowed},
 };
 
 use crate::rustc_interface::middle::mir::RETURN_PLACE;
@@ -88,9 +87,9 @@ impl<'tcx> OwnedPcgData<'tcx> {
         &mut self,
         t: Triple<'tcx>,
         place_capabilities: &mut PlaceCapabilities<'tcx>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
+        ctxt: AnalysisCtxt<'_, 'tcx>,
     ) {
-        self.check_pre_satisfied(t.pre(), place_capabilities, ctxt);
+        self.check_pre_satisfied(t.pre(), place_capabilities, ctxt.ctxt);
         let Some(post) = t.post() else {
             return;
         };
@@ -98,7 +97,7 @@ impl<'tcx> OwnedPcgData<'tcx> {
             PlaceCondition::Return => unreachable!(),
             PlaceCondition::Unalloc(local) => {
                 self[local] = OwnedPcgLocal::Unallocated;
-                place_capabilities.remove_all_for_local(local, ctxt);
+                place_capabilities.remove_all_for_local(local, ctxt.ctxt);
             }
             PlaceCondition::AllocateOrDeallocate(local) => {
                 self[local] = OwnedPcgLocal::Allocated(LocalExpansions::new(local));
