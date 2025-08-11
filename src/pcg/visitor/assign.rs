@@ -123,7 +123,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                                     self.ctxt,
                                 )
                                 .into(),
-                                self.pcg.borrow.path_conditions.clone(),
+                                self.pcg.borrow.validity_conditions.clone(),
                             ),
                             "assign_post_main",
                             self.ctxt,
@@ -158,7 +158,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                                     self.ctxt,
                                 )
                                 .into(),
-                                self.pcg.borrow.path_conditions.clone(),
+                                self.pcg.borrow.validity_conditions.clone(),
                             ),
                             "assign_post_main",
                             self.ctxt,
@@ -251,7 +251,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                                     self.ctxt,
                                 )
                                 .into(),
-                                self.pcg.borrow.path_conditions.clone(),
+                                self.pcg.borrow.validity_conditions.clone(),
                             ),
                             "assign_post_main",
                             self.ctxt,

@@ -78,7 +78,7 @@ impl<'pcg, 'mir, 'tcx> PcgVisitor<'pcg, 'mir, 'tcx> {
                                 self.ctxt,
                             )
                             .into(),
-                            self.pcg.borrow.path_conditions.clone(),
+                            self.pcg.borrow.validity_conditions.clone(),
                         ),
                         "connect_outliving_projections",
                         self.ctxt,

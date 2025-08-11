@@ -1,6 +1,6 @@
 //! The data structure representing the state of the Borrow PCG.
 
-use crate::rustc_interface::middle::mir::START_BLOCK;
+use crate::{borrow_pcg::graph::join::JoinBorrowsArgs, rustc_interface::middle::mir::START_BLOCK};
 
 use super::{
     borrow_pcg_edge::{BlockedNode, BorrowPcgEdge, BorrowPcgEdgeRef, ToBorrowsEdge},
@@ -16,10 +16,7 @@ use crate::{
         has_pcs_elem::{LabelLifetimeProjectionPredicate, PlaceLabeller, SetLabel},
         region_projection::LifetimeProjectionLabel,
     },
-    free_pcs::OwnedPcg,
-    pcg::{
-        BodyAnalysis, PcgError, ctxt::AnalysisCtxt, place_capabilities::PlaceCapabilitiesInterface,
-    },
+    pcg::{PcgError, ctxt::AnalysisCtxt, place_capabilities::PlaceCapabilitiesInterface},
     pcg_validity_assert,
     utils::{
         display::DisplayWithCompilerCtxt,
@@ -60,12 +57,12 @@ use crate::{
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub struct BorrowsState<'tcx> {
     pub(crate) graph: BorrowsGraph<'tcx>,
-    pub(crate) path_conditions: ValidityConditions,
+    pub(crate) validity_conditions: ValidityConditions,
 }
 
 pub(crate) struct BorrowStateMutRef<'pcg, 'tcx> {
     pub(crate) graph: &'pcg mut BorrowsGraph<'tcx>,
-    pub(crate) path_conditions: &'pcg ValidityConditions,
+    pub(crate) validity_conditions: &'pcg ValidityConditions,
 }
 
 #[allow(unused)]
@@ -200,7 +197,7 @@ impl<'pcg, 'tcx: 'pcg> BorrowsStateLike<'tcx> for BorrowStateMutRef<'pcg, 'tcx> 
     fn as_mut_ref(&mut self) -> BorrowStateMutRef<'_, 'tcx> {
         BorrowStateMutRef {
             graph: self.graph,
-            path_conditions: self.path_conditions,
+            validity_conditions: self.validity_conditions,
         }
     }
 
@@ -211,7 +208,7 @@ impl<'pcg, 'tcx: 'pcg> BorrowsStateLike<'tcx> for BorrowStateMutRef<'pcg, 'tcx> 
     fn as_ref(&self) -> BorrowStateRef<'_, 'tcx> {
         BorrowStateRef {
             graph: self.graph,
-            path_conditions: self.path_conditions,
+            path_conditions: self.validity_conditions,
         }
     }
 }
@@ -220,7 +217,7 @@ impl<'tcx> BorrowsStateLike<'tcx> for BorrowsState<'tcx> {
     fn as_mut_ref(&mut self) -> BorrowStateMutRef<'_, 'tcx> {
         BorrowStateMutRef {
             graph: &mut self.graph,
-            path_conditions: &self.path_conditions,
+            validity_conditions: &self.validity_conditions,
         }
     }
 
@@ -231,7 +228,7 @@ impl<'tcx> BorrowsStateLike<'tcx> for BorrowsState<'tcx> {
     fn as_ref(&self) -> BorrowStateRef<'_, 'tcx> {
         BorrowStateRef {
             graph: &self.graph,
-            path_conditions: &self.path_conditions,
+            path_conditions: &self.validity_conditions,
         }
     }
 }
@@ -240,7 +237,7 @@ impl<'pcg, 'tcx> From<&'pcg mut BorrowsState<'tcx>> for BorrowStateMutRef<'pcg, 
     fn from(borrows_state: &'pcg mut BorrowsState<'tcx>) -> Self {
         Self {
             graph: &mut borrows_state.graph,
-            path_conditions: &borrows_state.path_conditions,
+            validity_conditions: &borrows_state.validity_conditions,
         }
     }
 }
@@ -340,31 +337,19 @@ impl<'tcx> BorrowsState<'tcx> {
         &self.graph
     }
 
-    #[allow(clippy::too_many_arguments)]
-    pub(crate) fn join<'mir>(
+    pub(crate) fn join<'a>(
         &mut self,
         other: &Self,
-        self_block: BasicBlock,
-        other_block: BasicBlock,
-        body_analysis: &BodyAnalysis<'mir, 'tcx>,
-        capabilities: &mut PlaceCapabilities<'tcx>,
-        owned: &mut OwnedPcg<'tcx>,
-        ctxt: CompilerCtxt<'mir, 'tcx>,
+        args: JoinBorrowsArgs<'_, 'a, 'tcx>,
+        ctxt: CompilerCtxt<'a, 'tcx>,
     ) -> Result<bool, PcgError> {
         let mut changed = false;
-        changed |= self.graph.join(
-            &other.graph,
-            self_block,
-            other_block,
-            body_analysis,
-            capabilities,
-            owned,
-            self.path_conditions.clone(),
-            ctxt,
-        )?;
         changed |= self
-            .path_conditions
-            .join(&other.path_conditions, ctxt.body());
+            .graph
+            .join(&other.graph, &self.validity_conditions, args, ctxt)?;
+        changed |= self
+            .validity_conditions
+            .join(&other.validity_conditions, ctxt.body());
         Ok(changed)
     }
 
@@ -374,11 +359,13 @@ impl<'tcx> BorrowsState<'tcx> {
         to: BasicBlock,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
-        if ctxt.is_back_edge(from, to) {
-            return false;
-        }
+        pcg_validity_assert!(
+            !ctxt.is_back_edge(from, to),
+            [ctxt],
+            "Adding CFG edge from {from:?} to {to:?} is a back edge"
+        );
         let pc = PathCondition::new(from, to);
-        self.path_conditions.insert(pc, ctxt.body());
+        self.validity_conditions.insert(pc, ctxt.body());
         self.graph.add_path_condition(pc, ctxt)
     }
 
@@ -461,7 +448,7 @@ impl<'tcx> BorrowsState<'tcx> {
             borrow_edge.to_short_string(ctxt.ctxt)
         );
         assert!(self.graph.insert(
-            BorrowEdge::Local(borrow_edge).to_borrow_pcg_edge(self.path_conditions.clone()),
+            BorrowEdge::Local(borrow_edge).to_borrow_pcg_edge(self.validity_conditions.clone()),
             ctxt.ctxt
         ));
 

@@ -364,7 +364,7 @@ pub(crate) trait PlaceCollapser<'mir, 'tcx>:
                         ctxt,
                     )
                     .into(),
-                    self.borrows_state().path_conditions.clone(),
+                    self.borrows_state().validity_conditions.clone(),
                 );
                 self.apply_action(
                     BorrowPcgAction::add_edge(edge, "create_aggregate_lifetime_projections", ctxt)

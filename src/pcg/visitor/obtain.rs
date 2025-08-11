@@ -706,7 +706,7 @@ impl<'pcg, 'mir: 'pcg, 'tcx> PlaceExpander<'mir, 'tcx> for PlaceObtainer<'pcg, '
     }
 
     fn path_conditions(&self) -> crate::borrow_pcg::path_condition::ValidityConditions {
-        self.pcg.borrow.path_conditions.clone()
+        self.pcg.borrow.validity_conditions.clone()
     }
 
     fn update_capabilities_for_borrow_expansion(

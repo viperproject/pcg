@@ -35,7 +35,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
     ) -> Result<(), PcgError> {
         let function_data = get_function_data(func, self.ctxt);
 
-        let path_conditions = self.pcg.borrow.path_conditions.clone();
+        let path_conditions = self.pcg.borrow.validity_conditions.clone();
         let ctxt = self.ctxt;
 
         let mk_create_edge_action =
