@@ -9,16 +9,9 @@ use bumpalo::Bump;
 use derive_more::From;
 
 use crate::{
-    PcgCtxt, PcgOutput,
     borrow_checker::{
-        RustBorrowCheckerInterface,
-        r#impl::{NllBorrowCheckerImpl, PoloniusBorrowChecker},
-    },
-    borrow_pcg::region_projection::{PcgRegion, RegionIdx},
-    free_pcs::PcgAnalysis,
-    pcg::{self, BodyWithBorrowckFacts},
-    run_pcg,
-    rustc_interface::{
+        r#impl::{NllBorrowCheckerImpl, PoloniusBorrowChecker}, InScopeBorrows, RustBorrowCheckerInterface
+    }, borrow_pcg::region_projection::{PcgRegion, RegionIdx}, free_pcs::PcgAnalysis, pcg::{self, BodyWithBorrowckFacts}, run_pcg, rustc_interface::{
         borrowck::{
             self, BorrowIndex, BorrowSet, LocationTable, PoloniusInput, PoloniusOutput,
             RegionInferenceContext, RichLocation,
@@ -27,21 +20,19 @@ use crate::{
             fx::{FxHashMap, FxHashSet},
             graph::is_cyclic,
         },
-        driver::{self, Compilation, init_rustc_env_logger},
+        driver::{self, init_rustc_env_logger, Compilation},
         hir::{def::DefKind, def_id::LocalDefId},
-        index::bit_set::BitSet,
-        interface::{Config, interface::Compiler},
+        interface::{interface::Compiler, Config},
         middle::{
             mir::{Body, Local, Location},
             query::queries::mir_borrowck::ProvidedValue as MirBorrowck,
             ty::{RegionVid, TyCtxt},
             util::Providers,
         },
-        session::{EarlyDiagCtxt, Session, config::ErrorOutputType},
+        session::{config::ErrorOutputType, EarlyDiagCtxt, Session},
         span::SpanSnippetError,
-    },
-    utils::{DEBUG_BLOCK, MAX_BASIC_BLOCKS, SKIP_BODIES_WITH_LOOPS},
-    validity_checks_enabled,
+        RustBitSet,
+    }, utils::{DEBUG_BLOCK, MAX_BASIC_BLOCKS, SKIP_BODIES_WITH_LOOPS}, validity_checks_enabled, PcgCtxt, PcgOutput
 };
 
 #[cfg(feature = "visualization")]
@@ -409,7 +400,7 @@ pub enum RustBorrowCheckerImpl<'mir, 'tcx> {
 }
 
 impl<'tcx> RustBorrowCheckerInterface<'tcx> for RustBorrowCheckerImpl<'_, 'tcx> {
-    fn borrows_in_scope_at(&self, location: Location, before: bool) -> BitSet<BorrowIndex> {
+    fn borrows_in_scope_at(&self, location: Location, before: bool) -> InScopeBorrows {
         match self {
             RustBorrowCheckerImpl::Polonius(bc) => bc.borrows_in_scope_at(location, before),
             RustBorrowCheckerImpl::Nll(bc) => bc.borrows_in_scope_at(location, before),
@@ -419,7 +410,7 @@ impl<'tcx> RustBorrowCheckerInterface<'tcx> for RustBorrowCheckerImpl<'_, 'tcx> 
     fn is_live(&self, node: pcg::PcgNode<'tcx>, location: Location) -> bool {
         match self {
             RustBorrowCheckerImpl::Polonius(bc) => bc.is_live(node, location),
-            RustBorrowCheckerImpl::Nll(bc) => bc.is_live(node, location),
+        RustBorrowCheckerImpl::Nll(bc) => bc.is_live(node, location),
         }
     }
 

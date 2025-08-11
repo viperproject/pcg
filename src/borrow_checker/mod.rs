@@ -16,7 +16,7 @@ use crate::rustc_interface::borrowck::{
     BorrowIndex, BorrowSet, LocationTable, PlaceConflictBias, places_conflict,
 };
 use crate::rustc_interface::data_structures::fx::{FxIndexMap, FxIndexSet};
-use crate::rustc_interface::index::bit_set::BitSet;
+use crate::rustc_interface::RustBitSet;
 use crate::rustc_interface::middle::mir::{self, Location};
 use crate::rustc_interface::middle::ty::RegionVid;
 use crate::utils::CompilerCtxt;
@@ -272,6 +272,13 @@ pub trait BorrowCheckerInterface<'tcx> {
     fn input_facts(&self) -> &PoloniusInput;
 }
 
+#[rustversion::before(2025-03-02)]
+pub type InScopeBorrows = crate::rustc_interface::index::bit_set::BitSet<BorrowIndex>;
+
+#[rustversion::since(2025-03-02)]
+pub type InScopeBorrows = crate::rustc_interface::index::bit_set::MixedBitSet<BorrowIndex>;
+
+
 /// An interface to the results of the borrow-checker analysis. The PCG queries
 /// this interface as part of its analysis, for example, to identify when borrows
 /// expire.
@@ -293,7 +300,7 @@ pub trait RustBorrowCheckerInterface<'tcx> {
 
     fn borrow_set(&self) -> &BorrowSet<'tcx>;
 
-    fn borrows_in_scope_at(&self, location: Location, before: bool) -> BitSet<BorrowIndex>;
+    fn borrows_in_scope_at(&self, location: Location, before: bool) -> InScopeBorrows;
 
     fn borrow_in_scope_at(&self, borrow_index: BorrowIndex, location: Location) -> bool {
         self.borrows_in_scope_at(location, true)

@@ -2,7 +2,7 @@ extern crate polonius_engine;
 use polonius_engine::Output;
 
 use crate::BodyAndBorrows;
-use crate::borrow_checker::RustBorrowCheckerInterface;
+use crate::borrow_checker::{InScopeBorrows, RustBorrowCheckerInterface};
 use crate::borrow_pcg::region_projection::PcgRegion;
 use crate::pcg::PcgNode;
 use crate::rustc_interface::borrowck::{
@@ -10,7 +10,7 @@ use crate::rustc_interface::borrowck::{
     RegionInferenceContext, RichLocation,
 };
 use crate::rustc_interface::dataflow::compute_fixpoint;
-use crate::rustc_interface::index::bit_set::BitSet;
+use crate::rustc_interface::RustBitSet;
 use crate::rustc_interface::middle::mir::{self, Location, RETURN_PLACE};
 use crate::rustc_interface::middle::ty;
 use crate::rustc_interface::mir_dataflow::ResultsCursor;
@@ -40,7 +40,7 @@ impl<'mir, 'tcx: 'mir> RustBorrowCheckerData<'mir, 'tcx> {
         &self,
         location: Location,
         before: bool,
-    ) -> BitSet<BorrowIndex> {
+    ) -> InScopeBorrows {
         if before {
             self.in_scope_borrows
                 .borrow_mut()
@@ -253,7 +253,7 @@ impl<'mir, 'tcx: 'mir> RustBorrowCheckerInterface<'tcx> for PoloniusBorrowChecke
             .unwrap_or(false)
     }
 
-    fn borrows_in_scope_at(&self, location: Location, before: bool) -> BitSet<BorrowIndex> {
+    fn borrows_in_scope_at(&self, location: Location, before: bool) -> InScopeBorrows {
         self.borrow_checker_data
             .borrows_in_scope_at(location, before)
     }
@@ -376,7 +376,7 @@ impl<'tcx> RustBorrowCheckerInterface<'tcx> for NllBorrowCheckerImpl<'_, 'tcx> {
             .eval_outlives(self.borrow_index_to_region(loan), region.vid().unwrap())
     }
 
-    fn borrows_in_scope_at(&self, location: Location, before: bool) -> BitSet<BorrowIndex> {
+    fn borrows_in_scope_at(&self, location: Location, before: bool) -> InScopeBorrows {
         self.borrow_checker_data
             .borrows_in_scope_at(location, before)
     }
