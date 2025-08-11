@@ -18,7 +18,11 @@ use crate::{
         middle::mir::{self},
     },
     utils::{
-        data_structures::HashSet, display::{DebugLines, DisplayWithCompilerCtxt}, maybe_old::MaybeLabelledPlace, validity::HasValidityCheck, DebugImgcat, Place, DEBUG_IMGCAT, PCG_DEBUG_BLOCK
+        DEBUG_IMGCAT, DebugImgcat, DEBUG_BLOCK, Place,
+        data_structures::HashSet,
+        display::{DebugLines, DisplayWithCompilerCtxt},
+        maybe_old::MaybeLabelledPlace,
+        validity::HasValidityCheck,
     },
 };
 use frozen::{CachedLeafEdges, FrozenGraphRef};
@@ -103,7 +107,7 @@ pub(crate) fn borrows_imgcat_debug(
     block: mir::BasicBlock,
     debug_imgcat: Option<DebugImgcat>,
 ) -> bool {
-    if let Some(debug_block) = *PCG_DEBUG_BLOCK
+    if let Some(debug_block) = *DEBUG_BLOCK
         && debug_block != block
     {
         return false;
@@ -413,6 +417,12 @@ impl<'tcx> BorrowsGraph<'tcx> {
 pub(crate) struct Conditioned<T> {
     pub(crate) conditions: ValidityConditions,
     pub(crate) value: T,
+}
+
+impl<T> Conditioned<T> {
+    pub(crate) fn new(value: T, conditions: ValidityConditions) -> Self {
+        Self { conditions, value }
+    }
 }
 
 impl<'tcx, T: ToJsonWithCompilerCtxt<'tcx, BC>, BC: Copy> ToJsonWithCompilerCtxt<'tcx, BC>

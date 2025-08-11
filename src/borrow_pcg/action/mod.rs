@@ -40,7 +40,7 @@ impl<'tcx> BorrowPcgAction<'tcx> {
         }
     }
 
-    pub(crate) fn remove_edge(edge: BorrowPcgEdgeKind<'tcx>, context: impl Into<String>) -> Self {
+    pub(crate) fn remove_edge(edge: BorrowPcgEdge<'tcx>, context: impl Into<String>) -> Self {
         BorrowPcgAction {
             kind: BorrowPcgActionKind::RemoveEdge(edge),
             debug_context: Some(context.into()),
@@ -177,7 +177,14 @@ pub enum BorrowPcgActionKind<'tcx> {
     Weaken(Weaken<'tcx>),
     Restore(RestoreCapability<'tcx>),
     MakePlaceOld(LabelPlaceAction<'tcx>),
-    RemoveEdge(BorrowPcgEdgeKind<'tcx>),
+    /// Remove an edge from the PCG. In terms of the PCG itself, the validity
+    /// conditions associated with the edge are not relevant (there is no
+    /// situation where an edge is removed only under certain conditions).
+    /// However, clients may be interested in the conditions, for example, the
+    /// symbolic-execution based Prusti purification already performs some
+    /// filtering on edges based on validity conditions and might want to ignore
+    /// removal actions for edges that it already ignored.
+    RemoveEdge(BorrowPcgEdge<'tcx>),
     AddEdge {
         edge: BorrowPcgEdge<'tcx>,
     },

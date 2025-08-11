@@ -29,7 +29,7 @@ use crate::{
     },
     rustc_interface::middle::mir,
     utils::{
-        data_structures::HashSet, display::DisplayWithCompilerCtxt, CompilerCtxt, DebugImgcat, HasPlace, Place, ProjectionKind, ShallowExpansion, SnapshotLocation, PCG_DEBUG_BLOCK
+        data_structures::HashSet, display::DisplayWithCompilerCtxt, CompilerCtxt, DebugImgcat, HasPlace, Place, ProjectionKind, ShallowExpansion, SnapshotLocation, DEBUG_BLOCK
     },
 };
 
@@ -808,7 +808,7 @@ pub(crate) trait PlaceExpander<'mir, 'tcx>:
             .collect::<Vec<_>>();
         for (to_remove, to_insert) in to_replace {
             self.apply_action(
-                BorrowPcgAction::remove_edge(to_remove.kind, "placeholder bookkeeping").into(),
+                BorrowPcgAction::remove_edge(to_remove, "placeholder bookkeeping").into(),
             )?;
             self.apply_action(
                 BorrowPcgAction::add_edge(to_insert, "placeholder bookkeeping", ctxt).into(),

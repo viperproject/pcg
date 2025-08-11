@@ -8,7 +8,7 @@ use crate::{
     borrow_pcg::{
         action::BorrowPcgActionKind,
         borrow_pcg_edge::{BorrowPcgEdgeLike, BorrowPcgEdgeRef, LocalNode, ToBorrowsEdge},
-        edge::abstraction::{r#loop::LoopAbstraction, AbstractionBlockEdge},
+        edge::abstraction::{AbstractionBlockEdge, r#loop::LoopAbstraction},
         edge_data::EdgeData,
         graph::BorrowsGraph,
         has_pcs_elem::LabelLifetimeProjectionPredicate,
@@ -21,15 +21,23 @@ use crate::{
     free_pcs::{CapabilityKind, OwnedPcg, RepackOp},
     r#loop::{PlaceUsage, PlaceUsageType, PlaceUsages},
     pcg::{
-        ctxt::AnalysisCtxt, obtain::{
+        LocalNodeLike, PCGNodeLike, PcgMutRef, PcgNode, PcgRefLike,
+        ctxt::AnalysisCtxt,
+        obtain::{
             ActionApplier, HasSnapshotLocation, ObtainType, PlaceExpander, PlaceObtainer,
             RenderDebugGraph,
-        }, place_capabilities::PlaceCapabilities, LocalNodeLike, PCGNodeLike, PcgMutRef, PcgNode, PcgRefLike
+        },
+        place_capabilities::PlaceCapabilities,
     },
     pcg_validity_assert,
     rustc_interface::middle::mir::{self},
     utils::{
-        data_structures::{HashMap, HashSet}, display::DisplayWithCompilerCtxt, logging::{self, LogPredicate}, maybe_old::MaybeLabelledPlace, remote::RemotePlace, CompilerCtxt, DebugImgcat, LocalMutationIsAllowed, Place, SnapshotLocation
+        CompilerCtxt, DebugImgcat, LocalMutationIsAllowed, Place, SnapshotLocation,
+        data_structures::{HashMap, HashSet},
+        display::DisplayWithCompilerCtxt,
+        logging::{self, LogPredicate},
+        maybe_old::MaybeLabelledPlace,
+        remote::RemotePlace,
     },
 };
 
@@ -408,7 +416,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             .flat_map(|node| self.edges_blocking(*node, ctxt).collect::<Vec<_>>())
             .map(|edge| vec![edge])
             .collect::<Vec<_>>();
-        while let Some(path) = paths.pop() {
+        'outer: while let Some(path) = paths.pop() {
             let last_edge = *path.last().unwrap();
             if to_cut.contains(&last_edge) {
                 to_cut.extend(path);
@@ -433,9 +441,9 @@ impl<'tcx> BorrowsGraph<'tcx> {
                             ctxt,
                         );
                         pcg_validity_assert!(false, "edge already in path");
-                        panic!("edge already in path");
+                        // panic!("edge already in path");
                         // For debugging, just stop here and we can try to visualize the graph
-                        // break 'outer;
+                        break 'outer;
                     }
                     let mut next_path = path.clone();
                     next_path.push(edge);
@@ -512,7 +520,7 @@ impl<'mir, 'tcx> ActionApplier<'tcx> for AbsExpander<'_, 'mir, 'tcx> {
                 BorrowPcgActionKind::Restore(_) => todo!(),
                 BorrowPcgActionKind::MakePlaceOld(_) => todo!(),
                 BorrowPcgActionKind::RemoveEdge(borrow_pcg_edge) => {
-                    self.graph.remove(&borrow_pcg_edge);
+                    self.graph.remove(&borrow_pcg_edge.kind());
                     Ok(true)
                 }
             },

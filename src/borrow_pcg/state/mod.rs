@@ -167,10 +167,7 @@ pub(crate) trait BorrowsStateLike<'tcx> {
             }
             BorrowPcgActionKind::Weaken(weaken) => {
                 let weaken_place = weaken.place();
-                assert_eq!(
-                    capabilities.get(weaken_place, ctxt.ctxt),
-                    Some(weaken.from)
-                );
+                assert_eq!(capabilities.get(weaken_place, ctxt.ctxt), Some(weaken.from));
                 match weaken.to {
                     Some(to) => {
                         capabilities.insert(weaken_place, to, ctxt);
@@ -189,7 +186,7 @@ pub(crate) trait BorrowsStateLike<'tcx> {
                     capabilities,
                     ctxt.ctxt,
                 ),
-            BorrowPcgActionKind::RemoveEdge(edge) => self.remove(&edge, capabilities, ctxt),
+            BorrowPcgActionKind::RemoveEdge(edge) => self.remove(&edge.kind, capabilities, ctxt),
             BorrowPcgActionKind::AddEdge { edge } => self.graph_mut().insert(edge, ctxt.ctxt),
             BorrowPcgActionKind::LabelLifetimeProjection(rp, label) => {
                 self.label_region_projection(&rp, label, ctxt.ctxt)
@@ -404,20 +401,23 @@ impl<'tcx> BorrowsState<'tcx> {
     pub fn get_place_blocking(
         &self,
         place: MaybeRemotePlace<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> Option<MaybeLabelledPlace<'tcx>> {
-        let edges = self.edges_blocking(place.into(), repacker);
+        let edges = self.edges_blocking(place.into(), ctxt);
         if edges.len() != 1 {
+            eprintln!("Expected 1 edge blocking {:?}, got {}", place, edges.len());
             return None;
         }
-        let nodes = edges[0].blocked_by_nodes(repacker).collect::<Vec<_>>();
+        let nodes = edges[0].blocked_by_nodes(ctxt).collect::<Vec<_>>();
         if nodes.len() != 1 {
+            eprintln!("Expected 1 node blocking {:?}, got {}", place, nodes.len());
             return None;
         }
         let node = nodes.into_iter().next().unwrap();
+        eprintln!("Node blocking {:?}: {}", place, node.to_short_string(ctxt));
         match node {
             PcgNode::Place(_) => todo!(),
-            PcgNode::LifetimeProjection(region_projection) => region_projection.deref(repacker),
+            PcgNode::LifetimeProjection(region_projection) => region_projection.deref(ctxt),
         }
     }
 

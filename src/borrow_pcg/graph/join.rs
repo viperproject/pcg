@@ -12,7 +12,7 @@ use crate::pcg_validity_assert;
 use crate::utils::data_structures::HashSet;
 use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::logging::LogPredicate;
-use crate::utils::{CompilerCtxt, DebugImgcat, PCG_DEBUG_BLOCK, Place, SnapshotLocation, logging};
+use crate::utils::{CompilerCtxt, DebugImgcat, DEBUG_BLOCK, Place, SnapshotLocation, logging};
 use crate::visualization::dot_graph::DotGraph;
 use crate::visualization::generate_borrows_dot_graph;
 use crate::{

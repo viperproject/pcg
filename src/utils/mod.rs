@@ -62,7 +62,6 @@ pub struct PcgSettings<'a> {
     pub test_crate_parallelism: Option<usize>,
     pub check_cycles: bool,
     pub validity_checks: bool,
-    pub coupling_debug_imgcat: bool,
     pub debug_block: Option<BasicBlock>,
     pub debug_imgcat: &'a [DebugImgcat],
     pub validity_checks_warn_only: bool,
@@ -97,8 +96,6 @@ impl<'a> PcgSettings<'a> {
             "PCG_VALIDITY_CHECKS",
             cfg!(debug_assertions),
         );
-        let coupling_debug_imgcat =
-            Self::process_bool_var(&mut processed_vars, "PCG_COUPLING_DEBUG_IMGCAT", false);
         let pcg_debug_block = Self::process_debug_block(&mut processed_vars);
         let debug_imgcat = Self::process_debug_imgcat(&mut processed_vars);
         let validity_checks_warn_only =
@@ -130,7 +127,6 @@ impl<'a> PcgSettings<'a> {
             test_crate_parallelism,
             check_cycles,
             validity_checks,
-            coupling_debug_imgcat,
             debug_block: pcg_debug_block,
             debug_imgcat,
             validity_checks_warn_only,
@@ -251,8 +247,7 @@ lazy_static! {
     pub static ref TEST_CRATE_PARALLELISM: Option<usize> = SETTINGS.test_crate_parallelism;
     pub static ref CHECK_CYCLES: bool = SETTINGS.check_cycles;
     pub static ref VALIDITY_CHECKS: bool = SETTINGS.validity_checks;
-    pub static ref COUPLING_DEBUG_IMGCAT: bool = SETTINGS.coupling_debug_imgcat;
-    pub static ref PCG_DEBUG_BLOCK: Option<BasicBlock> = SETTINGS.debug_block;
+    pub static ref DEBUG_BLOCK: Option<BasicBlock> = SETTINGS.debug_block;
     pub static ref DEBUG_IMGCAT: &'static [DebugImgcat] = SETTINGS.debug_imgcat;
     pub static ref VALIDITY_CHECKS_WARN_ONLY: bool = SETTINGS.validity_checks_warn_only;
     pub static ref PANIC_ON_ERROR: bool = SETTINGS.panic_on_error;

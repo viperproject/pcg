@@ -1,9 +1,11 @@
 use crate::action::{BorrowPcgAction, PcgAction};
 use crate::borrow_pcg::action::LabelPlaceReason;
+use crate::borrow_pcg::borrow_pcg_edge::BorrowPcgEdge;
 use crate::borrow_pcg::borrow_pcg_expansion::{BorrowPcgExpansion, PlaceExpansion};
 use crate::borrow_pcg::edge::deref::DerefEdge;
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::borrow_pcg::edge_data::EdgeData;
+use crate::borrow_pcg::graph::Conditioned;
 use crate::borrow_pcg::has_pcs_elem::LabelLifetimeProjectionPredicate;
 use crate::borrow_pcg::state::{BorrowStateMutRef, BorrowsStateLike};
 use crate::free_pcs::{CapabilityKind, RepackOp};
@@ -189,14 +191,16 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
     pub(crate) fn remove_deref_edges_to(
         &mut self,
         deref_place: MaybeLabelledPlace<'tcx>,
-        edges: HashSet<DerefEdge<'tcx>>,
+        edges: HashSet<Conditioned<DerefEdge<'tcx>>>,
         context: &str,
     ) -> Result<(), PcgError> {
         for edge in edges {
+            let borrow_edge: BorrowPcgEdge<'tcx> =
+                BorrowPcgEdge::new(edge.value.clone().into(), edge.conditions);
             self.record_and_apply_action(
-                BorrowPcgAction::remove_edge(edge.clone().into(), context).into(),
+                BorrowPcgAction::remove_edge(borrow_edge, context).into(),
             )?;
-            self.unlabel_blocked_region_projections_if_applicable(&edge, context)?;
+            self.unlabel_blocked_region_projections_if_applicable(&edge.value, context)?;
         }
         if let Some(deref_place) = deref_place.as_current_place() {
             self.apply_action(
@@ -223,13 +227,15 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
     #[tracing::instrument(skip(self, edge))]
     pub(crate) fn remove_edge_and_perform_associated_state_updates(
         &mut self,
-        edge: &BorrowPcgEdgeKind<'tcx>,
+        edge: &BorrowPcgEdge<'tcx>,
         context: &str,
     ) -> Result<(), PcgError> {
-        if let BorrowPcgEdgeKind::Deref(deref) = edge {
+        if let BorrowPcgEdgeKind::Deref(deref) = edge.kind() {
             return self.remove_deref_edges_to(
                 deref.deref_place,
-                vec![deref.clone()].into_iter().collect(),
+                vec![Conditioned::new(deref.clone(), edge.conditions.clone())]
+                    .into_iter()
+                    .collect(),
                 context,
             );
         }
@@ -241,7 +247,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
         // - The base has no capability, meaning it was previously expanded mutably
         // - The base has write capability, it is a mutable ref
         let is_mutable_place_expansion = if let BorrowPcgEdgeKind::BorrowPcgExpansion(expansion) =
-            edge
+            edge.kind()
             && let Some(place) = expansion.base.as_current_place()
         {
             matches!(
@@ -252,9 +258,9 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
             false
         };
 
-        self.update_unblocked_node_capabilities_and_remove_placeholder_projections(&edge)?;
+        self.update_unblocked_node_capabilities_and_remove_placeholder_projections(&edge.kind)?;
 
-        match &edge {
+        match &edge.kind {
             BorrowPcgEdgeKind::Deref(deref) => {
                 self.unlabel_blocked_region_projections_if_applicable(deref, context)?;
                 if deref.deref_place.is_current() {
@@ -454,11 +460,11 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
         tracing::debug!("Applying Action: {}", action.debug_line(self.ctxt));
         let analysis_ctxt = self.analysis_ctxt();
         let result = match &action {
-            PcgAction::Borrow(action) => {
-                self.pcg
-                    .borrow
-                    .apply_action(action.clone(), self.pcg.capabilities, self.analysis_ctxt())?
-            }
+            PcgAction::Borrow(action) => self.pcg.borrow.apply_action(
+                action.clone(),
+                self.pcg.capabilities,
+                self.analysis_ctxt(),
+            )?,
             PcgAction::Owned(owned_action) => match owned_action.kind {
                 RepackOp::RegainLoanedCapability(place, capability_kind) => {
                     self.pcg.capabilities.regain_loaned_capability(
@@ -486,9 +492,11 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                         PlaceExpansion::from_places(target_places.clone(), self.ctxt),
                     );
                     for target_place in target_places {
-                        self.pcg
-                            .capabilities
-                            .insert(target_place, CapabilityKind::Read, self.analysis_ctxt());
+                        self.pcg.capabilities.insert(
+                            target_place,
+                            CapabilityKind::Read,
+                            self.analysis_ctxt(),
+                        );
                     }
                     true
                 }

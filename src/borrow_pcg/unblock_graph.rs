@@ -27,11 +27,11 @@ pub struct UnblockGraph<'tcx> {
 /// An action that removes an edge from the Borrow PCG
 #[derive(Clone, Debug, Eq, PartialEq, From)]
 pub struct BorrowPcgUnblockAction<'tcx> {
-    pub(super) edge: BorrowPcgEdgeKind<'tcx>,
+    pub(super) edge: BorrowPcgEdge<'tcx>,
 }
 
 impl<'tcx> BorrowPcgUnblockAction<'tcx> {
-    pub fn edge(&self) -> &BorrowPcgEdgeKind<'tcx> {
+    pub fn edge(&self) -> &BorrowPcgEdge<'tcx> {
         &self.edge
     }
 }
@@ -90,7 +90,7 @@ impl<'tcx> UnblockGraph<'tcx> {
             };
             for edge in edges.iter() {
                 if should_kill_edge(edge) {
-                    actions.push(BorrowPcgUnblockAction::from(edge.kind.clone()));
+                    actions.push(BorrowPcgUnblockAction::from(edge.clone()));
                     to_keep.remove(edge);
                 }
             }

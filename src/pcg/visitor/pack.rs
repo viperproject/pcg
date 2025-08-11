@@ -1,10 +1,11 @@
 use std::borrow::Cow;
 
 use super::PcgError;
-use crate::borrow_pcg::borrow_pcg_edge::{BorrowPcgEdgeLike, LocalNode};
+use crate::borrow_pcg::borrow_pcg_edge::{BorrowPcgEdge, BorrowPcgEdgeLike, LocalNode};
 use crate::borrow_pcg::edge::deref::DerefEdge;
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::borrow_pcg::edge_data::EdgeData;
+use crate::borrow_pcg::graph::Conditioned;
 use crate::borrow_pcg::graph::frozen::FrozenGraphRef;
 use crate::pcg::PcgNode;
 use crate::pcg::obtain::{PlaceCollapser, PlaceObtainer};
@@ -22,13 +23,18 @@ struct WithReason<T> {
 }
 
 struct EdgesToRemove<'tcx> {
-    deref_edges: HashMap<MaybeLabelledPlace<'tcx>, WithReason<HashSet<DerefEdge<'tcx>>>>,
-    other_edges: Vec<WithReason<BorrowPcgEdgeKind<'tcx>>>,
+    deref_edges:
+        HashMap<MaybeLabelledPlace<'tcx>, WithReason<HashSet<Conditioned<DerefEdge<'tcx>>>>>,
+    other_edges: Vec<WithReason<BorrowPcgEdge<'tcx>>>,
 }
 
 enum RemovalAction<'tcx> {
-    RemoveDerefEdgesTo(MaybeLabelledPlace<'tcx>, HashSet<DerefEdge<'tcx>>, Reason),
-    RemoveOtherEdge(BorrowPcgEdgeKind<'tcx>, Reason),
+    RemoveDerefEdgesTo(
+        MaybeLabelledPlace<'tcx>,
+        HashSet<Conditioned<DerefEdge<'tcx>>>,
+        Reason,
+    ),
+    RemoveOtherEdge(BorrowPcgEdge<'tcx>, Reason),
 }
 
 impl<'tcx> EdgesToRemove<'tcx> {
@@ -39,23 +45,24 @@ impl<'tcx> EdgesToRemove<'tcx> {
         }
     }
 
-    fn push(&mut self, edge: BorrowPcgEdgeKind<'tcx>, reason: Reason) {
-        match edge {
+    fn push(&mut self, edge: BorrowPcgEdge<'tcx>, reason: Reason) {
+        match edge.kind() {
             BorrowPcgEdgeKind::Deref(deref) => {
                 if let Some(deref_edges) = self.deref_edges.get_mut(&deref.deref_place) {
-                    deref_edges.value.insert(deref.clone());
+                    deref_edges
+                        .value
+                        .insert(Conditioned::new(deref.clone(), edge.conditions().clone()));
                 } else {
-                    self.deref_edges.insert(
-                        deref.deref_place,
-                        WithReason {
-                            value: vec![deref.clone()].into_iter().collect(),
-                            reason,
-                        },
-                    );
+                    self.deref_edges.insert(deref.deref_place, WithReason {
+                        value: vec![Conditioned::new(deref.clone(), edge.conditions().clone())]
+                            .into_iter()
+                            .collect(),
+                        reason,
+                    });
                 }
             }
             _ => self.other_edges.push(WithReason {
-                value: edge,
+                value: edge.clone(),
                 reason,
             }),
         }
@@ -121,9 +128,9 @@ impl<'pcg, 'mir: 'pcg, 'tcx> PlaceObtainer<'pcg, 'mir, 'tcx> {
                     RemovalAction::RemoveDerefEdgesTo(place, edges, reason) => {
                         self.remove_deref_edges_to(place, edges, &reason)?;
                     }
-                    RemovalAction::RemoveOtherEdge(borrow_pcg_edge_kind, reason) => {
+                    RemovalAction::RemoveOtherEdge(borrow_pcg_edge, reason) => {
                         self.remove_edge_and_perform_associated_state_updates(
-                            &borrow_pcg_edge_kind,
+                            &borrow_pcg_edge,
                             &reason,
                         )?;
                     }
@@ -281,7 +288,7 @@ impl<'pcg, 'mir: 'pcg, 'tcx> PlaceObtainer<'pcg, 'mir, 'tcx> {
                 edge.kind.to_short_string(self.ctxt)
             );
             if let ShouldPackEdge::Yes { reason } = should_pack_edge(edge.kind()) {
-                edges_to_remove.push(edge.kind, reason);
+                edges_to_remove.push(edge, reason);
             }
         }
         Ok(edges_to_remove)

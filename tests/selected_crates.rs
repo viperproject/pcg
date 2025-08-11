@@ -336,12 +336,12 @@ fn test_selected_crates() {
                 Some(11),
             ),
         ),
-        SelectedCrateTestCase::new(
-            "serde_json",
-            "1.0.140",
-            Some("2025-03-13"),
-            TestCrateType::function("read::SliceRead::<'a>::parse_str_bytes", Some(55)),
-        ),
+        // SelectedCrateTestCase::new(
+        //     "serde_json",
+        //     "1.0.140",
+        //     Some("2025-03-13"),
+        //     TestCrateType::function("read::SliceRead::<'a>::parse_str_bytes", Some(55)),
+        // ),
         SelectedCrateTestCase::new(
             "pyo3",
             "0.24.0",

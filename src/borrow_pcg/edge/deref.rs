@@ -24,6 +24,13 @@ pub struct DerefEdge<'tcx> {
 }
 
 impl<'tcx> DerefEdge<'tcx> {
+    pub fn blocked_place(self) -> MaybeLabelledPlace<'tcx> {
+        self.blocked_place
+    }
+    pub fn deref_place(self) -> MaybeLabelledPlace<'tcx> {
+        self.deref_place
+    }
+
     pub(crate) fn new(
         place: Place<'tcx>,
         blocked_lifetime_projection_label: Option<SnapshotLocation>,

@@ -40,7 +40,7 @@ use crate::{
         session::{EarlyDiagCtxt, Session, config::ErrorOutputType},
         span::SpanSnippetError,
     },
-    utils::{MAX_BASIC_BLOCKS, PCG_DEBUG_BLOCK, SKIP_BODIES_WITH_LOOPS},
+    utils::{MAX_BASIC_BLOCKS, DEBUG_BLOCK, SKIP_BODIES_WITH_LOOPS},
     validity_checks_enabled,
 };
 
@@ -212,7 +212,7 @@ pub(crate) unsafe fn run_pcg_on_all_fns(tcx: TyCtxt<'_>, polonius: bool) {
             "disabled"
         }
     );
-    if let Some(block) = *PCG_DEBUG_BLOCK {
+    if let Some(block) = *DEBUG_BLOCK {
         tracing::info!("Debug block: {:?}", block);
     }
     if in_cargo_crate() && !is_primary_crate() {
