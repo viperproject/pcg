@@ -1,5 +1,5 @@
-use crate::rustc_interface::middle::mir::BasicBlock;
-use crate::utils::SnapshotLocation;
+// use crate::rustc_interface::middle::mir::BasicBlock;
+// use crate::utils::SnapshotLocation;
 
 pub(crate) enum LogPredicate {
     DebugBlock,

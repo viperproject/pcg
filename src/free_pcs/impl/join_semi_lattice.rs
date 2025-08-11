@@ -118,18 +118,16 @@ impl<'tcx> LocalExpansions<'tcx> {
         let source_cap = if expand.capability.is_read() {
             expand.capability
         } else {
-            capabilities
-                .get(expand.from, ctxt.ctxt)
-                .unwrap_or_else(|| {
-                    pcg_validity_assert!(
-                        false,
-                        "no cap for {}",
-                        expand.from.to_short_string(ctxt.ctxt)
-                    );
-                    // panic!("no cap for {}", expand.from.to_short_string(ctxt));
-                    // For debugging, assume exclusive, we can visualize the graph to see what's going on
-                    CapabilityKind::Exclusive
-                })
+            capabilities.get(expand.from, ctxt.ctxt).unwrap_or_else(|| {
+                pcg_validity_assert!(
+                    false,
+                    "no cap for {}",
+                    expand.from.to_short_string(ctxt.ctxt)
+                );
+                // panic!("no cap for {}", expand.from.to_short_string(ctxt));
+                // For debugging, assume exclusive, we can visualize the graph to see what's going on
+                CapabilityKind::Exclusive
+            })
         };
         for target_place in target_places {
             capabilities.insert(target_place, source_cap, ctxt);

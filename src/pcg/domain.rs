@@ -367,14 +367,13 @@ impl<'tcx> HasValidityCheck<'tcx> for PcgRef<'_, 'tcx> {
                 BorrowPcgEdgeKind::Borrow(BorrowEdge::Local(borrow_edge)) => {
                     if let MaybeLabelledPlace::Current(blocked_place) = borrow_edge.blocked_place
                         && blocked_place.is_owned(ctxt)
+                        && !self.owned.contains_place(blocked_place, ctxt)
                     {
-                        if !self.owned.contains_place(blocked_place, ctxt) {
-                            return Err(format!(
-                                "Borrow edge {} blocks owned place {}, which is not in the owned PCG",
-                                borrow_edge.to_short_string(ctxt),
-                                blocked_place.to_short_string(ctxt)
-                            ));
-                        }
+                        return Err(format!(
+                            "Borrow edge {} blocks owned place {}, which is not in the owned PCG",
+                            borrow_edge.to_short_string(ctxt),
+                            blocked_place.to_short_string(ctxt)
+                        ));
                     }
                 }
                 _ => {}

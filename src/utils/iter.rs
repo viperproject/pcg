@@ -1,11 +1,6 @@
 use itertools::Itertools;
 
-use crate::{
-    borrow_checker::BorrowCheckerInterface,
-    pcg_validity_assert,
-    utils::{CompilerCtxt, display::DisplayWithCompilerCtxt},
-    validity_checks_enabled,
-};
+use crate::{pcg_validity_assert, validity_checks_enabled};
 
 #[allow(unused)]
 pub(crate) trait IterExt<T: Copy + std::fmt::Debug>: Iterator<Item = T> {

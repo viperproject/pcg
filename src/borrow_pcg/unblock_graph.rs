@@ -4,7 +4,7 @@ use std::collections::HashSet;
 use derive_more::From;
 
 use crate::borrow_checker::BorrowCheckerInterface;
-use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
+// use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::pcg::PcgInternalError;
 
 use super::borrow_pcg_edge::BorrowPcgEdgeLike;

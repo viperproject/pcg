@@ -40,7 +40,7 @@ use crate::{
         session::{EarlyDiagCtxt, Session, config::ErrorOutputType},
         span::SpanSnippetError,
     },
-    utils::{MAX_BASIC_BLOCKS, DEBUG_BLOCK, SKIP_BODIES_WITH_LOOPS},
+    utils::{DEBUG_BLOCK, MAX_BASIC_BLOCKS, SKIP_BODIES_WITH_LOOPS},
     validity_checks_enabled,
 };
 
@@ -232,7 +232,11 @@ pub(crate) unsafe fn run_pcg_on_all_fns(tcx: TyCtxt<'_>, polonius: bool) {
     let mut item_names = vec![];
 
     let vis_dir: Option<&str> = if *crate::utils::VISUALIZATION {
-        Some(crate::utils::VISUALIZATION_DATA_DIR.as_deref().unwrap_or("visualization/data"))
+        Some(
+            crate::utils::VISUALIZATION_DATA_DIR
+                .as_deref()
+                .unwrap_or("visualization/data"),
+        )
     } else {
         None
     };

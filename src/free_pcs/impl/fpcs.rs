@@ -9,13 +9,15 @@ use std::fmt::{Debug, Formatter, Result};
 use crate::{
     free_pcs::RepackOp,
     pcg::{
-        ctxt::AnalysisCtxt, place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface}, PcgError
+        PcgError,
+        ctxt::AnalysisCtxt,
+        place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface},
     },
     rustc_interface::{
         index::{Idx, IndexVec},
         middle::mir::{self, Local, RETURN_PLACE},
     },
-    utils::{data_structures::HashSet, Place},
+    utils::{Place, data_structures::HashSet},
 };
 use derive_more::{Deref, DerefMut};
 
@@ -70,11 +72,10 @@ impl<'tcx> OwnedPcg<'tcx> {
         place_capabilities: &PlaceCapabilities<'tcx>,
         ctxt: AnalysisCtxt<'_, 'tcx>,
     ) -> std::result::Result<Vec<RepackOp<'tcx>>, PcgError> {
-        self.data.as_ref().unwrap().bridge(
-            other.data.as_ref().unwrap(),
-            place_capabilities,
-            ctxt,
-        )
+        self.data
+            .as_ref()
+            .unwrap()
+            .bridge(other.data.as_ref().unwrap(), place_capabilities, ctxt)
     }
 
     pub(crate) fn initialize_as_start_block(

@@ -278,6 +278,14 @@ impl<'mir, 'tcx: 'mir> NllBorrowCheckerImpl<'mir, 'tcx> {
             place_liveness,
         }
     }
+
+    fn ctxt(&self) -> CompilerCtxt<'mir, 'tcx, &Self> {
+        CompilerCtxt::new(
+            self.borrow_checker_data.body,
+            self.borrow_checker_data.tcx,
+            self,
+        )
+    }
 }
 
 impl<'tcx> RustBorrowCheckerInterface<'tcx> for NllBorrowCheckerImpl<'_, 'tcx> {
@@ -315,18 +323,16 @@ impl<'tcx> RustBorrowCheckerInterface<'tcx> for NllBorrowCheckerImpl<'_, 'tcx> {
     }
 
     fn is_live(&self, node: PcgNode<'tcx>, location: Location) -> bool {
-        #[cfg(feature = "custom-rust-toolchain")]
-        if let PcgNode::LifetimeProjection(region_projection) = node {
-            let region = region_projection.region(self.ctxt());
-            if !self
-                .ctxt()
-                .bc
-                .region_infer_ctxt()
-                .has_sub_region_live_at(region.vid().unwrap(), location)
-            {
-                return false;
-            }
-        }
+        // #[cfg(feature = "custom-rust-toolchain")]
+        // if let PcgNode::LifetimeProjection(region_projection) = node {
+        //     let region = region_projection.region(self.ctxt());
+        //     if !self
+        //         .region_infer_ctxt()
+        //         .has_sub_region_live_at(region.vid().unwrap(), location)
+        //     {
+        //         return false;
+        //     }
+        // }
         let Some(local) = node.related_maybe_labelled_place().map(|p| p.local()) else {
             return true;
         };

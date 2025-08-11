@@ -31,9 +31,11 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             PlaceCondition::AllocateOrDeallocate(local) => {
                 self.pcg.owned.locals_mut()[local] =
                     OwnedPcgLocal::Allocated(LocalExpansions::new(local));
-                self.pcg
-                    .capabilities
-                    .insert(local.into(), CapabilityKind::Write, self.analysis_ctxt());
+                self.pcg.capabilities.insert(
+                    local.into(),
+                    CapabilityKind::Write,
+                    self.analysis_ctxt(),
+                );
             }
             PlaceCondition::Unalloc(_) | PlaceCondition::Return => {}
             PlaceCondition::RemoveCapability(_) => unreachable!(),

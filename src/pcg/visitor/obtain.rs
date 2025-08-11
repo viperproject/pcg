@@ -730,7 +730,7 @@ impl<'pcg, 'mir: 'pcg, 'tcx> PlaceExpander<'mir, 'tcx> for PlaceObtainer<'pcg, '
         &mut self,
         ref_place: Place<'tcx>,
         capability: CapabilityKind,
-        ctxt: CompilerCtxt<'_, 'tcx>,
+        _ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> Result<bool, PcgError> {
         let analysis_ctxt = self.analysis_ctxt();
         self.pcg

@@ -3,7 +3,7 @@
 use super::borrow_pcg_edge::BorrowPcgEdge;
 use crate::action::BorrowPcgAction;
 use crate::borrow_checker::BorrowCheckerInterface;
-use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
+// use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::borrow_pcg::edge_data::{LabelEdgePlaces, LabelPlacePredicate};
 use crate::borrow_pcg::has_pcs_elem::{LabelLifetimeProjectionPredicate, PlaceLabeller};
 use crate::borrow_pcg::region_projection::{LifetimeProjection, LifetimeProjectionLabel};
@@ -107,9 +107,7 @@ pub enum LabelPlaceReason {
     MoveOut,
     JoinOwnedReadAndWriteCapabilities,
     ReAssign,
-    LabelDerefProjections {
-        shared_refs_only: bool,
-    },
+    LabelDerefProjections { shared_refs_only: bool },
     Collapse,
 }
 
@@ -122,12 +120,12 @@ impl LabelPlaceReason {
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         let predicate = match self {
-            LabelPlaceReason::StorageDead | LabelPlaceReason::MoveOut | LabelPlaceReason::JoinOwnedReadAndWriteCapabilities => {
-                LabelPlacePredicate::Postfix {
-                    place,
-                    label_place_in_expansion: true,
-                }
-            }
+            LabelPlaceReason::StorageDead
+            | LabelPlaceReason::MoveOut
+            | LabelPlaceReason::JoinOwnedReadAndWriteCapabilities => LabelPlacePredicate::Postfix {
+                place,
+                label_place_in_expansion: true,
+            },
             LabelPlaceReason::ReAssign => LabelPlacePredicate::Postfix {
                 place,
                 label_place_in_expansion: false,

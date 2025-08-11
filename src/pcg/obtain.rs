@@ -19,17 +19,20 @@ use crate::{
             LabelPlaceWithContext, SetLabel,
         },
         path_condition::ValidityConditions,
-        region_projection::{LifetimeProjection, LifetimeProjectionLabel, LocalLifetimeProjection},
+        region_projection::{LifetimeProjection, LocalLifetimeProjection},
         state::BorrowStateMutRef,
     },
     free_pcs::{CapabilityKind, ExpandedPlace, LocalExpansions, RepackCollapse, RepackOp},
     r#loop::PlaceUsageType,
     pcg::{
-        ctxt::AnalysisCtxt, place_capabilities::{BlockType, PlaceCapabilities, PlaceCapabilitiesInterface}, PCGNodeLike, PcgDebugData, PcgError, PcgMutRef, PcgRefLike
+        PCGNodeLike, PcgDebugData, PcgError, PcgMutRef, PcgRefLike,
+        ctxt::AnalysisCtxt,
+        place_capabilities::{BlockType, PlaceCapabilities, PlaceCapabilitiesInterface},
     },
     rustc_interface::middle::mir,
     utils::{
-        data_structures::HashSet, display::DisplayWithCompilerCtxt, CompilerCtxt, DebugImgcat, HasPlace, Place, ProjectionKind, ShallowExpansion, SnapshotLocation, DEBUG_BLOCK
+        CompilerCtxt, DebugImgcat, HasPlace, Place, ProjectionKind, ShallowExpansion,
+        SnapshotLocation, data_structures::HashSet, display::DisplayWithCompilerCtxt,
     },
 };
 
@@ -103,7 +106,7 @@ impl ObtainType {
             ObtainType::Capability(cap) => cap,
             ObtainType::TwoPhaseExpand => CapabilityKind::Read,
             ObtainType::LoopInvariant {
-                is_blocked,
+                is_blocked: _,
                 usage_type,
             } => {
                 if usage_type == PlaceUsageType::Read

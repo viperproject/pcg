@@ -60,10 +60,8 @@ impl<'tcx> ShallowExpansion<'tcx> {
         kind: ProjectionKind,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> Self {
-        if validity_checks_enabled() {
-            if matches!(kind, ProjectionKind::DerefRef(_)) {
-                pcg_validity_assert!(!target_place.is_owned(ctxt));
-            }
+        if validity_checks_enabled() && matches!(kind, ProjectionKind::DerefRef(_)) {
+            pcg_validity_assert!(!target_place.is_owned(ctxt));
         }
         Self {
             target_place,

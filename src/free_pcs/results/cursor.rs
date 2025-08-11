@@ -137,7 +137,11 @@ impl<'mir, 'tcx, A: Allocator + Copy> PcgAnalysis<'mir, 'tcx, A> {
 
                 let owned_bridge = from_post_main
                     .owned
-                    .bridge(&to.entry_state.owned, &from_post_main.capabilities, analysis_ctxt)
+                    .bridge(
+                        &to.entry_state.owned,
+                        &from_post_main.capabilities,
+                        analysis_ctxt,
+                    )
                     .unwrap();
 
                 let mut borrow_actions = BorrowPcgActions::new();

@@ -12,7 +12,9 @@ use crate::{
     borrow_pcg::borrow_pcg_expansion::PlaceExpansion,
     free_pcs::{RepackCollapse, RepackGuide},
     pcg::{
-        ctxt::AnalysisCtxt, place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface}, PcgUnsupportedError
+        PcgUnsupportedError,
+        ctxt::AnalysisCtxt,
+        place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface},
     },
     rustc_interface::middle::mir::Local,
     utils::data_structures::HashSet,

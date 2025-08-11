@@ -12,7 +12,7 @@ use derive_more::{Deref, DerefMut};
 use itertools::Itertools;
 
 use crate::{
-    borrow_checker::BorrowCheckerInterface,
+    // borrow_checker::BorrowCheckerInterface,
     compute_fixpoint,
     r#loop::loop_set::LoopSet,
     rustc_interface::{
@@ -28,10 +28,7 @@ use crate::{
         mir_dataflow::{Forward, JoinSemiLattice, fmt::DebugWithContext},
     },
     utils::{
-        CompilerCtxt, Place,
-        data_structures::{HashMap, HashSet},
-        display::DisplayWithCompilerCtxt,
-        iter::IterExt,
+        CompilerCtxt, Place, data_structures::HashMap, display::DisplayWithCompilerCtxt,
         visitor::FallableVisitor,
     },
     validity_checks_enabled,

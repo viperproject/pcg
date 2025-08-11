@@ -18,7 +18,7 @@ use crate::{
         middle::mir::{self},
     },
     utils::{
-        DEBUG_IMGCAT, DebugImgcat, DEBUG_BLOCK, Place,
+        DEBUG_BLOCK, DEBUG_IMGCAT, DebugImgcat, Place,
         data_structures::HashSet,
         display::{DebugLines, DisplayWithCompilerCtxt},
         maybe_old::MaybeLabelledPlace,

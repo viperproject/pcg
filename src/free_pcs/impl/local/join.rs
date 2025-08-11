@@ -38,68 +38,66 @@ impl<'pcg: 'exp, 'exp, 'tcx> JoinOwnedData<'pcg, 'tcx, &'exp mut LocalExpansions
             self.owned
                 .perform_expand_action(action, self.capabilities, ctxt)?;
             return Ok(vec![RepackOp::Expand(action).into()]);
+        } else if other
+            .owned
+            .contains_descendent_leaf_node_without_capability(
+                base_place,
+                other.capabilities,
+                ctxt.ctxt,
+            )
+        {
+            // If this case holds, the leaf node is exclusively borrowed.
+            // We want to insert this expansion (and all further expansions), without any capabilities
+            tracing::debug!(
+                "Other expansions contain a descendent leaf node without capability for place {}",
+                base_place.to_short_string(ctxt.ctxt)
+            );
+            self.owned
+                .insert_expansion(other_expansion.place, other_expansion.expansion);
+            return Ok(vec![]);
         } else {
-            if other
-                .owned
-                .contains_descendent_leaf_node_without_capability(
-                    base_place,
-                    other.capabilities,
-                    ctxt.ctxt,
-                )
-            {
-                // If this case holds, the leaf node is exclusively borrowed.
-                // We want to insert this expansion (and all further expansions), without any capabilities
-                tracing::debug!(
-                    "Other expansions contain a descendent leaf node without capability for place {}",
-                    base_place.to_short_string(ctxt.ctxt)
-                );
-                self.owned
-                    .insert_expansion(other_expansion.place, other_expansion.expansion);
-                return Ok(vec![]);
-            } else {
-                let mut self_obtainer = JoinObtainer {
-                    ctxt,
-                    data: self,
-                    actions: vec![],
-                };
+            let mut self_obtainer = JoinObtainer {
+                ctxt,
+                data: self,
+                actions: vec![],
+            };
 
-                // The capability of the place should be Write because presumably something
-                // was moved out in either of the expansions.
-                self_obtainer.collapse_owned_places_and_lifetime_projections_to(
-                    base_place,
-                    CapabilityKind::Write,
-                    format!(
-                        "Join: collapse owned places {}",
-                        other_expansion.place.to_short_string(ctxt.ctxt)
-                    ),
-                    ctxt.ctxt,
-                )?;
+            // The capability of the place should be Write because presumably something
+            // was moved out in either of the expansions.
+            self_obtainer.collapse_owned_places_and_lifetime_projections_to(
+                base_place,
+                CapabilityKind::Write,
+                format!(
+                    "Join: collapse owned places {}",
+                    other_expansion.place.to_short_string(ctxt.ctxt)
+                ),
+                ctxt.ctxt,
+            )?;
 
-                pcg_validity_assert!(
-                    self_obtainer.data.capabilities.get(base_place, ctxt.ctxt)
-                        == Some(CapabilityKind::Write),
-                    "Expected capability for {} to be Write",
-                    base_place.to_short_string(ctxt.ctxt)
-                );
+            pcg_validity_assert!(
+                self_obtainer.data.capabilities.get(base_place, ctxt.ctxt)
+                    == Some(CapabilityKind::Write),
+                "Expected capability for {} to be Write",
+                base_place.to_short_string(ctxt.ctxt)
+            );
 
-                let mut other_obtainer = JoinObtainer {
-                    ctxt,
-                    data: other,
-                    actions: vec![],
-                };
+            let mut other_obtainer = JoinObtainer {
+                ctxt,
+                data: other,
+                actions: vec![],
+            };
 
-                other_obtainer.collapse_owned_places_and_lifetime_projections_to(
-                    base_place,
-                    CapabilityKind::Write,
-                    format!(
-                        "Join: collapse owned places {}",
-                        other_expansion.place.to_short_string(ctxt.ctxt)
-                    ),
-                    ctxt.ctxt,
-                )?;
+            other_obtainer.collapse_owned_places_and_lifetime_projections_to(
+                base_place,
+                CapabilityKind::Write,
+                format!(
+                    "Join: collapse owned places {}",
+                    other_expansion.place.to_short_string(ctxt.ctxt)
+                ),
+                ctxt.ctxt,
+            )?;
 
-                return Ok(self_obtainer.actions);
-            }
+            return Ok(self_obtainer.actions);
         }
     }
 
@@ -280,7 +278,7 @@ impl<'pcg: 'exp, 'exp, 'tcx> JoinOwnedData<'pcg, 'tcx, &'exp mut LocalExpansions
     fn render_debug_graph<'a, 'slf>(&'slf self, comment: &str, ctxt: impl HasCompilerCtxt<'a, 'tcx>)
     where
         'tcx: 'slf,
-        'tcx: 'a
+        'tcx: 'a,
     {
         self.borrows.graph.render_debug_graph(
             self.block,

@@ -7,10 +7,12 @@
 use crate::{
     free_pcs::{CapabilityKind, LocalExpansions, OwnedPcgLocal},
     pcg::{
-        ctxt::AnalysisCtxt, place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface}, triple::{PlaceCondition, Triple}
+        ctxt::AnalysisCtxt,
+        place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface},
+        triple::{PlaceCondition, Triple},
     },
     pcg_validity_assert,
-    utils::{display::DisplayWithCompilerCtxt, CompilerCtxt, LocalMutationIsAllowed},
+    utils::{CompilerCtxt, LocalMutationIsAllowed, display::DisplayWithCompilerCtxt},
 };
 
 use crate::rustc_interface::middle::mir::RETURN_PLACE;

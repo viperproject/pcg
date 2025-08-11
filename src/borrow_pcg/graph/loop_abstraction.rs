@@ -21,7 +21,7 @@ use crate::{
     free_pcs::{CapabilityKind, OwnedPcg, RepackOp},
     r#loop::{PlaceUsage, PlaceUsageType, PlaceUsages},
     pcg::{
-        LocalNodeLike, PCGNodeLike, PcgMutRef, PcgNode, PcgRefLike,
+        LocalNodeLike, PCGNodeLike, PcgMutRef, PcgNode,
         ctxt::AnalysisCtxt,
         obtain::{
             ActionApplier, HasSnapshotLocation, ObtainType, PlaceExpander, PlaceObtainer,
@@ -32,7 +32,7 @@ use crate::{
     pcg_validity_assert,
     rustc_interface::middle::mir::{self},
     utils::{
-        CompilerCtxt, DebugImgcat, LocalMutationIsAllowed, Place, SnapshotLocation,
+        CompilerCtxt, DebugImgcat, Place, SnapshotLocation,
         data_structures::{HashMap, HashSet},
         display::DisplayWithCompilerCtxt,
         logging::{self, LogPredicate},
@@ -528,7 +528,7 @@ impl<'mir, 'tcx> ActionApplier<'tcx> for AbsExpander<'_, 'mir, 'tcx> {
                 RepackOp::StorageDead(_) => todo!(),
                 RepackOp::IgnoreStorageDead(_) => todo!(),
                 RepackOp::Weaken(_, _, _) => todo!(),
-                RepackOp::Expand(repack_expand) => {
+                RepackOp::Expand(_repack_expand) => {
                     unreachable!()
                 }
                 RepackOp::Collapse(_) => todo!(),
@@ -548,24 +548,24 @@ impl<'mir, 'tcx> PlaceExpander<'mir, 'tcx> for AbsExpander<'_, 'mir, 'tcx> {
         self.path_conditions.clone()
     }
 
-    fn contains_owned_expansion_to(&self, target: Place<'tcx>) -> bool {
+    fn contains_owned_expansion_to(&self, _target: Place<'tcx>) -> bool {
         // Pretend we're always fully expanded in the local PCG
         true
     }
 
     fn update_capabilities_for_borrow_expansion(
         &mut self,
-        expansion: &crate::borrow_pcg::borrow_pcg_expansion::BorrowPcgExpansion<'tcx>,
-        block_type: crate::pcg::place_capabilities::BlockType,
-        ctxt: CompilerCtxt<'_, 'tcx>,
+        _expansion: &crate::borrow_pcg::borrow_pcg_expansion::BorrowPcgExpansion<'tcx>,
+        _block_type: crate::pcg::place_capabilities::BlockType,
+        _ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> Result<bool, crate::pcg::PcgError> {
         Ok(true)
     }
     fn update_capabilities_for_deref(
         &mut self,
-        ref_place: Place<'tcx>,
-        capability: CapabilityKind,
-        ctxt: CompilerCtxt<'_, 'tcx>,
+        _ref_place: Place<'tcx>,
+        _capability: CapabilityKind,
+        _ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> Result<bool, crate::pcg::PcgError> {
         Ok(true)
     }

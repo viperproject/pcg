@@ -30,8 +30,8 @@ use crate::{
     utils::data_structures::HashSet,
 };
 
-#[cfg(feature = "debug_info")]
-use super::debug_info::DebugInfo;
+// #[cfg(feature = "debug_info")]
+// use super::debug_info::DebugInfo;
 
 use super::{CompilerCtxt, display::DisplayWithCompilerCtxt, validity::HasValidityCheck};
 use crate::utils::json::ToJsonWithCompilerCtxt;
@@ -57,7 +57,7 @@ pub struct Place<'tcx>(
     #[deref]
     #[deref_mut]
     PlaceRef<'tcx>,
-    #[cfg(feature = "debug_info")] DebugInfo<'static>,
+    // #[cfg(feature = "debug_info")] DebugInfo<'static>,
 );
 
 impl<'tcx> From<Place<'tcx>> for PlaceRef<'tcx> {
@@ -272,7 +272,7 @@ impl<'tcx> Place<'tcx> {
 impl<'tcx> Place<'tcx> {
     #[cfg(feature = "debug_info")]
     pub fn new(local: Local, projection: &'tcx [PlaceElem<'tcx>]) -> Self {
-        Self(PlaceRef { local, projection }, DebugInfo::new_static())
+        Self(PlaceRef { local, projection })
     }
 
     #[cfg(not(feature = "debug_info"))]
@@ -738,10 +738,10 @@ impl<'tcx> Place<'tcx> {
         self.is_prefix_of(other) || other.is_prefix_of(self)
     }
 
-    #[cfg(feature = "debug_info")]
-    pub fn debug_info(&self) -> DebugInfo<'static> {
-        self.1
-    }
+    // #[cfg(feature = "debug_info")]
+    // pub fn debug_info(&self) -> DebugInfo<'static> {
+    //     self.1
+    // }
 }
 
 impl Debug for Place<'_> {
@@ -875,7 +875,7 @@ impl Hash for Place<'_> {
 impl<'tcx> From<PlaceRef<'tcx>> for Place<'tcx> {
     #[cfg(feature = "debug_info")]
     fn from(value: PlaceRef<'tcx>) -> Self {
-        Self(value, DebugInfo::new_static())
+        Self(value)
     }
     #[cfg(not(feature = "debug_info"))]
     fn from(value: PlaceRef<'tcx>) -> Self {
@@ -885,7 +885,7 @@ impl<'tcx> From<PlaceRef<'tcx>> for Place<'tcx> {
 impl<'tcx> From<MirPlace<'tcx>> for Place<'tcx> {
     #[cfg(feature = "debug_info")]
     fn from(value: MirPlace<'tcx>) -> Self {
-        Self(value.as_ref(), DebugInfo::new_static())
+        Self(value.as_ref())
     }
     #[cfg(not(feature = "debug_info"))]
     fn from(value: MirPlace<'tcx>) -> Self {

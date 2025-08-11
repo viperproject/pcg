@@ -79,9 +79,9 @@ impl<'tcx> OwnedPcgLocal<'tcx> {
 impl<'tcx> LocalExpansions<'tcx> {
     pub(crate) fn bridge(
         &self,
-        other: &Self,
-        self_place_capabilities: &PlaceCapabilities<'tcx>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
+        _other: &Self,
+        _self_place_capabilities: &PlaceCapabilities<'tcx>,
+        _ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> std::result::Result<Vec<RepackOp<'tcx>>, PcgError> {
         Ok(Vec::new())
     }

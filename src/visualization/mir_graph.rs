@@ -256,9 +256,7 @@ fn mk_mir_stmt<'tcx>(
     ctxt: CompilerCtxt<'_, 'tcx>,
 ) -> MirStmt {
     let bc = ctxt.bc.rust_borrow_checker().unwrap();
-    let invalidated_at = &bc.input_facts().loan_invalidated_at;
     let location_table = ctxt.bc.rust_borrow_checker().unwrap().location_table();
-    let bc = ctxt.bc.rust_borrow_checker().unwrap();
     let invalidated_at = &bc.input_facts().loan_invalidated_at;
     let loans_invalidated_start = invalidated_at
         .iter()

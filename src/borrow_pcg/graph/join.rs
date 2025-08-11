@@ -12,7 +12,7 @@ use crate::pcg_validity_assert;
 use crate::utils::data_structures::HashSet;
 use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::logging::LogPredicate;
-use crate::utils::{CompilerCtxt, DebugImgcat, DEBUG_BLOCK, Place, SnapshotLocation, logging};
+use crate::utils::{CompilerCtxt, DebugImgcat, SnapshotLocation, logging};
 use crate::visualization::dot_graph::DotGraph;
 use crate::visualization::generate_borrows_dot_graph;
 use crate::{
@@ -352,7 +352,8 @@ impl<'tcx> BorrowsGraph<'tcx> {
         }
 
         let abstraction_graph_pcg_nodes = abstraction_graph.nodes(ctxt.ctxt);
-        let to_cut = self.identify_subgraph_to_cut(loop_head, abstraction_graph_pcg_nodes, ctxt.ctxt);
+        let to_cut =
+            self.identify_subgraph_to_cut(loop_head, abstraction_graph_pcg_nodes, ctxt.ctxt);
         to_cut.render_debug_graph(
             loop_head,
             Some(DebugImgcat::JoinLoop),

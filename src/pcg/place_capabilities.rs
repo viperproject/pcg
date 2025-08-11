@@ -257,7 +257,11 @@ impl<'tcx> PlaceCapabilities<'tcx> {
     ) -> Result<bool, PcgError> {
         if capability.is_read() || ref_place.is_shared_ref(ctxt.ctxt) {
             self.insert(ref_place, CapabilityKind::Read, ctxt);
-            self.insert(ref_place.project_deref(ctxt.ctxt), CapabilityKind::Read, ctxt);
+            self.insert(
+                ref_place.project_deref(ctxt.ctxt),
+                CapabilityKind::Read,
+                ctxt,
+            );
         } else {
             self.insert(ref_place, CapabilityKind::Write, ctxt);
             self.insert(
