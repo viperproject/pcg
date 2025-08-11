@@ -1,7 +1,10 @@
 //! Data structures and algorithms related to [`UnblockGraph`].
 use std::collections::HashSet;
 
+use derive_more::From;
+
 use crate::borrow_checker::BorrowCheckerInterface;
+// use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::pcg::PcgInternalError;
 
 use super::borrow_pcg_edge::BorrowPcgEdgeLike;
@@ -22,7 +25,7 @@ pub struct UnblockGraph<'tcx> {
 }
 
 /// An action that removes an edge from the Borrow PCG
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, From)]
 pub struct BorrowPcgUnblockAction<'tcx> {
     pub(super) edge: BorrowPcgEdge<'tcx>,
 }
@@ -43,12 +46,6 @@ impl<'tcx, 'a> ToJsonWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>
         serde_json::json!({
             "edge": format!("{:?}", self.edge)
         })
-    }
-}
-
-impl<'tcx> From<BorrowPcgEdge<'tcx>> for BorrowPcgUnblockAction<'tcx> {
-    fn from(edge: BorrowPcgEdge<'tcx>) -> Self {
-        Self { edge }
     }
 }
 
@@ -93,7 +90,7 @@ impl<'tcx> UnblockGraph<'tcx> {
             };
             for edge in edges.iter() {
                 if should_kill_edge(edge) {
-                    actions.push(BorrowPcgUnblockAction { edge: edge.clone() });
+                    actions.push(BorrowPcgUnblockAction::from(edge.clone()));
                     to_keep.remove(edge);
                 }
             }

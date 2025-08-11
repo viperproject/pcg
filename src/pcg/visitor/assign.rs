@@ -3,15 +3,15 @@ use crate::action::BorrowPcgAction;
 use crate::borrow_pcg::borrow_pcg_edge::BorrowPcgEdge;
 use crate::borrow_pcg::edge::outlives::{BorrowFlowEdge, BorrowFlowEdgeKind};
 use crate::borrow_pcg::has_pcs_elem::LabelLifetimeProjectionPredicate;
-use crate::borrow_pcg::region_projection::{MaybeRemoteRegionProjectionBase, RegionProjection};
+use crate::borrow_pcg::region_projection::{LifetimeProjection, MaybeRemoteRegionProjectionBase};
 use crate::free_pcs::CapabilityKind;
 use crate::pcg::EvalStmtPhase;
-use crate::pcg::obtain::PlaceExpander;
+use crate::pcg::obtain::{ActionApplier, HasSnapshotLocation, PlaceExpander};
 use crate::pcg::place_capabilities::PlaceCapabilitiesInterface;
 use crate::rustc_interface::middle::mir::{self, Operand, Rvalue};
 
 use crate::rustc_interface::middle::ty::{self};
-use crate::utils::maybe_old::MaybeOldPlace;
+use crate::utils::maybe_old::MaybeLabelledPlace;
 use crate::utils::{self, AnalysisLocation, SnapshotLocation};
 
 use super::{PcgError, PcgUnsupportedError};
@@ -34,10 +34,10 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
     pub(crate) fn maybe_labelled_operand_place(
         &self,
         operand: &Operand<'tcx>,
-    ) -> Option<MaybeOldPlace<'tcx>> {
+    ) -> Option<MaybeLabelledPlace<'tcx>> {
         match operand {
             Operand::Copy(place) => Some((*place).into()),
-            Operand::Move(place) => Some(MaybeOldPlace::new(
+            Operand::Move(place) => Some(MaybeLabelledPlace::new(
                 (*place).into(),
                 Some(self.pre_operand_move_label()),
             )),
@@ -51,9 +51,21 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         rvalue: &Rvalue<'tcx>,
     ) -> Result<(), PcgError> {
         let ctxt = self.ctxt;
+
+        // If `target` is a reference, then the dereferenced place technically
+        // still retains its capabilities. However, because we currently only
+        // keep capabilities for non-labelled places, we remove all the capabilities
+        // to everything postfix of `target`.
+        //
+        // We should change this logic once we start keeping capabilities for
+        // labelled places.
+        if target.is_ref(ctxt) {
+            self.pcg.capabilities.remove_all_postfixes(target, ctxt);
+        }
+
         self.pcg
             .capabilities
-            .insert(target, CapabilityKind::Exclusive, self.ctxt);
+            .insert(target, CapabilityKind::Exclusive, self.analysis_ctxt());
         match rvalue {
             Rvalue::Aggregate(
                 box (mir::AggregateKind::Adt(..)
@@ -69,7 +81,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                         continue;
                     };
                     for (source_rp_idx, source_proj) in operand_place
-                        .region_projections(self.ctxt)
+                        .lifetime_projections(self.ctxt)
                         .iter()
                         .enumerate()
                     {
@@ -92,14 +104,14 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                         BorrowPcgAction::add_edge(
                             BorrowPcgEdge::new(
                                 BorrowFlowEdge::new(
-                                    RegionProjection::new(
+                                    LifetimeProjection::new(
                                         (*const_region).into(),
                                         MaybeRemoteRegionProjectionBase::Const(c.const_),
                                         None,
                                         self.ctxt,
                                     )
                                     .unwrap(),
-                                    RegionProjection::new(
+                                    LifetimeProjection::new(
                                         (*target_region).into(),
                                         target,
                                         None,
@@ -125,16 +137,16 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 let from: utils::Place<'tcx> = (*from).into();
                 let (from, kind) = if matches!(operand, Operand::Move(_)) {
                     (
-                        MaybeOldPlace::new(from, Some(self.pre_operand_move_label())),
+                        MaybeLabelledPlace::new(from, Some(self.pre_operand_move_label())),
                         BorrowFlowEdgeKind::Move,
                     )
                 } else {
                     (from.into(), BorrowFlowEdgeKind::CopyRef)
                 };
                 for (source_proj, target_proj) in from
-                    .region_projections(self.ctxt)
+                    .lifetime_projections(self.ctxt)
                     .into_iter()
-                    .zip(target.region_projections(self.ctxt).into_iter())
+                    .zip(target.lifetime_projections(self.ctxt).into_iter())
                 {
                     self.record_and_apply_action(
                         BorrowPcgAction::add_edge(
@@ -181,26 +193,26 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                     &mut self.pcg.capabilities,
                     self.ctxt,
                 );
-                self.label_region_projections_for_borrow(blocked_place, target, *kind)?;
+                self.label_lifetime_projections_for_borrow(blocked_place, target, *kind)?;
             }
             _ => {}
         }
         Ok(())
     }
 
-    fn label_region_projections_for_borrow(
+    fn label_lifetime_projections_for_borrow(
         &mut self,
         blocked_place: utils::Place<'tcx>,
         target: utils::Place<'tcx>,
         kind: mir::BorrowKind,
     ) -> Result<(), PcgError> {
         let ctxt = self.ctxt;
-        for source_proj in blocked_place.region_projections(self.ctxt).into_iter() {
+        for source_proj in blocked_place.lifetime_projections(self.ctxt).into_iter() {
             let mut obtainer = self.place_obtainer();
             let source_proj = if kind.mutability().is_mut() {
                 let label = obtainer.prev_snapshot_location();
                 obtainer.apply_action(
-                    BorrowPcgAction::label_region_projection(
+                    BorrowPcgAction::label_lifetime_projection(
                         LabelLifetimeProjectionPredicate::Postfix(source_proj.into()),
                         Some(label.into()),
                         "Label region projections of newly borrowed place",
@@ -210,13 +222,15 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 source_proj.with_label(Some(label.into()), self.ctxt)
             } else {
                 source_proj.with_label(
-                    obtainer.label_for_shared_expansion_of_rp(source_proj, obtainer.ctxt),
+                    obtainer
+                        .label_for_shared_expansion_of_rp(source_proj, obtainer.ctxt)
+                        .map(|l| l.into()),
                     self.ctxt,
                 )
             };
             let source_region = source_proj.region(self.ctxt);
             let mut nested_ref_mut_targets = vec![];
-            for target_proj in target.region_projections(self.ctxt).into_iter() {
+            for target_proj in target.lifetime_projections(self.ctxt).into_iter() {
                 let target_region = target_proj.region(self.ctxt);
                 if self
                     .ctxt

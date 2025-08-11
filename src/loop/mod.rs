@@ -9,8 +9,10 @@
 mod loop_set;
 
 use derive_more::{Deref, DerefMut};
+use itertools::Itertools;
 
 use crate::{
+    // borrow_checker::BorrowCheckerInterface,
     compute_fixpoint,
     r#loop::loop_set::LoopSet,
     rustc_interface::{
@@ -18,18 +20,16 @@ use crate::{
         index::{Idx, IndexVec},
         middle::{
             mir::{
-                self,
+                self, BasicBlock, Body, START_BLOCK,
                 visit::{MutatingUseContext, PlaceContext},
-                BasicBlock, Body, START_BLOCK,
             },
             ty,
         },
-        mir_dataflow::{fmt::DebugWithContext, Forward, JoinSemiLattice},
+        mir_dataflow::{Forward, JoinSemiLattice, fmt::DebugWithContext},
     },
     utils::{
-        data_structures::{HashMap, HashSet},
+        CompilerCtxt, Place, data_structures::HashMap, display::DisplayWithCompilerCtxt,
         visitor::FallableVisitor,
-        Place,
     },
     validity_checks_enabled,
 };
@@ -154,14 +154,137 @@ const NO_LOOP: LoopId = LoopId(usize::MAX);
 
 #[derive(Clone, Debug, Deref, DerefMut, PartialEq, Eq)]
 struct LoopPlaceUsageDomain<'tcx> {
-    used_places: HashSet<Place<'tcx>>,
+    used_places: PlaceUsages<'tcx>,
+}
+
+impl JoinSemiLattice for PlaceUsages<'_> {
+    fn join(&mut self, other: &Self) -> bool {
+        let mut changed = false;
+        for other_place_usage in other.iter() {
+            changed |= self.update(other_place_usage.place, other_place_usage.usage);
+        }
+        changed
+    }
 }
 
 impl JoinSemiLattice for LoopPlaceUsageDomain<'_> {
     fn join(&mut self, other: &Self) -> bool {
-        let old_len = self.used_places.len();
-        self.used_places.extend(other.used_places.iter().copied());
-        self.used_places.len() != old_len
+        self.used_places.join(&other.used_places)
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
+pub(crate) enum PlaceUsageType {
+    Read,
+    Mutate,
+}
+
+impl Ord for PlaceUsageType {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        match (self, other) {
+            (PlaceUsageType::Read, PlaceUsageType::Read) => std::cmp::Ordering::Equal,
+            (PlaceUsageType::Read, PlaceUsageType::Mutate) => std::cmp::Ordering::Less,
+            (PlaceUsageType::Mutate, PlaceUsageType::Read) => std::cmp::Ordering::Greater,
+            (PlaceUsageType::Mutate, PlaceUsageType::Mutate) => std::cmp::Ordering::Equal,
+        }
+    }
+}
+
+impl PartialOrd for PlaceUsageType {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl JoinSemiLattice for PlaceUsageType {
+    fn join(&mut self, other: &Self) -> bool {
+        match (*self, *other) {
+            (PlaceUsageType::Read, PlaceUsageType::Mutate) => {
+                *self = PlaceUsageType::Mutate;
+                true
+            }
+            _ => false,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(crate) struct PlaceUsage<'tcx> {
+    pub(crate) place: Place<'tcx>,
+    pub(crate) usage: PlaceUsageType,
+}
+
+impl<'tcx, BC: Copy> DisplayWithCompilerCtxt<'tcx, BC> for PlaceUsage<'tcx> {
+    fn to_short_string(&self, ctxt: CompilerCtxt<'_, 'tcx, BC>) -> String {
+        format!("{}: {:?}", self.place.to_short_string(ctxt), self.usage)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Default)]
+pub(crate) struct PlaceUsages<'tcx>(HashMap<Place<'tcx>, PlaceUsageType>);
+
+impl<'tcx, BC: Copy> DisplayWithCompilerCtxt<'tcx, BC> for PlaceUsages<'tcx> {
+    fn to_short_string(&self, ctxt: CompilerCtxt<'_, 'tcx, BC>) -> String {
+        self.0
+            .iter()
+            .map(|(p, usage)| format!("{}: {:?}", p.to_short_string(ctxt), usage))
+            .join("\n")
+    }
+}
+
+impl<'tcx> PlaceUsages<'tcx> {
+    pub(crate) fn iter_places(&self) -> impl Iterator<Item = Place<'tcx>> + '_ {
+        self.0.keys().copied()
+    }
+
+    pub(crate) fn contains(&self, place: Place<'tcx>) -> bool {
+        self.0.contains_key(&place)
+    }
+
+    pub(crate) fn joined_with(&self, other: &Self) -> Self {
+        let mut clone = self.clone();
+        clone.join(other);
+        clone
+    }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    pub(crate) fn usages_where(
+        &self,
+        predicate: impl Fn(PlaceUsage<'tcx>) -> bool,
+    ) -> PlaceUsages<'tcx> {
+        let mut clone = self.clone();
+        clone.0.retain(|p, usage| {
+            predicate(PlaceUsage {
+                place: *p,
+                usage: *usage,
+            })
+        });
+        clone
+    }
+
+    #[must_use]
+    fn update(&mut self, place: Place<'tcx>, usage: PlaceUsageType) -> bool {
+        if let Some(existing_usage) = self.0.get(&place) {
+            if usage == PlaceUsageType::Mutate && existing_usage == &PlaceUsageType::Read {
+                self.0.insert(place, PlaceUsageType::Mutate);
+                false
+            } else {
+                false
+            }
+        } else {
+            self.0.insert(place, usage);
+            true
+        }
+    }
+
+    pub(crate) fn iter(&self) -> impl Iterator<Item = PlaceUsage<'tcx>> + '_ {
+        self.0.iter().map(|(p, usage)| PlaceUsage {
+            place: *p,
+            usage: *usage,
+        })
     }
 }
 
@@ -173,7 +296,7 @@ pub(crate) struct LoopPlaceUsageAnalysis<'tcx> {
     /// entry in this table (the corresponding value will be an empty set).
     /// Accordingly, this data structure also can be used to check whether a
     /// block is a loop head.
-    loop_used_places: HashMap<BasicBlock, HashSet<Place<'tcx>>>,
+    loop_used_places: HashMap<BasicBlock, PlaceUsages<'tcx>>,
 }
 
 struct UsageVisitor<'a, 'tcx> {
@@ -193,10 +316,16 @@ impl<'tcx> FallableVisitor<'tcx> for UsageVisitor<'_, 'tcx> {
         context: mir::visit::PlaceContext,
         _location: mir::Location,
     ) -> Result<(), crate::pcg::PcgError> {
-        if let PlaceContext::MutatingUse(MutatingUseContext::Store) = context {
-            self.used_places.retain(|p| !p.is_prefix_or_postfix_of(place));
+        match context {
+            PlaceContext::MutatingUse(MutatingUseContext::Projection) => {}
+            PlaceContext::MutatingUse(_) => {
+                let _ = self.used_places.update(place, PlaceUsageType::Mutate);
+            }
+            PlaceContext::NonMutatingUse(_) => {
+                let _ = self.used_places.update(place, PlaceUsageType::Read);
+            }
+            PlaceContext::NonUse(_) => {}
         }
-        self.used_places.insert(place);
         Ok(())
     }
 }
@@ -214,7 +343,7 @@ impl<'tcx> Analysis<'tcx> for SingleLoopAnalysis<'_> {
 
     fn bottom_value(&self, _body: &mir::Body<'tcx>) -> Self::Domain {
         LoopPlaceUsageDomain {
-            used_places: HashSet::default(),
+            used_places: PlaceUsages::default(),
         }
     }
 
@@ -250,10 +379,7 @@ impl<'tcx> Analysis<'tcx> for SingleLoopAnalysis<'_> {
     }
 }
 
-impl DebugWithContext<AnalysisEngine<SingleLoopAnalysis<'_>>> for LoopPlaceUsageDomain<'_> {
-
-}
-
+impl DebugWithContext<AnalysisEngine<SingleLoopAnalysis<'_>>> for LoopPlaceUsageDomain<'_> {}
 
 impl<'tcx> LoopPlaceUsageAnalysis<'tcx> {
     pub(crate) fn is_loop_head(&self, block: BasicBlock) -> bool {
@@ -261,7 +387,7 @@ impl<'tcx> LoopPlaceUsageAnalysis<'tcx> {
     }
 
     pub(crate) fn new(tcx: ty::TyCtxt<'tcx>, body: &Body<'tcx>, analysis: &LoopAnalysis) -> Self {
-        let mut loop_used_places: HashMap<BasicBlock, HashSet<Place<'tcx>>> = HashMap::default();
+        let mut loop_used_places: HashMap<BasicBlock, PlaceUsages<'tcx>> = HashMap::default();
         for (loop_id, loop_head) in analysis.loop_heads.iter_enumerated() {
             let analysis = SingleLoopAnalysis {
                 loop_id,
@@ -280,7 +406,7 @@ impl<'tcx> LoopPlaceUsageAnalysis<'tcx> {
     /// Returns `None` if `block` is not a loop head.
     /// If `block` is a loop head, but the loop does not use any places, this
     /// will return an empty set.
-    pub(crate) fn get_used_places(&self, block: BasicBlock) -> Option<&HashSet<Place<'tcx>>> {
+    pub(crate) fn get_used_places(&self, block: BasicBlock) -> Option<&PlaceUsages<'tcx>> {
         self.loop_used_places.get(&block)
     }
 }

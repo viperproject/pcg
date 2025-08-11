@@ -5,7 +5,6 @@ use crate::borrow_pcg::action::LabelPlaceReason;
 use crate::borrow_pcg::borrow_pcg_edge::BorrowPcgEdgeLike;
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::free_pcs::CapabilityKind;
-use crate::pcg::obtain::PlaceExpander;
 use crate::pcg::place_capabilities::PlaceCapabilitiesInterface;
 use crate::pcg_validity_assert;
 use crate::rustc_interface::middle::mir::{Statement, StatementKind};
@@ -38,9 +37,9 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         match &statement.kind {
             StatementKind::StorageDead(local) => {
                 let place: utils::Place<'tcx> = (*local).into();
-                let snapshot_location = self.place_obtainer().prev_snapshot_location();
+                let snapshot_location = self.prev_snapshot_location();
                 self.record_and_apply_action(
-                    BorrowPcgAction::make_place_old(
+                    BorrowPcgAction::label_place_and_update_related_capabilities(
                         place,
                         snapshot_location,
                         LabelPlaceReason::StorageDead,
@@ -56,7 +55,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                     // The permission to the target may have been Read originally.
                     // Now, because it's been made old, the non-old place should be a leaf,
                     // and its permission should be Exclusive.
-                    if self.pcg.capabilities.get(target) == Some(CapabilityKind::Read) {
+                    if self.pcg.capabilities.get(target, self.ctxt) == Some(CapabilityKind::Read) {
                         self.record_and_apply_action(
                             BorrowPcgAction::restore_capability(
                                 target,
@@ -68,7 +67,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                     }
                 }
 
-                if let Some(target_cap) = self.pcg.capabilities.get(target) {
+                if let Some(target_cap) = self.pcg.capabilities.get(target, self.ctxt) {
                     pcg_validity_assert!(
                         target_cap >= CapabilityKind::Write,
                         "target_cap: {:?}",
@@ -87,7 +86,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                         )?;
                     }
                 }
-                for rp in target.region_projections(self.ctxt).into_iter() {
+                for rp in target.lifetime_projections(self.ctxt).into_iter() {
                     let blocked_edges = self
                         .pcg
                         .borrow
@@ -101,7 +100,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                         if should_remove {
                             self.place_obtainer()
                                 .remove_edge_and_perform_associated_state_updates(
-                                    edge, "Assign",
+                                    &edge, "Assign",
                                 )?;
                         }
                     }

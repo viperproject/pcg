@@ -27,7 +27,7 @@ export type CurrentPoint =
 export type BasicBlockData = {
   block: number;
   stmts: MirStmt[];
-  terminator: string;
+  terminator: MirStmt;
 };
 
 export type DagreInputNode<T> = {

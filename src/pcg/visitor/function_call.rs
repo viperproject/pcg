@@ -5,7 +5,7 @@ use crate::borrow_pcg::domain::{FunctionCallAbstractionInput, FunctionCallAbstra
 use crate::borrow_pcg::edge::abstraction::function::{FunctionCallAbstraction, FunctionData};
 use crate::borrow_pcg::edge::abstraction::{AbstractionBlockEdge, AbstractionType};
 use crate::borrow_pcg::has_pcs_elem::LabelLifetimeProjectionPredicate;
-use crate::pcg::obtain::PlaceExpander;
+use crate::pcg::obtain::{HasSnapshotLocation, PlaceExpander};
 use crate::rustc_interface::middle::mir::{Location, Operand};
 use crate::utils::display::DisplayWithCompilerCtxt;
 
@@ -58,7 +58,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         let arg_region_projections = args
             .iter()
             .filter_map(|arg| self.maybe_labelled_operand_place(arg))
-            .flat_map(|input_place| input_place.region_projections(self.ctxt))
+            .flat_map(|input_place| input_place.lifetime_projections(self.ctxt))
             .collect::<Vec<_>>();
 
         let pre_rps = arg_region_projections
@@ -88,7 +88,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
 
         for (rp, pre_rp) in arg_region_projections.iter().zip(pre_rps.iter()) {
             self.record_and_apply_action(
-                BorrowPcgAction::label_region_projection(
+                BorrowPcgAction::label_lifetime_projection(
                     LabelLifetimeProjectionPredicate::Equals(*rp),
                     pre_rp.label(),
                     format!(
@@ -114,7 +114,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 }
             }
             let result_projections: Vec<FunctionCallAbstractionOutput<'tcx>> = destination
-                .region_projections(self.ctxt)
+                .lifetime_projections(self.ctxt)
                 .iter()
                 .filter(|rp| {
                     self.ctxt

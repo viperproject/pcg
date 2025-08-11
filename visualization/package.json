@@ -26,6 +26,7 @@
     "webpack-cli": "^5.1.4"
   },
   "dependencies": {
+    "brace-expansion": ">=1.1.12",
     "@dagrejs/dagre": "github:dagrejs/dagre",
     "@viz-js/viz": "^3.6.0",
     "d3": "^7.9.0",

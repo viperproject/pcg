@@ -5,24 +5,25 @@ use std::{fmt, marker::PhantomData};
 use derive_more::{Display, From, TryFrom};
 use serde_json::json;
 
-use super::has_pcs_elem::{HasPcgElems, LabelLifetimeProjection};
+use super::has_pcs_elem::LabelLifetimeProjection;
 use super::{
     abstraction::node::AbstractionGraphNode, borrow_pcg_edge::LocalNode, visitor::extract_regions,
 };
-use crate::borrow_checker::{BorrowCheckerInterface};
+use crate::borrow_checker::BorrowCheckerInterface;
 use crate::borrow_pcg::edge_data::LabelPlacePredicate;
 use crate::borrow_pcg::graph::loop_abstraction::MaybeRemoteCurrentPlace;
 use crate::borrow_pcg::has_pcs_elem::{
-    LabelPlace, LabelLifetimeProjectionPredicate, LabelLifetimeProjectionResult, PlaceLabeller,
+    LabelLifetimeProjectionPredicate, LabelLifetimeProjectionResult, LabelNodeContext,
+    LabelPlaceWithContext, PlaceLabeller,
 };
 use crate::pcg::{PcgError, PcgInternalError};
 use crate::utils::json::ToJsonWithCompilerCtxt;
-use crate::utils::place::maybe_old::MaybeOldPlace;
+use crate::utils::place::maybe_old::MaybeLabelledPlace;
 use crate::utils::place::maybe_remote::MaybeRemotePlace;
 use crate::utils::remote::RemotePlace;
 use crate::utils::{CompilerCtxt, SnapshotLocation};
 use crate::{
-    pcg::{LocalNodeLike, PCGNode, PCGNodeLike},
+    pcg::{LocalNodeLike, PCGNodeLike, PcgNode},
     rustc_interface::{
         index::{Idx, IndexVec},
         middle::{
@@ -33,7 +34,7 @@ use crate::{
             },
         },
     },
-    utils::{display::DisplayWithCompilerCtxt, validity::HasValidityCheck, HasPlace, Place},
+    utils::{HasPlace, Place, display::DisplayWithCompilerCtxt, validity::HasValidityCheck},
 };
 
 /// A region occuring in region projections
@@ -66,10 +67,7 @@ impl std::fmt::Display for PcgRegion {
 }
 
 impl PcgRegion {
-    pub fn to_string(
-        &self,
-        ctxt: Option<CompilerCtxt<'_, '_>>
-    ) -> String {
+    pub fn to_string(&self, ctxt: Option<CompilerCtxt<'_, '_>>) -> String {
         match self {
             PcgRegion::RegionVid(vid) => {
                 if let Some(ctxt) = ctxt {
@@ -170,14 +168,14 @@ impl<'tcx> MaybeRemoteRegionProjectionBase<'tcx> {
             MaybeRemoteRegionProjectionBase::Const(c) => c.ty(),
         }
     }
-    pub(crate) fn as_local_place_mut(&mut self) -> Option<&mut MaybeOldPlace<'tcx>> {
+    pub(crate) fn as_local_place_mut(&mut self) -> Option<&mut MaybeLabelledPlace<'tcx>> {
         match self {
             MaybeRemoteRegionProjectionBase::Place(p) => p.as_local_place_mut(),
             MaybeRemoteRegionProjectionBase::Const(_) => None,
         }
     }
 
-    pub(crate) fn as_local_place(&self) -> Option<MaybeOldPlace<'tcx>> {
+    pub(crate) fn as_local_place(&self) -> Option<MaybeLabelledPlace<'tcx>> {
         match self {
             MaybeRemoteRegionProjectionBase::Place(p) => p.as_local_place(),
             MaybeRemoteRegionProjectionBase::Const(_) => None,
@@ -243,8 +241,8 @@ impl<'tcx> RegionProjectionBaseLike<'tcx> for MaybeRemoteRegionProjectionBase<'t
     }
 }
 
-impl<'tcx, T: RegionProjectionBaseLike<'tcx>> PCGNodeLike<'tcx> for RegionProjection<'tcx, T> {
-    fn to_pcg_node<C: Copy>(self, _ctxt: CompilerCtxt<'_, 'tcx, C>) -> PCGNode<'tcx> {
+impl<'tcx, T: RegionProjectionBaseLike<'tcx>> PCGNodeLike<'tcx> for LifetimeProjection<'tcx, T> {
+    fn to_pcg_node<C: Copy>(self, _ctxt: CompilerCtxt<'_, 'tcx, C>) -> PcgNode<'tcx> {
         self.with_base(self.base.to_maybe_remote_region_projection_base())
             .into()
     }
@@ -265,54 +263,59 @@ pub type RegionProjectionLabel = LifetimeProjectionLabel;
 #[derive(PartialEq, Eq, Clone, Debug, Hash, Copy, Ord, PartialOrd, From)]
 pub enum LifetimeProjectionLabel {
     Location(SnapshotLocation),
-    Placeholder,
+    Future,
 }
 
 impl std::fmt::Display for LifetimeProjectionLabel {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             LifetimeProjectionLabel::Location(location) => write!(f, "{}", location),
-            LifetimeProjectionLabel::Placeholder => write!(f, "FUTURE"),
+            LifetimeProjectionLabel::Future => write!(f, "FUTURE"),
         }
     }
 }
 
+#[deprecated(note = "Use LifetimeProjection instead")]
+pub type RegionProjection<'tcx, P = MaybeRemoteRegionProjectionBase<'tcx>> =
+    LifetimeProjection<'tcx, P>;
+
 /// A lifetime projection b↓r, where `b` is a base and `r` is a region.
 #[derive(PartialEq, Eq, Clone, Debug, Hash, Copy, Ord, PartialOrd)]
-pub struct RegionProjection<'tcx, P = MaybeRemoteRegionProjectionBase<'tcx>> {
+pub struct LifetimeProjection<'tcx, P = MaybeRemoteRegionProjectionBase<'tcx>> {
     pub(crate) base: P,
     pub(crate) region_idx: RegionIdx,
     label: Option<LifetimeProjectionLabel>,
     phantom: PhantomData<&'tcx ()>,
 }
 
-impl<'tcx> LabelPlace<'tcx> for RegionProjection<'tcx> {
-    fn label_place(
+impl<'tcx> LabelPlaceWithContext<'tcx, LabelNodeContext> for LifetimeProjection<'tcx> {
+    fn label_place_with_context(
         &mut self,
         predicate: &LabelPlacePredicate<'tcx>,
         labeller: &impl PlaceLabeller<'tcx>,
+        label_context: LabelNodeContext,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         if let Some(p) = self.base.as_local_place_mut() {
-            p.label_place(predicate, labeller, ctxt)
+            p.label_place_with_context(predicate, labeller, label_context, ctxt)
         } else {
             false
         }
     }
 }
 
-impl<P> RegionProjection<'_, P> {
-    pub(crate) fn is_placeholder(&self) -> bool {
-        self.label == Some(LifetimeProjectionLabel::Placeholder)
+impl<P> LifetimeProjection<'_, P> {
+    pub(crate) fn is_future(&self) -> bool {
+        self.label == Some(LifetimeProjectionLabel::Future)
     }
     pub(crate) fn label(&self) -> Option<LifetimeProjectionLabel> {
         self.label
     }
 }
 
-impl<'tcx> From<RegionProjection<'tcx, Place<'tcx>>> for RegionProjection<'tcx> {
-    fn from(rp: RegionProjection<'tcx, Place<'tcx>>) -> Self {
-        RegionProjection {
+impl<'tcx> From<LifetimeProjection<'tcx, Place<'tcx>>> for LifetimeProjection<'tcx> {
+    fn from(rp: LifetimeProjection<'tcx, Place<'tcx>>) -> Self {
+        LifetimeProjection {
             base: rp.base.into(),
             region_idx: rp.region_idx,
             label: rp.label,
@@ -321,17 +324,17 @@ impl<'tcx> From<RegionProjection<'tcx, Place<'tcx>>> for RegionProjection<'tcx> 
     }
 }
 
-impl<'tcx, T, P> TryFrom<PCGNode<'tcx, T, P>> for RegionProjection<'tcx, P> {
+impl<'tcx, T, P> TryFrom<PcgNode<'tcx, T, P>> for LifetimeProjection<'tcx, P> {
     type Error = ();
-    fn try_from(node: PCGNode<'tcx, T, P>) -> Result<Self, Self::Error> {
+    fn try_from(node: PcgNode<'tcx, T, P>) -> Result<Self, Self::Error> {
         match node {
-            PCGNode::RegionProjection(rp) => Ok(rp),
+            PcgNode::LifetimeProjection(rp) => Ok(rp),
             _ => Err(()),
         }
     }
 }
 
-impl<'tcx, P: Copy> LabelLifetimeProjection<'tcx> for RegionProjection<'tcx, P>
+impl<'tcx, P: Copy> LabelLifetimeProjection<'tcx> for LifetimeProjection<'tcx, P>
 where
     MaybeRemoteRegionProjectionBase<'tcx>: From<P>,
 {
@@ -350,11 +353,11 @@ where
     }
 }
 
-impl<'tcx> From<RegionProjection<'tcx, MaybeOldPlace<'tcx>>>
-    for RegionProjection<'tcx, MaybeRemotePlace<'tcx>>
+impl<'tcx> From<LifetimeProjection<'tcx, MaybeLabelledPlace<'tcx>>>
+    for LifetimeProjection<'tcx, MaybeRemotePlace<'tcx>>
 {
-    fn from(value: RegionProjection<'tcx, MaybeOldPlace<'tcx>>) -> Self {
-        RegionProjection {
+    fn from(value: LifetimeProjection<'tcx, MaybeLabelledPlace<'tcx>>) -> Self {
+        LifetimeProjection {
             base: value.base.into(),
             region_idx: value.region_idx,
             label: value.label,
@@ -403,7 +406,7 @@ impl<'tcx> TypeVisitor<ty::TyCtxt<'tcx>> for TyVarianceVisitor<'_, 'tcx> {
     }
 }
 
-impl<'tcx, T: RegionProjectionBaseLike<'tcx>> RegionProjection<'tcx, T> {
+impl<'tcx, T: RegionProjectionBaseLike<'tcx>> LifetimeProjection<'tcx, T> {
     pub(crate) fn is_invariant_in_type(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
         let mut visitor = TyVarianceVisitor {
             ctxt,
@@ -418,13 +421,13 @@ impl<'tcx, T: RegionProjectionBaseLike<'tcx>> RegionProjection<'tcx, T> {
     }
 }
 
-impl<'tcx, T: RegionProjectionBaseLike<'tcx>> RegionProjection<'tcx, T> {
+impl<'tcx, T: RegionProjectionBaseLike<'tcx>> LifetimeProjection<'tcx, T> {
     #[must_use]
     pub(crate) fn with_placeholder_label(
         self,
         ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> RegionProjection<'tcx, T> {
-        self.with_label(Some(LifetimeProjectionLabel::Placeholder), ctxt)
+    ) -> LifetimeProjection<'tcx, T> {
+        self.with_label(Some(LifetimeProjectionLabel::Future), ctxt)
     }
 
     #[must_use]
@@ -432,8 +435,8 @@ impl<'tcx, T: RegionProjectionBaseLike<'tcx>> RegionProjection<'tcx, T> {
         self,
         label: Option<LifetimeProjectionLabel>,
         _ctxt: CompilerCtxt<'_, 'tcx, BC>,
-    ) -> RegionProjection<'tcx, T> {
-        RegionProjection {
+    ) -> LifetimeProjection<'tcx, T> {
+        LifetimeProjection {
             base: self.base,
             region_idx: self.region_idx,
             label,
@@ -441,9 +444,9 @@ impl<'tcx, T: RegionProjectionBaseLike<'tcx>> RegionProjection<'tcx, T> {
         }
     }
 }
-impl<'tcx> From<RegionProjection<'tcx, MaybeRemotePlace<'tcx>>> for RegionProjection<'tcx> {
-    fn from(rp: RegionProjection<'tcx, MaybeRemotePlace<'tcx>>) -> Self {
-        RegionProjection {
+impl<'tcx> From<LifetimeProjection<'tcx, MaybeRemotePlace<'tcx>>> for LifetimeProjection<'tcx> {
+    fn from(rp: LifetimeProjection<'tcx, MaybeRemotePlace<'tcx>>) -> Self {
+        LifetimeProjection {
             base: rp.base.into(),
             region_idx: rp.region_idx,
             label: rp.label,
@@ -452,11 +455,11 @@ impl<'tcx> From<RegionProjection<'tcx, MaybeRemotePlace<'tcx>>> for RegionProjec
     }
 }
 
-impl<'tcx> TryFrom<RegionProjection<'tcx>> for RegionProjection<'tcx, MaybeRemotePlace<'tcx>> {
+impl<'tcx> TryFrom<LifetimeProjection<'tcx>> for LifetimeProjection<'tcx, MaybeRemotePlace<'tcx>> {
     type Error = ();
-    fn try_from(rp: RegionProjection<'tcx>) -> Result<Self, Self::Error> {
+    fn try_from(rp: LifetimeProjection<'tcx>) -> Result<Self, Self::Error> {
         match rp.base {
-            MaybeRemoteRegionProjectionBase::Place(p) => Ok(RegionProjection {
+            MaybeRemoteRegionProjectionBase::Place(p) => Ok(LifetimeProjection {
                 base: p,
                 region_idx: rp.region_idx,
                 label: rp.label,
@@ -467,11 +470,13 @@ impl<'tcx> TryFrom<RegionProjection<'tcx>> for RegionProjection<'tcx, MaybeRemot
     }
 }
 
-impl<'tcx> TryFrom<RegionProjection<'tcx>> for RegionProjection<'tcx, MaybeOldPlace<'tcx>> {
+impl<'tcx> TryFrom<LifetimeProjection<'tcx>>
+    for LifetimeProjection<'tcx, MaybeLabelledPlace<'tcx>>
+{
     type Error = String;
-    fn try_from(rp: RegionProjection<'tcx>) -> Result<Self, Self::Error> {
+    fn try_from(rp: LifetimeProjection<'tcx>) -> Result<Self, Self::Error> {
         match rp.base {
-            MaybeRemoteRegionProjectionBase::Place(p) => Ok(RegionProjection {
+            MaybeRemoteRegionProjectionBase::Place(p) => Ok(LifetimeProjection {
                 base: p.try_into()?,
                 region_idx: rp.region_idx,
                 label: rp.label,
@@ -484,21 +489,21 @@ impl<'tcx> TryFrom<RegionProjection<'tcx>> for RegionProjection<'tcx, MaybeOldPl
     }
 }
 
-impl<'tcx, P: RegionProjectionBaseLike<'tcx>> RegionProjection<'tcx, P> {
+impl<'tcx, P: RegionProjectionBaseLike<'tcx>> LifetimeProjection<'tcx, P> {
     pub fn base(&self) -> P {
         self.base
     }
 }
 
-impl<'tcx> LocalNodeLike<'tcx> for RegionProjection<'tcx, Place<'tcx>> {
+impl<'tcx> LocalNodeLike<'tcx> for LifetimeProjection<'tcx, Place<'tcx>> {
     fn to_local_node<C: Copy>(self, _ctxt: CompilerCtxt<'_, 'tcx, C>) -> LocalNode<'tcx> {
-        LocalNode::RegionProjection(self.with_base(MaybeOldPlace::Current { place: self.base }))
+        LocalNode::LifetimeProjection(self.with_base(MaybeLabelledPlace::Current(self.base)))
     }
 }
 
-impl<'tcx> LocalNodeLike<'tcx> for RegionProjection<'tcx, MaybeOldPlace<'tcx>> {
+impl<'tcx> LocalNodeLike<'tcx> for LifetimeProjection<'tcx, MaybeLabelledPlace<'tcx>> {
     fn to_local_node<C: Copy>(self, _repacker: CompilerCtxt<'_, 'tcx, C>) -> LocalNode<'tcx> {
-        LocalNode::RegionProjection(self)
+        LocalNode::LifetimeProjection(self)
     }
 }
 
@@ -516,21 +521,21 @@ pub trait RegionProjectionBaseLike<'tcx>:
     fn region_projections<C: Copy>(
         &self,
         ctxt: CompilerCtxt<'_, 'tcx, C>,
-    ) -> IndexVec<RegionIdx, RegionProjection<'tcx, Self>> {
+    ) -> IndexVec<RegionIdx, LifetimeProjection<'tcx, Self>> {
         self.regions(ctxt)
             .into_iter()
-            .map(|region| RegionProjection::new(region, *self, None, ctxt).unwrap())
+            .map(|region| LifetimeProjection::new(region, *self, None, ctxt).unwrap())
             .collect()
     }
 }
 
 impl<
-        'tcx,
-        'a,
-        T: RegionProjectionBaseLike<'tcx>
-            + DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>,
-    > DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>
-    for RegionProjection<'tcx, T>
+    'tcx,
+    'a,
+    T: RegionProjectionBaseLike<'tcx>
+        + DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>,
+> DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>
+    for LifetimeProjection<'tcx, T>
 {
     fn to_short_string(
         &self,
@@ -538,7 +543,7 @@ impl<
     ) -> String {
         let label_part = match self.label {
             Some(LifetimeProjectionLabel::Location(location)) => format!(" {location}"),
-            Some(LifetimeProjectionLabel::Placeholder) => " FUTURE".to_string(),
+            Some(LifetimeProjectionLabel::Future) => " FUTURE".to_string(),
             _ => "".to_string(),
         };
         format!(
@@ -551,12 +556,12 @@ impl<
 }
 
 impl<
-        'tcx,
-        'a,
-        T: RegionProjectionBaseLike<'tcx>
-            + ToJsonWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>,
-    > ToJsonWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>
-    for RegionProjection<'tcx, T>
+    'tcx,
+    'a,
+    T: RegionProjectionBaseLike<'tcx>
+        + ToJsonWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>,
+> ToJsonWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>
+    for LifetimeProjection<'tcx, T>
 {
     fn to_json(
         &self,
@@ -569,17 +574,17 @@ impl<
     }
 }
 
-impl<T: std::fmt::Display> fmt::Display for RegionProjection<'_, T> {
+impl<T: std::fmt::Display> fmt::Display for LifetimeProjection<'_, T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}↓{:?}", self.base, self.region_idx)
     }
 }
 
-impl<'tcx> From<RegionProjection<'tcx, Place<'tcx>>>
-    for RegionProjection<'tcx, MaybeRemotePlace<'tcx>>
+impl<'tcx> From<LifetimeProjection<'tcx, Place<'tcx>>>
+    for LifetimeProjection<'tcx, MaybeRemotePlace<'tcx>>
 {
-    fn from(rp: RegionProjection<'tcx, Place<'tcx>>) -> Self {
-        RegionProjection {
+    fn from(rp: LifetimeProjection<'tcx, Place<'tcx>>) -> Self {
+        LifetimeProjection {
             base: rp.base.into(),
             region_idx: rp.region_idx,
             label: rp.label,
@@ -588,18 +593,14 @@ impl<'tcx> From<RegionProjection<'tcx, Place<'tcx>>>
     }
 }
 
-impl<'tcx> HasPcgElems<MaybeOldPlace<'tcx>> for RegionProjection<'tcx, MaybeOldPlace<'tcx>> {
-    fn pcg_elems(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
-        vec![&mut self.base]
-    }
-}
-
-impl<'tcx> TryFrom<AbstractionGraphNode<'tcx>> for RegionProjection<'tcx, MaybeOldPlace<'tcx>> {
+impl<'tcx> TryFrom<AbstractionGraphNode<'tcx>>
+    for LifetimeProjection<'tcx, MaybeLabelledPlace<'tcx>>
+{
     type Error = String;
     fn try_from(node: AbstractionGraphNode<'tcx>) -> Result<Self, Self::Error> {
         match *node {
-            PCGNode::RegionProjection(rp) => rp.try_into(),
-            PCGNode::Place(p) => Err(format!(
+            PcgNode::LifetimeProjection(rp) => rp.try_into(),
+            PcgNode::Place(p) => Err(format!(
                 "Place {:?} cannot be converted to a region projection",
                 p
             )),
@@ -607,12 +608,12 @@ impl<'tcx> TryFrom<AbstractionGraphNode<'tcx>> for RegionProjection<'tcx, MaybeO
     }
 }
 
-impl<'tcx> TryFrom<RegionProjection<'tcx, MaybeRemotePlace<'tcx>>>
-    for RegionProjection<'tcx, MaybeOldPlace<'tcx>>
+impl<'tcx> TryFrom<LifetimeProjection<'tcx, MaybeRemotePlace<'tcx>>>
+    for LifetimeProjection<'tcx, MaybeLabelledPlace<'tcx>>
 {
     type Error = String;
-    fn try_from(rp: RegionProjection<'tcx, MaybeRemotePlace<'tcx>>) -> Result<Self, Self::Error> {
-        Ok(RegionProjection {
+    fn try_from(rp: LifetimeProjection<'tcx, MaybeRemotePlace<'tcx>>) -> Result<Self, Self::Error> {
+        Ok(LifetimeProjection {
             base: rp.base.try_into()?,
             region_idx: rp.region_idx,
             label: rp.label,
@@ -621,15 +622,15 @@ impl<'tcx> TryFrom<RegionProjection<'tcx, MaybeRemotePlace<'tcx>>>
     }
 }
 
-impl<'tcx> From<MaybeOldPlace<'tcx>> for MaybeRemoteRegionProjectionBase<'tcx> {
-    fn from(place: MaybeOldPlace<'tcx>) -> Self {
+impl<'tcx> From<MaybeLabelledPlace<'tcx>> for MaybeRemoteRegionProjectionBase<'tcx> {
+    fn from(place: MaybeLabelledPlace<'tcx>) -> Self {
         MaybeRemoteRegionProjectionBase::Place(place.into())
     }
 }
 
-impl<'tcx> From<RegionProjection<'tcx, MaybeOldPlace<'tcx>>> for RegionProjection<'tcx> {
-    fn from(rp: RegionProjection<'tcx, MaybeOldPlace<'tcx>>) -> Self {
-        RegionProjection {
+impl<'tcx> From<LifetimeProjection<'tcx, MaybeLabelledPlace<'tcx>>> for LifetimeProjection<'tcx> {
+    fn from(rp: LifetimeProjection<'tcx, MaybeLabelledPlace<'tcx>>) -> Self {
+        LifetimeProjection {
             base: rp.base.into(),
             region_idx: rp.region_idx,
             label: rp.label,
@@ -638,11 +639,11 @@ impl<'tcx> From<RegionProjection<'tcx, MaybeOldPlace<'tcx>>> for RegionProjectio
     }
 }
 
-impl<'tcx> From<RegionProjection<'tcx, Place<'tcx>>>
-    for RegionProjection<'tcx, MaybeOldPlace<'tcx>>
+impl<'tcx> From<LifetimeProjection<'tcx, Place<'tcx>>>
+    for LifetimeProjection<'tcx, MaybeLabelledPlace<'tcx>>
 {
-    fn from(rp: RegionProjection<'tcx, Place<'tcx>>) -> Self {
-        RegionProjection {
+    fn from(rp: LifetimeProjection<'tcx, Place<'tcx>>) -> Self {
+        LifetimeProjection {
             base: rp.base.into(),
             region_idx: rp.region_idx,
             label: rp.label,
@@ -652,7 +653,7 @@ impl<'tcx> From<RegionProjection<'tcx, Place<'tcx>>>
 }
 
 impl<'tcx, T: RegionProjectionBaseLike<'tcx> + HasPlace<'tcx>> HasPlace<'tcx>
-    for RegionProjection<'tcx, T>
+    for LifetimeProjection<'tcx, T>
 {
     fn place(&self) -> Place<'tcx> {
         self.base.place()
@@ -670,7 +671,7 @@ impl<'tcx, T: RegionProjectionBaseLike<'tcx> + HasPlace<'tcx>> HasPlace<'tcx>
     where
         Self: Clone + HasValidityCheck<'tcx>,
     {
-        RegionProjection::new(
+        LifetimeProjection::new(
             self.region(repacker),
             self.base.project_deeper(elem, repacker)?,
             self.label,
@@ -688,7 +689,7 @@ impl<'tcx, T: RegionProjectionBaseLike<'tcx> + HasPlace<'tcx>> HasPlace<'tcx>
             .into_iter()
             .map(move |(base, elem)| {
                 (
-                    RegionProjection::new(self.region(ctxt), base, self.label, ctxt)
+                    LifetimeProjection::new(self.region(ctxt), base, self.label, ctxt)
                         .unwrap_or_else(|e| {
                             panic!(
                                 "Error iter projections for {:?}: {:?}. Place ty: {:?}",
@@ -702,9 +703,15 @@ impl<'tcx, T: RegionProjectionBaseLike<'tcx> + HasPlace<'tcx>> HasPlace<'tcx>
             })
             .collect()
     }
+
+    fn is_place(&self) -> bool {
+        false
+    }
 }
 
-impl<'tcx, T: RegionProjectionBaseLike<'tcx>> HasValidityCheck<'tcx> for RegionProjection<'tcx, T> {
+impl<'tcx, T: RegionProjectionBaseLike<'tcx>> HasValidityCheck<'tcx>
+    for LifetimeProjection<'tcx, T>
+{
     fn check_validity(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Result<(), String> {
         let num_regions = self.base.regions(ctxt);
         if self.region_idx.index() >= num_regions.len() {
@@ -719,7 +726,7 @@ impl<'tcx, T: RegionProjectionBaseLike<'tcx>> HasValidityCheck<'tcx> for RegionP
     }
 }
 
-impl<'tcx, T: RegionProjectionBaseLike<'tcx>> RegionProjection<'tcx, T> {
+impl<'tcx, T: RegionProjectionBaseLike<'tcx>> LifetimeProjection<'tcx, T> {
     pub(crate) fn new<C: Copy>(
         region: PcgRegion,
         base: T,
@@ -759,20 +766,20 @@ impl<'tcx, T: RegionProjectionBaseLike<'tcx>> RegionProjection<'tcx, T> {
     }
 }
 
-impl<T: Copy> RegionProjection<'_, T> {
+impl<T: Copy> LifetimeProjection<'_, T> {
     pub fn place(&self) -> T {
         self.base
     }
 }
 
-impl<'tcx, T> RegionProjection<'tcx, T> {
+impl<'tcx, T> LifetimeProjection<'tcx, T> {
     pub(crate) fn place_mut(&mut self) -> &mut T {
         &mut self.base
     }
 
     pub(crate) fn rebase<U: RegionProjectionBaseLike<'tcx> + From<T>>(
         self,
-    ) -> RegionProjection<'tcx, U>
+    ) -> LifetimeProjection<'tcx, U>
     where
         T: Copy,
     {
@@ -782,8 +789,8 @@ impl<'tcx, T> RegionProjection<'tcx, T> {
     pub(crate) fn with_base<U: RegionProjectionBaseLike<'tcx>>(
         self,
         base: U,
-    ) -> RegionProjection<'tcx, U> {
-        RegionProjection {
+    ) -> LifetimeProjection<'tcx, U> {
+        LifetimeProjection {
             base,
             region_idx: self.region_idx,
             label: self.label,
@@ -792,10 +799,10 @@ impl<'tcx, T> RegionProjection<'tcx, T> {
     }
 }
 
-impl<'tcx> RegionProjection<'tcx, MaybeOldPlace<'tcx>> {
+impl<'tcx> LifetimeProjection<'tcx, MaybeLabelledPlace<'tcx>> {
     /// If the region projection is of the form `x↓'a` and `x` has type `&'a T` or `&'a mut T`,
     /// this returns `*x`.
-    pub fn deref(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Option<MaybeOldPlace<'tcx>> {
+    pub fn deref(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Option<MaybeLabelledPlace<'tcx>> {
         if self.base.ty_region(ctxt) == Some(self.region(ctxt)) {
             Some(self.base.project_deref(ctxt))
         } else {
@@ -804,20 +811,35 @@ impl<'tcx> RegionProjection<'tcx, MaybeOldPlace<'tcx>> {
     }
 }
 
-pub(crate) type LocalRegionProjection<'tcx> = RegionProjection<'tcx, MaybeOldPlace<'tcx>>;
+pub(crate) type LocalLifetimeProjection<'tcx> = LifetimeProjection<'tcx, MaybeLabelledPlace<'tcx>>;
 
-impl<'tcx> LocalRegionProjection<'tcx> {
-    pub fn to_region_projection(&self) -> RegionProjection<'tcx> {
+impl<'tcx> LocalLifetimeProjection<'tcx> {
+    pub fn to_region_projection(&self) -> LifetimeProjection<'tcx> {
         self.with_base(self.base.into())
     }
 }
 
-impl<'tcx> RegionProjection<'tcx> {
+impl<'tcx> LabelPlaceWithContext<'tcx, LabelNodeContext> for LocalLifetimeProjection<'tcx> {
+    fn label_place_with_context(
+        &mut self,
+        predicate: &LabelPlacePredicate<'tcx>,
+        labeller: &impl PlaceLabeller<'tcx>,
+        label_context: LabelNodeContext,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
+        self.base
+            .label_place_with_context(predicate, labeller, label_context, ctxt)
+    }
+}
+
+impl<'tcx> LifetimeProjection<'tcx> {
     pub fn local(&self) -> Option<Local> {
         self.base.as_local_place().map(|p| p.local())
     }
 
-    fn as_local_region_projection(&self) -> Option<RegionProjection<'tcx, MaybeOldPlace<'tcx>>> {
+    fn as_local_region_projection(
+        &self,
+    ) -> Option<LifetimeProjection<'tcx, MaybeLabelledPlace<'tcx>>> {
         match self.base {
             MaybeRemoteRegionProjectionBase::Place(maybe_remote_place) => {
                 match maybe_remote_place {
@@ -831,24 +853,9 @@ impl<'tcx> RegionProjection<'tcx> {
 
     /// If the region projection is of the form `x↓'a` and `x` has type `&'a T` or `&'a mut T`,
     /// this returns `*x`. Otherwise, it returns `None`.
-    pub fn deref(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Option<MaybeOldPlace<'tcx>> {
+    pub fn deref(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Option<MaybeLabelledPlace<'tcx>> {
         self.as_local_region_projection()
             .and_then(|rp| rp.deref(ctxt))
-    }
-}
-
-impl<'tcx> HasPcgElems<MaybeOldPlace<'tcx>> for RegionProjection<'tcx> {
-    fn pcg_elems(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
-        self.base.pcg_elems()
-    }
-}
-
-impl<'tcx> HasPcgElems<MaybeOldPlace<'tcx>> for MaybeRemoteRegionProjectionBase<'tcx> {
-    fn pcg_elems(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
-        match self {
-            MaybeRemoteRegionProjectionBase::Place(p) => p.pcg_elems(),
-            MaybeRemoteRegionProjectionBase::Const(_) => vec![],
-        }
     }
 }
 

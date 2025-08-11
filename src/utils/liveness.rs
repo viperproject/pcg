@@ -3,14 +3,16 @@ use std::{cell::RefCell, rc::Rc};
 use crate::{
     compute_fixpoint,
     rustc_interface::{
-        dataflow::{with_cursor_state, Analysis, AnalysisEngine},
+        dataflow::{Analysis, AnalysisEngine, with_cursor_state},
         middle::mir::{
             self,
-            visit::{MutatingUseContext, NonMutatingUseContext, PlaceContext, Visitor},
+            visit::{
+                MutatingUseContext, NonMutatingUseContext, NonUseContext, PlaceContext, Visitor,
+            },
         },
-        mir_dataflow::{fmt::DebugWithContext, Backward, GenKill, JoinSemiLattice, ResultsCursor},
+        mir_dataflow::{Backward, GenKill, JoinSemiLattice, ResultsCursor, fmt::DebugWithContext},
     },
-    utils::{data_structures::HashSet, CompilerCtxt, Place},
+    utils::{CompilerCtxt, Place, data_structures::HashSet},
 };
 
 #[derive(Clone, Eq, PartialEq, Debug)]
@@ -125,6 +127,9 @@ impl<'tcx> Analysis<'tcx> for PlaceLivenessAnalysis {
     }
 }
 
+/// Place liveness analysis based on what currently exists in the compiler.
+/// However ours is specialized for information relevant to borrows. In particular,
+/// we currently give the drops special treatment.
 #[derive(Clone)]
 pub(crate) struct PlaceLiveness<'mir, 'tcx> {
     cursor: Rc<RefCell<ResultsCursor<'mir, 'tcx, AnalysisEngine<PlaceLivenessAnalysis>>>>,
@@ -133,7 +138,7 @@ pub(crate) struct PlaceLiveness<'mir, 'tcx> {
 impl DebugWithContext<AnalysisEngine<PlaceLivenessAnalysis>> for PlaceLivenessDomain<'_> {}
 
 impl<'mir, 'tcx> PlaceLiveness<'mir, 'tcx> {
-    pub(crate) fn new(ctxt: CompilerCtxt<'mir, 'tcx>) -> Self {
+    pub(crate) fn new<BC: Copy>(ctxt: CompilerCtxt<'mir, 'tcx, BC>) -> Self {
         Self {
             cursor: Rc::new(RefCell::new(
                 compute_fixpoint(
@@ -148,7 +153,9 @@ impl<'mir, 'tcx> PlaceLiveness<'mir, 'tcx> {
 
     pub(crate) fn is_live(&self, place: Place<'tcx>, location: mir::Location) -> bool {
         let mut cursor = self.cursor.as_ref().borrow_mut();
-        cursor.seek_before_primary_effect(location);
+        // Because this is a backwards analysis, seeking *after* the primary effect considers
+        // the state *before* the statment at the location
+        cursor.seek_after_primary_effect(location);
         with_cursor_state(cursor, |state| state.is_live(place))
     }
 }
@@ -174,6 +181,7 @@ impl DefUse {
 
     fn for_place(place: mir::Place<'_>, context: PlaceContext) -> Option<DefUse> {
         match context {
+            PlaceContext::NonUse(NonUseContext::StorageDead) => Some(DefUse::Def),
             PlaceContext::NonUse(_) => None,
 
             PlaceContext::MutatingUse(
@@ -200,11 +208,29 @@ impl DefUse {
                 place.is_indirect().then_some(DefUse::Use)
             }
 
+            // We don't count drops as use in our analysis because drop
+            // implementations can sometimes require that the lifetimes of
+            // references within a place to still be active and sometimes not.
+            //
+            // In the case where the lifetime are allowed to expire, if we treat
+            // the drop as a use, the PCG would over-approximate the extent of
+            // the lifetime, leading to incorrect graphs. This
+            // over-approximation can prevent the construction of the PCG (when
+            // the compiler wants to e.g. access a place that the PCG still
+            // thinks is borrowed)
+            //
+            // Instead, by not treating the drop as a use, we under-approximate
+            // the extents. However because this only occurs in drops, the PCG construction
+            // itself will not fail (we don't currently require lifetimes to be live for drops)
+            // However, this is still probably incorrect technically.
+            // TODO: We should also identify whether the drop requires lifetimes to be live and count
+            // usages accordingly.
+            PlaceContext::MutatingUse(MutatingUseContext::Drop) => None,
+
             // All other contexts are uses...
             PlaceContext::MutatingUse(
                 MutatingUseContext::RawBorrow
                 | MutatingUseContext::Borrow
-                | MutatingUseContext::Drop
                 | MutatingUseContext::Retag,
             )
             | PlaceContext::NonMutatingUse(

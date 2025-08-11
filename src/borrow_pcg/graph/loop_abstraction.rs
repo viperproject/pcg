@@ -6,32 +6,35 @@ use crate::{
     borrow_pcg::{
         action::BorrowPcgActionKind,
         borrow_pcg_edge::{BorrowPcgEdgeLike, BorrowPcgEdgeRef, LocalNode, ToBorrowsEdge},
-        edge::{
-            abstraction::{AbstractionBlockEdge, r#loop::LoopAbstraction},
-            kind::BorrowPcgEdgeKind,
-        },
+        edge::abstraction::{AbstractionBlockEdge, r#loop::LoopAbstraction},
         edge_data::EdgeData,
         graph::BorrowsGraph,
         has_pcs_elem::LabelLifetimeProjectionPredicate,
         path_condition::ValidityConditions,
         region_projection::{
-            RegionIdx, RegionProjection, RegionProjectionBaseLike, LifetimeProjectionLabel,
+            LifetimeProjection, LifetimeProjectionLabel, RegionIdx, RegionProjectionBaseLike,
         },
         state::BorrowStateMutRef,
     },
-    free_pcs::{CapabilityKind, FreePlaceCapabilitySummary, RepackOp},
+    free_pcs::{CapabilityKind, OwnedPcg, RepackOp},
+    r#loop::{PlaceUsage, PlaceUsageType, PlaceUsages},
     pcg::{
-        LocalNodeLike, PCGNode, PCGNodeLike, PcgMutRef, PcgRefLike,
-        obtain::{ObtainType, PlaceExpander, PlaceObtainer},
+        LocalNodeLike, PCGNodeLike, PcgMutRef, PcgNode,
+        ctxt::AnalysisCtxt,
+        obtain::{
+            ActionApplier, HasSnapshotLocation, ObtainType, PlaceExpander, PlaceObtainer,
+            RenderDebugGraph,
+        },
         place_capabilities::PlaceCapabilities,
     },
     pcg_validity_assert,
     rustc_interface::middle::mir::{self},
     utils::{
-        CompilerCtxt, LocalMutationIsAllowed, Place, SnapshotLocation,
+        CompilerCtxt, DebugImgcat, Place, SnapshotLocation,
         data_structures::{HashMap, HashSet},
         display::DisplayWithCompilerCtxt,
-        maybe_old::MaybeOldPlace,
+        logging::{self, LogPredicate},
+        maybe_old::MaybeLabelledPlace,
         remote::RemotePlace,
     },
 };
@@ -76,7 +79,7 @@ impl<'tcx, 'a> DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx
     }
 }
 impl<'tcx> MaybeRemoteCurrentPlace<'tcx> {
-    fn to_pcg_node(self, ctxt: CompilerCtxt<'_, 'tcx>) -> PCGNode<'tcx> {
+    fn to_pcg_node(self, ctxt: CompilerCtxt<'_, 'tcx>) -> PcgNode<'tcx> {
         match self {
             MaybeRemoteCurrentPlace::Local(place) => place.to_pcg_node(ctxt),
             MaybeRemoteCurrentPlace::Remote(place) => place.to_pcg_node(ctxt),
@@ -98,10 +101,10 @@ impl<'tcx> MaybeRemoteCurrentPlace<'tcx> {
         matches!(self, MaybeRemoteCurrentPlace::Remote(_))
     }
 
-    fn region_projections(self, ctxt: CompilerCtxt<'_, 'tcx>) -> Vec<RegionProjection<'tcx>> {
+    fn region_projections(self, ctxt: CompilerCtxt<'_, 'tcx>) -> Vec<LifetimeProjection<'tcx>> {
         match self {
             MaybeRemoteCurrentPlace::Local(place) => place
-                .region_projections(ctxt)
+                .lifetime_projections(ctxt)
                 .into_iter()
                 .map(|rp| rp.to_pcg_node(ctxt).try_into_region_projection().unwrap())
                 .collect(),
@@ -116,15 +119,15 @@ impl<'tcx> MaybeRemoteCurrentPlace<'tcx> {
 impl<'tcx> BorrowsGraph<'tcx> {
     pub(crate) fn get_loop_abstraction_graph<'mir>(
         &self,
-        loop_blocked_places: HashSet<Place<'tcx>>,
+        loop_blocked_places: &PlaceUsages<'tcx>,
         root_places: HashSet<MaybeRemoteCurrentPlace<'tcx>>,
-        candidate_blockers: HashSet<Place<'tcx>>,
+        candidate_blockers: &PlaceUsages<'tcx>,
         loop_head: mir::BasicBlock,
         path_conditions: ValidityConditions,
-        ctxt: CompilerCtxt<'mir, 'tcx>,
+        analysis_ctxt: AnalysisCtxt<'mir, 'tcx>,
     ) -> ConstructAbstractionGraphResult<'tcx> {
+        let ctxt = analysis_ctxt.ctxt;
         let mut graph = BorrowsGraph::default();
-        // let mut all_nodes = HashSet::default();
         let mut capability_updates = HashMap::default();
         let mut to_label = HashSet::default();
 
@@ -136,13 +139,16 @@ impl<'tcx> BorrowsGraph<'tcx> {
         let mut expander = AbsExpander {
             loop_head_block: loop_head,
             graph: &mut graph,
-            capabilities: None,
             path_conditions: path_conditions.clone(),
             ctxt,
-            owned: None,
         };
 
-        for blocker in candidate_blockers.iter().copied() {
+        tracing::debug!(
+            "loop blocked places: {}",
+            loop_blocked_places.to_short_string(ctxt)
+        );
+
+        for blocker in candidate_blockers.iter_places() {
             for root in root_places.iter() {
                 let relevant_root = root.relevant_place_for_blocking();
                 if blocker == relevant_root
@@ -157,8 +163,8 @@ impl<'tcx> BorrowsGraph<'tcx> {
                     );
                     add_block_edges(&mut expander, *root, blocker, ctxt);
                     if let MaybeRemoteCurrentPlace::Local(root) = root {
-                        for rp in root.region_projections(ctxt) {
-                            to_label.insert(LabelLifetimeProjectionPredicate::AllNonPlaceHolder(
+                        for rp in root.lifetime_projections(ctxt) {
+                            to_label.insert(LabelLifetimeProjectionPredicate::AllNonFuture(
                                 (*root).into(),
                                 rp.region_idx,
                             ));
@@ -170,10 +176,10 @@ impl<'tcx> BorrowsGraph<'tcx> {
             }
         }
 
-        for blocked_place in loop_blocked_places.iter().copied() {
+        for blocked_place_usage in loop_blocked_places.iter() {
+            let blocked_place = blocked_place_usage.place;
             let blockers = candidate_blockers
-                .iter()
-                .copied()
+                .iter_places()
                 .filter(|blocker| {
                     blocker.local != blocked_place.local
                         && ctxt
@@ -185,45 +191,42 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 for blocker in blockers.iter() {
                     add_block_edges(&mut expander, blocked_place.into(), *blocker, ctxt);
                 }
-                if blocked_place
-                    .is_mutable(LocalMutationIsAllowed::No, ctxt)
-                    .is_ok()
-                {
+                if blocked_place_usage.usage == PlaceUsageType::Mutate {
                     capability_updates.insert(blocked_place, None);
                 } else {
                     capability_updates.insert(blocked_place, Some(CapabilityKind::Read));
                 }
-                for rp in blocked_place.region_projections(ctxt) {
-                    to_label.insert(LabelLifetimeProjectionPredicate::AllNonPlaceHolder(
+                for rp in blocked_place.lifetime_projections(ctxt) {
+                    to_label.insert(LabelLifetimeProjectionPredicate::AllNonFuture(
                         blocked_place.into(),
                         rp.region_idx,
                     ));
                 }
             }
         }
-        expander
-            .graph
-            .render_debug_graph(ctxt, "Abstraction graph after connections expansion");
-
-        expander.expand_to_places(
-            loop_blocked_places
-                .union(&candidate_blockers)
-                .copied()
-                .collect(),
+        expander.render_debug_graph(
+            Some(DebugImgcat::JoinLoop),
+            "Abstraction graph after connections expansion",
         );
 
-        expander
-            .graph
-            .render_debug_graph(ctxt, "Abstraction graph after expansion");
+        expander.expand_to_places(
+            loop_blocked_places,
+            &loop_blocked_places.joined_with(candidate_blockers),
+        );
+
+        expander.render_debug_graph(
+            Some(DebugImgcat::JoinLoop),
+            "Abstraction graph after expansion",
+        );
 
         let abs_graph_roots = expander
             .graph
             .roots(ctxt)
             .into_iter()
             .flat_map(|graph_root| {
-                if let Some(PCGNode::RegionProjection(rp)) = graph_root.try_to_local_node(ctxt)
-                    && let MaybeOldPlace::Current { place } = rp.base
-                    && !loop_blocked_places.contains(&place)
+                if let Some(PcgNode::LifetimeProjection(rp)) = graph_root.try_to_local_node(ctxt)
+                    && let MaybeLabelledPlace::Current(place) = rp.base
+                    && !loop_blocked_places.contains(place)
                 {
                     Some(rp)
                 } else {
@@ -235,7 +238,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         for graph_root in abs_graph_roots {
             let mut candidate_root_nodes = self.nodes(ctxt);
             candidate_root_nodes.retain(|node| match node {
-                PCGNode::RegionProjection(region_projection)
+                PcgNode::LifetimeProjection(region_projection)
                     if let Some(related_place) =
                         region_projection.base.maybe_remote_current_place() =>
                 {
@@ -253,9 +256,10 @@ impl<'tcx> BorrowsGraph<'tcx> {
             }
         }
 
-        expander
-            .graph
-            .render_debug_graph(ctxt, "Abstraction graph after root reconnect");
+        expander.render_debug_graph(
+            Some(DebugImgcat::JoinLoop),
+            "Abstraction graph after root reconnect",
+        );
         let loop_head_label = LifetimeProjectionLabel::Location(SnapshotLocation::Loop(loop_head));
         let frozen_graph = graph.frozen_graph();
         tracing::debug!(
@@ -272,7 +276,9 @@ impl<'tcx> BorrowsGraph<'tcx> {
         }
         tracing::debug!("Completed loop abstraction");
         for (place, capability) in capability_updates.iter() {
-            tracing::debug!(
+            logging::log!(
+                LogPredicate::DebugBlock,
+                analysis_ctxt,
                 "capability update for {}: {:?}",
                 place.to_short_string(ctxt),
                 capability
@@ -286,10 +292,10 @@ impl<'tcx> BorrowsGraph<'tcx> {
         node: Place<'tcx>,
         loop_head_block: mir::BasicBlock,
         ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> HashSet<PCGNode<'tcx>> {
+    ) -> HashSet<PcgNode<'tcx>> {
         let mut result = HashSet::default();
         let mut queue: Vec<LocalNode<'tcx>> = node
-            .region_projections(ctxt)
+            .lifetime_projections(ctxt)
             .into_iter()
             .flat_map(|rp| {
                 vec![
@@ -316,23 +322,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 continue;
             }
             for edge in blocked_edges {
-                if let BorrowPcgEdgeKind::BorrowPcgExpansion(borrow_edge) = edge.kind() {
-                    if borrow_edge.is_owned_expansion(ctxt) {
-                        let deref_blocked_region_projection = borrow_edge
-                            .deref_blocked_region_projection(ctxt)
-                            .unwrap_or_else(|| {
-                                panic!(
-                                    "No deref blocked region projection for {}: {:?}",
-                                    borrow_edge.base.to_short_string(ctxt),
-                                    borrow_edge.base.related_current_place().unwrap().ty(ctxt)
-                                );
-                            });
-                        queue.push(deref_blocked_region_projection.into());
-                    } else {
-                        queue.push(borrow_edge.base);
-                    }
-                    continue;
-                }
                 for blocked_by in edge.blocked_nodes(ctxt) {
                     match blocked_by.try_to_local_node(ctxt) {
                         Some(local_node) => {
@@ -361,9 +350,10 @@ impl<'tcx> BorrowsGraph<'tcx> {
     pub(crate) fn expand_places_for_abstraction<'mir>(
         &mut self,
         loop_head_block: mir::BasicBlock,
-        blocked_loop_places: &HashSet<Place<'tcx>>,
+        loop_blocked_places: &PlaceUsages<'tcx>,
+        to_expand: &PlaceUsages<'tcx>,
         capabilities: &mut PlaceCapabilities<'tcx>,
-        owned: &mut FreePlaceCapabilitySummary<'tcx>,
+        owned: &mut OwnedPcg<'tcx>,
         path_conditions: ValidityConditions,
         ctxt: CompilerCtxt<'mir, 'tcx>,
     ) {
@@ -384,41 +374,38 @@ impl<'tcx> BorrowsGraph<'tcx> {
             snapshot_location,
             None,
         );
-        let mut to_obtain: Vec<Place<'tcx>> = vec![];
-        for place in blocked_loop_places {
-            if to_obtain.iter().any(|p| place.is_prefix_of(*p)) {
+        let mut to_obtain: Vec<PlaceUsage<'tcx>> = vec![];
+        for place_usage in to_expand.iter() {
+            if to_obtain
+                .iter()
+                .any(|p| place_usage.place.is_prefix_of(p.place))
+            {
                 continue;
             }
-            to_obtain.retain(|p| !p.is_prefix_of(*place));
-            to_obtain.push(*place);
+            to_obtain.retain(|p| !place_usage.place.is_prefix_of(p.place));
+            to_obtain.push(place_usage);
         }
-        let obtain_type = ObtainType::LoopInvariant;
-        for place in to_obtain {
-            let obtain_cap = obtain_type.capability(place, ctxt);
-
-            if !obtain_cap.is_read() {
-                tracing::debug!(
-                    "Obtain {:?} to place {} in phase {:?}",
-                    obtain_type,
-                    place.to_short_string(ctxt),
-                    obtain_type
-                );
-                obtainer
-                    .upgrade_closest_read_ancestor_to_exclusive_and_update_rps(place)
-                    .unwrap();
-            }
-
-            obtainer.obtain(place, ObtainType::LoopInvariant).unwrap();
-            obtainer.pcg.borrows_graph().render_debug_graph(
-                ctxt,
-                &format!("After obtaining {}", place.to_short_string(ctxt)),
+        obtainer.render_debug_graph(Some(DebugImgcat::JoinLoop), "Before obtaining (self)");
+        for place_usage in to_obtain {
+            let obtain_type = ObtainType::LoopInvariant {
+                is_blocked: loop_blocked_places.contains(place_usage.place),
+                usage_type: place_usage.usage,
+            };
+            obtainer.obtain(place_usage.place, obtain_type).unwrap();
+            obtainer.render_debug_graph(
+                Some(DebugImgcat::JoinLoop),
+                &format!(
+                    "After obtaining (self) {}",
+                    place_usage.to_short_string(ctxt)
+                ),
             );
         }
     }
 
     pub(crate) fn identify_subgraph_to_cut<'mir: 'graph, 'graph>(
         &'graph self,
-        abstraction_graph_nodes: HashSet<PCGNode<'tcx>>,
+        block: mir::BasicBlock,
+        abstraction_graph_nodes: HashSet<PcgNode<'tcx>>,
         ctxt: CompilerCtxt<'mir, 'tcx>,
     ) -> BorrowsGraph<'tcx> {
         type Path<'tcx, 'graph> = Vec<BorrowPcgEdgeRef<'tcx, 'graph>>;
@@ -428,7 +415,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             .flat_map(|node| self.edges_blocking(*node, ctxt).collect::<Vec<_>>())
             .map(|edge| vec![edge])
             .collect::<Vec<_>>();
-        while let Some(path) = paths.pop() {
+        'outer: while let Some(path) = paths.pop() {
             let last_edge = *path.last().unwrap();
             if to_cut.contains(&last_edge) {
                 to_cut.extend(path);
@@ -445,11 +432,17 @@ impl<'tcx> BorrowsGraph<'tcx> {
             for blocked_by_node in blocked_by_nodes {
                 for edge in self.edges_blocking(blocked_by_node.into(), ctxt) {
                     if path.contains(&edge) {
-                        self.render_debug_graph(ctxt, "Invalid abstraction graph");
-                        pcg_validity_assert!(false, "edge already in path");
-                        panic!("edge already in path");
+                        self.render_debug_graph(
+                            block,
+                            Some(DebugImgcat::JoinLoop),
+                            &PlaceCapabilities::default(),
+                            "Invalid abstraction graph",
+                            ctxt,
+                        );
+                        pcg_validity_assert!(false, [ctxt], "edge already in path");
+                        // panic!("edge already in path");
                         // For debugging, just stop here and we can try to visualize the graph
-                        // break 'outer;
+                        break 'outer;
                     }
                     let mut next_path = path.clone();
                     next_path.push(edge);
@@ -468,10 +461,20 @@ impl<'tcx> BorrowsGraph<'tcx> {
 struct AbsExpander<'pcg, 'mir, 'tcx> {
     loop_head_block: mir::BasicBlock,
     graph: &'pcg mut BorrowsGraph<'tcx>,
-    capabilities: Option<&'pcg mut PlaceCapabilities<'tcx>>,
-    owned: Option<&'pcg mut FreePlaceCapabilitySummary<'tcx>>,
     path_conditions: ValidityConditions,
     ctxt: CompilerCtxt<'mir, 'tcx>,
+}
+
+impl RenderDebugGraph for AbsExpander<'_, '_, '_> {
+    fn render_debug_graph(&self, debug_imgcat: Option<DebugImgcat>, comment: &str) {
+        self.graph.render_debug_graph(
+            self.loop_head_block,
+            debug_imgcat,
+            &PlaceCapabilities::default(),
+            comment,
+            self.ctxt,
+        );
+    }
 }
 
 impl<'tcx> AbsExpander<'_, '_, 'tcx> {
@@ -482,28 +485,36 @@ impl<'tcx> AbsExpander<'_, '_, 'tcx> {
         }
     }
 
-    fn expand_to_places(&mut self, places: HashSet<Place<'tcx>>) {
-        for place in places {
-            tracing::debug!("expanding to {}", place.to_short_string(self.ctxt));
-            self.expand_to(place, ObtainType::LoopInvariant, self.ctxt)
-                .unwrap();
+    fn expand_to_places(&mut self, blocked_places: &PlaceUsages<'tcx>, places: &PlaceUsages<'tcx>) {
+        for place in places.iter() {
+            tracing::debug!("loop expanding to {}", place.to_short_string(self.ctxt));
+            self.expand_to(
+                place.place,
+                ObtainType::LoopInvariant {
+                    is_blocked: blocked_places.contains(place.place),
+                    usage_type: place.usage,
+                },
+                self.ctxt,
+            )
+            .unwrap();
         }
     }
 }
 
-impl<'mir, 'tcx> PlaceExpander<'mir, 'tcx> for AbsExpander<'_, 'mir, 'tcx> {
+impl<'tcx> ActionApplier<'tcx> for AbsExpander<'_, '_, 'tcx> {
     fn apply_action(&mut self, action: PcgAction<'tcx>) -> Result<bool, crate::pcg::PcgError> {
         tracing::debug!("applying action: {}", action.debug_line(self.ctxt));
         match action {
             PcgAction::Borrow(action) => match action.kind {
                 BorrowPcgActionKind::AddEdge { edge } => Ok(self.graph.insert(edge, self.ctxt)),
-                BorrowPcgActionKind::LabelLifetimeProjection(predicate, region_projection_label) => {
-                    Ok(self.graph.label_region_projection(
-                        &predicate,
-                        region_projection_label,
-                        self.ctxt,
-                    ))
-                }
+                BorrowPcgActionKind::LabelLifetimeProjection(
+                    predicate,
+                    region_projection_label,
+                ) => Ok(self.graph.label_region_projection(
+                    &predicate,
+                    region_projection_label,
+                    self.ctxt,
+                )),
                 BorrowPcgActionKind::Weaken(_) => todo!(),
                 BorrowPcgActionKind::Restore(_) => todo!(),
                 BorrowPcgActionKind::MakePlaceOld(_) => todo!(),
@@ -516,17 +527,8 @@ impl<'mir, 'tcx> PlaceExpander<'mir, 'tcx> for AbsExpander<'_, 'mir, 'tcx> {
                 RepackOp::StorageDead(_) => todo!(),
                 RepackOp::IgnoreStorageDead(_) => todo!(),
                 RepackOp::Weaken(_, _, _) => todo!(),
-                RepackOp::Expand(repack_expand) => {
-                    if let Some(owned) = &mut self.owned {
-                        owned.perform_expand_action(
-                            repack_expand,
-                            self.capabilities.as_mut().unwrap(),
-                            self.ctxt,
-                        )?;
-                    } else {
-                        unreachable!()
-                    }
-                    Ok(true)
+                RepackOp::Expand(_repack_expand) => {
+                    unreachable!()
                 }
                 RepackOp::Collapse(_) => todo!(),
                 RepackOp::DerefShallowInit(_, _) => todo!(),
@@ -534,7 +536,9 @@ impl<'mir, 'tcx> PlaceExpander<'mir, 'tcx> for AbsExpander<'_, 'mir, 'tcx> {
             },
         }
     }
+}
 
+impl<'mir, 'tcx> PlaceExpander<'mir, 'tcx> for AbsExpander<'_, 'mir, 'tcx> {
     fn borrows_graph(&self) -> &BorrowsGraph<'tcx> {
         self.graph
     }
@@ -543,34 +547,34 @@ impl<'mir, 'tcx> PlaceExpander<'mir, 'tcx> for AbsExpander<'_, 'mir, 'tcx> {
         self.path_conditions.clone()
     }
 
-    fn contains_owned_expansion_from(&self, base: Place<'tcx>) -> bool {
-        if let Some(owned) = &self.owned {
-            owned.locals()[base.local]
-                .get_allocated()
-                .contains_expansion_from(base)
-        } else {
-            // Pretend we're always fully expanded in the local PCG
-            true
-        }
+    fn contains_owned_expansion_to(&self, _target: Place<'tcx>) -> bool {
+        // Pretend we're always fully expanded in the local PCG
+        true
     }
 
     fn update_capabilities_for_borrow_expansion(
         &mut self,
-        expansion: &crate::borrow_pcg::borrow_pcg_expansion::BorrowPcgExpansion<'tcx>,
-        block_type: crate::pcg::place_capabilities::BlockType,
-        ctxt: CompilerCtxt<'_, 'tcx>,
+        _expansion: &crate::borrow_pcg::borrow_pcg_expansion::BorrowPcgExpansion<'tcx>,
+        _block_type: crate::pcg::place_capabilities::BlockType,
+        _ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> Result<bool, crate::pcg::PcgError> {
-        if let Some(caps) = &mut self.capabilities {
-            caps.update_for_expansion(expansion, block_type, ctxt)
-        } else {
-            Ok(true)
-        }
+        Ok(true)
+    }
+    fn update_capabilities_for_deref(
+        &mut self,
+        _ref_place: Place<'tcx>,
+        _capability: CapabilityKind,
+        _ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> Result<bool, crate::pcg::PcgError> {
+        Ok(true)
     }
 
     fn location(&self) -> mir::Location {
         self.loop_head_location()
     }
+}
 
+impl HasSnapshotLocation for AbsExpander<'_, '_, '_> {
     fn prev_snapshot_location(&self) -> SnapshotLocation {
         SnapshotLocation::Loop(self.loop_head_block)
     }
@@ -578,7 +582,7 @@ impl<'mir, 'tcx> PlaceExpander<'mir, 'tcx> for AbsExpander<'_, 'mir, 'tcx> {
 
 fn add_block_edge<'tcx, 'mir>(
     expander: &mut AbsExpander<'_, 'mir, 'tcx>,
-    long: PCGNode<'tcx>,
+    long: PcgNode<'tcx>,
     short: LocalNode<'tcx>,
     ctxt: CompilerCtxt<'mir, 'tcx>,
 ) {
@@ -596,7 +600,7 @@ fn add_rp_block_edges<'mir, 'tcx>(
     blocker: Place<'tcx>,
     ctxt: CompilerCtxt<'mir, 'tcx>,
 ) {
-    let blocker_rps = blocker.region_projections(ctxt);
+    let blocker_rps = blocker.lifetime_projections(ctxt);
     for blocked_rp in blocked_place.region_projections(ctxt) {
         let flow_rps = blocker_rps
             .iter()
@@ -636,9 +640,10 @@ fn add_rp_block_edges<'mir, 'tcx>(
                 expander
                     .add_and_update_placeholder_edges(blocked_rp, &mut_rps, "mut rps", ctxt)
                     .unwrap();
-                expander
-                    .graph
-                    .render_debug_graph(ctxt, "Abstraction graph after adding mut rps");
+                expander.render_debug_graph(
+                    Some(DebugImgcat::JoinLoop),
+                    "Abstraction graph after adding mut rps",
+                );
             }
         }
         for flow_rp in flow_rps {
@@ -665,7 +670,7 @@ fn add_block_edges<'mir, 'tcx>(
         blocker.to_short_string(ctxt),
         blocked_place.to_short_string(ctxt)
     );
-    let blocker_rps = blocker.region_projections(ctxt);
+    let blocker_rps = blocker.lifetime_projections(ctxt);
     // Add top-level borrow
     add_block_edge(
         expander,

@@ -41,8 +41,9 @@ tracing = "0.1"
 tracing-subscriber = "0.3"
 tikv-jemallocator = { version = "0.6", features = ["profiling", "unprefixed_malloc_on_supported_platforms"], optional = true }
 axum = { version = "0.7", features = ["multipart"], optional = true }
-tokio = { version = "1.0", features = ["full", "rt-multi-thread"], optional = true }
+tokio = { version = "1.43.1", features = ["full", "rt-multi-thread"], optional = true }
 jemalloc_pprof = { version = "0.6", optional = true }
+openssl = "0.10.72"
 
 [dev-dependencies]
 reqwest = { version = "^0.11", features = ["blocking"] }

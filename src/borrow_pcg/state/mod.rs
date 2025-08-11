@@ -1,5 +1,7 @@
 //! The data structure representing the state of the Borrow PCG.
 
+use crate::rustc_interface::middle::mir::START_BLOCK;
+
 use super::{
     borrow_pcg_edge::{BlockedNode, BorrowPcgEdge, BorrowPcgEdgeRef, ToBorrowsEdge},
     edge::borrow::RemoteBorrow,
@@ -14,12 +16,20 @@ use crate::{
         has_pcs_elem::{LabelLifetimeProjectionPredicate, PlaceLabeller, SetLabel},
         region_projection::LifetimeProjectionLabel,
     },
-    free_pcs::FreePlaceCapabilitySummary,
-    pcg::{BodyAnalysis, PcgError, place_capabilities::PlaceCapabilitiesInterface},
+    free_pcs::OwnedPcg,
+    pcg::{
+        BodyAnalysis, PcgError, ctxt::AnalysisCtxt, place_capabilities::PlaceCapabilitiesInterface,
+    },
     pcg_validity_assert,
-    utils::place::maybe_remote::MaybeRemotePlace,
+    utils::{
+        display::DisplayWithCompilerCtxt,
+        logging::{self, LogPredicate},
+        place::maybe_remote::MaybeRemotePlace,
+    },
 };
-use crate::{borrow_pcg::borrow_pcg_edge::LocalNode, utils::place::maybe_old::MaybeOldPlace};
+use crate::{
+    borrow_pcg::edge::kind::BorrowPcgEdgeKind, utils::place::maybe_old::MaybeLabelledPlace,
+};
 use crate::{
     borrow_pcg::edge::{
         borrow::{BorrowEdge, LocalBorrow},
@@ -29,7 +39,7 @@ use crate::{
 };
 use crate::{
     borrow_pcg::edge_data::EdgeData,
-    pcg::PCGNode,
+    pcg::PcgNode,
     rustc_interface::middle::{
         mir::{self, BasicBlock, BorrowKind, Location, MutBorrowKind},
         ty::{self},
@@ -37,7 +47,7 @@ use crate::{
     utils::{display::DebugLines, validity::HasValidityCheck},
 };
 use crate::{
-    borrow_pcg::{edge::outlives::BorrowFlowEdge, region_projection::RegionProjection},
+    borrow_pcg::{edge::outlives::BorrowFlowEdge, region_projection::LifetimeProjection},
     utils::remote::RemotePlace,
 };
 use crate::{
@@ -74,23 +84,23 @@ pub(crate) trait BorrowsStateLike<'tcx> {
     }
     fn graph(&self) -> &BorrowsGraph<'tcx>;
 
-    // fn path_conditions(&self) -> &PathConditions {
-    //     self.as_ref().path_conditions
-    // }
-
-    fn leaf_nodes(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Vec<LocalNode<'tcx>> {
-        self.graph().frozen_graph().leaf_nodes(ctxt)
-    }
-
-    fn make_place_old(
+    fn label_place_and_update_related_capabilities(
         &mut self,
         place: Place<'tcx>,
         reason: LabelPlaceReason,
         labeller: &impl PlaceLabeller<'tcx>,
+        capabilities: &mut PlaceCapabilities<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         let state = self.as_mut_ref();
-        state.graph.make_place_old(place, reason, labeller, ctxt)
+        state.graph.label_place(place, reason, labeller, ctxt);
+        // If in a join we don't want to change capabilities because this will
+        // essentially be handled by the join logic.
+        // See 69_http_header_map.rs
+        if reason != LabelPlaceReason::JoinOwnedReadAndWriteCapabilities {
+            capabilities.retain(|p, _| !p.projects_indirection_from(place, ctxt));
+        }
+        true
     }
 
     fn label_region_projection(
@@ -103,20 +113,23 @@ pub(crate) trait BorrowsStateLike<'tcx> {
             .label_region_projection(predicate, label, ctxt)
     }
 
-    fn remove(
+    fn remove<'a>(
         &mut self,
-        edge: &BorrowPcgEdge<'tcx>,
+        edge: &BorrowPcgEdgeKind<'tcx>,
         capabilities: &mut PlaceCapabilities<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx>,
-    ) -> bool {
+        ctxt: AnalysisCtxt<'a, 'tcx>,
+    ) -> bool
+    where
+        'tcx: 'a,
+    {
         let state = self.as_mut_ref();
-        let removed = state.graph.remove(edge.kind()).is_some();
+        let removed = state.graph.remove(edge).is_some();
         if removed {
-            for node in edge.blocked_by_nodes(repacker) {
-                if !state.graph.contains(node, repacker)
-                    && let PCGNode::Place(MaybeOldPlace::Current { place }) = node
+            for node in edge.blocked_by_nodes(ctxt.ctxt) {
+                if !state.graph.contains(node, ctxt.ctxt)
+                    && let PcgNode::Place(MaybeLabelledPlace::Current(place)) = node
                 {
-                    let _ = capabilities.remove(place, repacker);
+                    let _ = capabilities.remove(place, ctxt);
                 }
             }
         }
@@ -127,12 +140,12 @@ pub(crate) trait BorrowsStateLike<'tcx> {
         &mut self,
         action: BorrowPcgAction<'tcx>,
         capabilities: &mut PlaceCapabilities<'tcx>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
+        ctxt: AnalysisCtxt<'_, 'tcx>,
     ) -> Result<bool, PcgError> {
         let result = match action.kind {
             BorrowPcgActionKind::Restore(restore) => {
                 let restore_place = restore.place();
-                if let Some(cap) = capabilities.get(restore_place) {
+                if let Some(cap) = capabilities.get(restore_place, ctxt.ctxt) {
                     pcg_validity_assert!(
                         cap < restore.capability(),
                         "Current capability {:?} is not less than the capability to restore to {:?}",
@@ -145,16 +158,16 @@ pub(crate) trait BorrowsStateLike<'tcx> {
                 }
                 if restore.capability() == CapabilityKind::Exclusive {
                     self.label_region_projection(
-                        &LabelLifetimeProjectionPredicate::AllPlaceholderPostfixes(restore_place),
+                        &LabelLifetimeProjectionPredicate::AllFuturePostfixes(restore_place),
                         None,
-                        ctxt,
+                        ctxt.ctxt,
                     );
                 }
                 true
             }
             BorrowPcgActionKind::Weaken(weaken) => {
                 let weaken_place = weaken.place();
-                assert_eq!(capabilities.get(weaken_place), Some(weaken.from));
+                assert_eq!(capabilities.get(weaken_place, ctxt.ctxt), Some(weaken.from));
                 match weaken.to {
                     Some(to) => {
                         capabilities.insert(weaken_place, to, ctxt);
@@ -165,16 +178,18 @@ pub(crate) trait BorrowsStateLike<'tcx> {
                 }
                 true
             }
-            BorrowPcgActionKind::MakePlaceOld(action) => self.make_place_old(
-                action.place,
-                action.reason,
-                &SetLabel(action.location),
-                ctxt,
-            ),
-            BorrowPcgActionKind::RemoveEdge(edge) => self.remove(&edge, capabilities, ctxt),
-            BorrowPcgActionKind::AddEdge { edge } => self.graph_mut().insert(edge, ctxt),
+            BorrowPcgActionKind::MakePlaceOld(action) => self
+                .label_place_and_update_related_capabilities(
+                    action.place,
+                    action.reason,
+                    &SetLabel(action.location),
+                    capabilities,
+                    ctxt.ctxt,
+                ),
+            BorrowPcgActionKind::RemoveEdge(edge) => self.remove(&edge.kind, capabilities, ctxt),
+            BorrowPcgActionKind::AddEdge { edge } => self.graph_mut().insert(edge, ctxt.ctxt),
             BorrowPcgActionKind::LabelLifetimeProjection(rp, label) => {
-                self.label_region_projection(&rp, label, ctxt)
+                self.label_region_projection(&rp, label, ctxt.ctxt)
             }
         };
         Ok(result)
@@ -256,34 +271,34 @@ impl<'tcx> BorrowsState<'tcx> {
         &mut self,
         local: mir::Local,
         capabilities: &mut PlaceCapabilities<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx>,
+        ctxt: AnalysisCtxt<'_, 'tcx>,
     ) {
-        let local_decl = &repacker.body().local_decls[local];
+        let local_decl = &ctxt.ctxt.body().local_decls[local];
         let arg_place: Place<'tcx> = local.into();
         if let ty::TyKind::Ref(_, _, _) = local_decl.ty.kind() {
             let _ = self.apply_action(
                 BorrowPcgAction::add_edge(
                     BorrowPcgEdge::new(RemoteBorrow::new(local).into(), ValidityConditions::new()),
                     "Introduce initial borrows",
-                    repacker,
+                    ctxt.ctxt,
                 ),
                 capabilities,
-                repacker,
+                ctxt,
             );
         }
-        for region in extract_regions(local_decl.ty, repacker) {
+        for region in extract_regions(local_decl.ty, ctxt.ctxt) {
             let region_projection =
-                RegionProjection::new(region, arg_place.into(), None, repacker).unwrap();
+                LifetimeProjection::new(region, arg_place.into(), None, ctxt.ctxt).unwrap();
             assert!(
                 self.apply_action(
                     BorrowPcgAction::add_edge(
                         BorrowPcgEdge::new(
                             BorrowFlowEdge::new(
-                                RegionProjection::new(
+                                LifetimeProjection::new(
                                     region,
                                     RemotePlace::new(local).into(),
                                     None,
-                                    repacker,
+                                    ctxt.ctxt,
                                 )
                                 .unwrap_or_else(|e| {
                                     panic!(
@@ -294,16 +309,16 @@ impl<'tcx> BorrowsState<'tcx> {
                                 }),
                                 region_projection,
                                 BorrowFlowEdgeKind::InitialBorrows,
-                                repacker,
+                                ctxt.ctxt,
                             )
                             .into(),
                             ValidityConditions::new(),
                         ),
                         "Introduce initial borrows",
-                        repacker,
+                        ctxt.ctxt,
                     ),
                     capabilities,
-                    repacker,
+                    ctxt,
                 )
                 .unwrap()
             );
@@ -315,8 +330,9 @@ impl<'tcx> BorrowsState<'tcx> {
         capabilities: &mut PlaceCapabilities<'tcx>,
         repacker: CompilerCtxt<'_, 'tcx>,
     ) {
+        let analysis_ctxt = AnalysisCtxt::new(repacker, START_BLOCK);
         for arg in repacker.body().args_iter() {
-            self.introduce_initial_borrows(arg, capabilities, repacker);
+            self.introduce_initial_borrows(arg, capabilities, analysis_ctxt);
         }
     }
 
@@ -332,7 +348,7 @@ impl<'tcx> BorrowsState<'tcx> {
         other_block: BasicBlock,
         body_analysis: &BodyAnalysis<'mir, 'tcx>,
         capabilities: &mut PlaceCapabilities<'tcx>,
-        owned: &mut FreePlaceCapabilitySummary<'tcx>,
+        owned: &mut OwnedPcg<'tcx>,
         ctxt: CompilerCtxt<'mir, 'tcx>,
     ) -> Result<bool, PcgError> {
         let mut changed = false;
@@ -385,20 +401,20 @@ impl<'tcx> BorrowsState<'tcx> {
     pub fn get_place_blocking(
         &self,
         place: MaybeRemotePlace<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx>,
-    ) -> Option<MaybeOldPlace<'tcx>> {
-        let edges = self.edges_blocking(place.into(), repacker);
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> Option<MaybeLabelledPlace<'tcx>> {
+        let edges = self.edges_blocking(place.into(), ctxt);
         if edges.len() != 1 {
             return None;
         }
-        let nodes = edges[0].blocked_by_nodes(repacker).collect::<Vec<_>>();
+        let nodes = edges[0].blocked_by_nodes(ctxt).collect::<Vec<_>>();
         if nodes.len() != 1 {
             return None;
         }
         let node = nodes.into_iter().next().unwrap();
         match node {
-            PCGNode::Place(_) => todo!(),
-            PCGNode::RegionProjection(region_projection) => region_projection.deref(repacker),
+            PcgNode::Place(_) => todo!(),
+            PcgNode::LifetimeProjection(region_projection) => region_projection.deref(ctxt),
         }
     }
 
@@ -437,9 +453,16 @@ impl<'tcx> BorrowsState<'tcx> {
             region,
             ctxt,
         );
+        let ctxt = AnalysisCtxt::new(ctxt, location.block);
+        logging::log!(
+            LogPredicate::DebugBlock,
+            ctxt,
+            "Inserting borrow edge {}",
+            borrow_edge.to_short_string(ctxt.ctxt)
+        );
         assert!(self.graph.insert(
             BorrowEdge::Local(borrow_edge).to_borrow_pcg_edge(self.path_conditions.clone()),
-            ctxt
+            ctxt.ctxt
         ));
 
         match kind {
@@ -449,20 +472,24 @@ impl<'tcx> BorrowsState<'tcx> {
                 let _ = capabilities.remove(blocked_place, ctxt);
             }
             _ => {
-                match capabilities.get(blocked_place) {
+                let blocked_place_capability = capabilities.get(blocked_place, ctxt.ctxt);
+                logging::log!(
+                    LogPredicate::DebugBlock,
+                    ctxt,
+                    "Blocked place {} has capability {:?}",
+                    blocked_place.to_short_string(ctxt.ctxt),
+                    blocked_place_capability
+                );
+                match blocked_place_capability {
                     Some(CapabilityKind::Exclusive) => {
                         assert!(capabilities.insert(blocked_place, CapabilityKind::Read, ctxt));
                     }
                     Some(CapabilityKind::Read) => {
                         // Do nothing, this just adds another shared borrow
                     }
-                    None => {
-                        // Some projections are currently incomplete (e.g. ConstantIndex)
-                        // therefore we don't expect a capability here. For more information
-                        // see the comment in `Place::expand_one_level`.
-                        // TODO: Make such projections complete
-                    }
                     other => {
+                        // Shouldn't be None or Write, due to capability updates
+                        // based on the TripleWalker analysis
                         pcg_validity_assert!(
                             false,
                             "{:?}: Unexpected capability for borrow blocked place {:?}: {:?}",

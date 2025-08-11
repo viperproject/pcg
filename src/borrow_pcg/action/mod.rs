@@ -5,10 +5,10 @@ use crate::action::BorrowPcgAction;
 use crate::borrow_checker::BorrowCheckerInterface;
 use crate::borrow_pcg::edge_data::{LabelEdgePlaces, LabelPlacePredicate};
 use crate::borrow_pcg::has_pcs_elem::{LabelLifetimeProjectionPredicate, PlaceLabeller};
-use crate::borrow_pcg::region_projection::{RegionProjection, LifetimeProjectionLabel};
+use crate::borrow_pcg::region_projection::{LifetimeProjection, LifetimeProjectionLabel};
 use crate::free_pcs::CapabilityKind;
 use crate::utils::display::DisplayWithCompilerCtxt;
-use crate::utils::maybe_old::MaybeOldPlace;
+use crate::utils::maybe_old::MaybeLabelledPlace;
 use crate::utils::{CompilerCtxt, Place, SnapshotLocation};
 use crate::{RestoreCapability, Weaken};
 
@@ -57,8 +57,8 @@ impl<'tcx> BorrowPcgAction<'tcx> {
         }
     }
 
-    pub(crate) fn remove_region_projection_label(
-        projection: RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
+    pub(crate) fn remove_lifetime_projection_label(
+        projection: LifetimeProjection<'tcx, MaybeLabelledPlace<'tcx>>,
         context: impl Into<String>,
     ) -> Self {
         BorrowPcgAction {
@@ -70,7 +70,7 @@ impl<'tcx> BorrowPcgAction<'tcx> {
         }
     }
 
-    pub(crate) fn label_region_projection(
+    pub(crate) fn label_lifetime_projection(
         predicate: LabelLifetimeProjectionPredicate<'tcx>,
         label: Option<LifetimeProjectionLabel>,
         context: impl Into<String>,
@@ -81,7 +81,7 @@ impl<'tcx> BorrowPcgAction<'tcx> {
         }
     }
 
-    pub(crate) fn make_place_old(
+    pub(crate) fn label_place_and_update_related_capabilities(
         place: Place<'tcx>,
         location: SnapshotLocation,
         reason: LabelPlaceReason,
@@ -104,8 +104,9 @@ pub type MakePlaceOldReason = LabelPlaceReason;
 pub enum LabelPlaceReason {
     StorageDead,
     MoveOut,
+    JoinOwnedReadAndWriteCapabilities,
     ReAssign,
-    LabelSharedDerefProjections,
+    LabelDerefProjections { shared_refs_only: bool },
     Collapse,
 }
 
@@ -118,15 +119,22 @@ impl LabelPlaceReason {
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         let predicate = match self {
-            LabelPlaceReason::ReAssign => {
-                LabelPlacePredicate::PrefixWithoutIndirectionOrPostfix(place)
-            }
-            LabelPlaceReason::StorageDead | LabelPlaceReason::MoveOut => {
-                LabelPlacePredicate::PrefixWithoutIndirectionOrPostfix(place)
-            }
+            LabelPlaceReason::StorageDead
+            | LabelPlaceReason::MoveOut
+            | LabelPlaceReason::JoinOwnedReadAndWriteCapabilities => LabelPlacePredicate::Postfix {
+                place,
+                label_place_in_expansion: true,
+            },
+            LabelPlaceReason::ReAssign => LabelPlacePredicate::Postfix {
+                place,
+                label_place_in_expansion: false,
+            },
             LabelPlaceReason::Collapse => LabelPlacePredicate::Exact(place),
-            LabelPlaceReason::LabelSharedDerefProjections => {
-                LabelPlacePredicate::StrictPostfix(place)
+            LabelPlaceReason::LabelDerefProjections { shared_refs_only } => {
+                LabelPlacePredicate::DerefPostfixOf {
+                    place,
+                    shared_refs_only,
+                }
             }
         };
         let mut changed = edge.label_blocked_by_places(&predicate, labeller, ctxt);
@@ -166,6 +174,13 @@ pub enum BorrowPcgActionKind<'tcx> {
     Weaken(Weaken<'tcx>),
     Restore(RestoreCapability<'tcx>),
     MakePlaceOld(LabelPlaceAction<'tcx>),
+    /// Remove an edge from the PCG. In terms of the PCG itself, the validity
+    /// conditions associated with the edge are not relevant (there is no
+    /// situation where an edge is removed only under certain conditions).
+    /// However, clients may be interested in the conditions, for example, the
+    /// symbolic-execution based Prusti purification already performs some
+    /// filtering on edges based on validity conditions and might want to ignore
+    /// removal actions for edges that it already ignored.
     RemoveEdge(BorrowPcgEdge<'tcx>),
     AddEdge {
         edge: BorrowPcgEdge<'tcx>,

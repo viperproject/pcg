@@ -1,6 +1,6 @@
 #![allow(stable_features)]
 /* Depending on the client's rust version, some of the features below
-   may already be stabilized */
+may already be stabilized */
 #![feature(rustc_private)]
 #![feature(stmt_expr_attributes)]
 #![feature(proc_macro_hygiene)]
@@ -42,8 +42,8 @@ fn go(args: Vec<String>) {
 }
 
 #[cfg(feature = "memory_profiling")]
-async fn handle_get_heap(
-) -> Result<impl axum::response::IntoResponse, (axum::http::StatusCode, String)> {
+async fn handle_get_heap()
+-> Result<impl axum::response::IntoResponse, (axum::http::StatusCode, String)> {
     let mut prof_ctl = jemalloc_pprof::PROF_CTL.as_ref().unwrap().lock().await;
     if !prof_ctl.activated() {
         return Err((

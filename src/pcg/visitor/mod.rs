@@ -1,28 +1,25 @@
-use itertools::Itertools;
-
 use crate::action::{BorrowPcgAction, PcgAction};
 use crate::borrow_pcg::action::LabelPlaceReason;
 use crate::borrow_pcg::borrow_pcg_edge::BorrowPcgEdge;
-use crate::borrow_pcg::borrow_pcg_expansion::PlaceExpansion;
 use crate::borrow_pcg::edge::outlives::{BorrowFlowEdge, BorrowFlowEdgeKind};
-use crate::borrow_pcg::region_projection::{PcgRegion, RegionProjection};
-use crate::free_pcs::{CapabilityKind, FreePlaceCapabilitySummary, RepackExpand};
-use crate::pcg::obtain::{PlaceExpander, PlaceObtainer};
+use crate::borrow_pcg::region_projection::{LifetimeProjection, PcgRegion};
+use crate::free_pcs::{CapabilityKind, OwnedPcg, RepackExpand};
+use crate::pcg::PcgDebugData;
+use crate::pcg::ctxt::AnalysisCtxt;
+use crate::pcg::obtain::{PlaceCollapser, PlaceObtainer};
 use crate::pcg::place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface};
 use crate::pcg::triple::TripleWalker;
-use crate::pcg::{PcgDebugData, PcgMutRefLike};
-use crate::pcg_validity_assert;
 use crate::rustc_interface::middle::mir::{self, Location, Operand, Rvalue, Statement, Terminator};
 use crate::utils::data_structures::HashSet;
 use crate::utils::display::DisplayWithCompilerCtxt;
 
 use crate::action::PcgActions;
-use crate::utils::maybe_old::MaybeOldPlace;
+use crate::utils::maybe_old::MaybeLabelledPlace;
 use crate::utils::visitor::FallableVisitor;
-use crate::utils::{self, AnalysisLocation, CompilerCtxt, HasPlace, Place};
+use crate::utils::{self, AnalysisLocation, CompilerCtxt, HasPlace, Place, SnapshotLocation};
 
 use super::{
-    AnalysisObject, EvalStmtPhase, PCGNode, PCGNodeLike, Pcg, PcgError, PcgUnsupportedError,
+    AnalysisObject, EvalStmtPhase, PCGNodeLike, Pcg, PcgError, PcgNode, PcgUnsupportedError,
 };
 
 mod assign;
@@ -31,6 +28,7 @@ mod obtain;
 mod pack;
 mod stmt;
 mod triple;
+mod upgrade;
 
 pub(crate) struct PcgVisitor<'pcg, 'mir, 'tcx> {
     pcg: &'pcg mut Pcg<'tcx>,
@@ -42,6 +40,14 @@ pub(crate) struct PcgVisitor<'pcg, 'mir, 'tcx> {
 }
 
 impl<'pcg, 'mir, 'tcx> PcgVisitor<'pcg, 'mir, 'tcx> {
+    fn analysis_ctxt(&self) -> AnalysisCtxt<'mir, 'tcx> {
+        AnalysisCtxt::new(self.ctxt, self.location().block)
+    }
+
+    fn prev_snapshot_location(&self) -> SnapshotLocation {
+        SnapshotLocation::before(self.analysis_location)
+    }
+
     fn phase(&self) -> EvalStmtPhase {
         self.analysis_location.eval_stmt_phase
     }
@@ -56,11 +62,11 @@ impl<'pcg, 'mir, 'tcx> PcgVisitor<'pcg, 'mir, 'tcx> {
 
     fn connect_outliving_projections(
         &mut self,
-        source_proj: RegionProjection<'tcx, MaybeOldPlace<'tcx>>,
+        source_proj: LifetimeProjection<'tcx, MaybeLabelledPlace<'tcx>>,
         target: Place<'tcx>,
         kind: impl Fn(PcgRegion) -> BorrowFlowEdgeKind,
     ) -> Result<(), PcgError> {
-        for target_proj in target.region_projections(self.ctxt).into_iter() {
+        for target_proj in target.lifetime_projections(self.ctxt).into_iter() {
             if self.outlives(source_proj.region(self.ctxt), target_proj.region(self.ctxt)) {
                 self.record_and_apply_action(
                     BorrowPcgAction::add_edge(
@@ -142,9 +148,9 @@ impl<'tcx> FallableVisitor<'tcx> for PcgVisitor<'_, '_, 'tcx> {
             }
             Operand::Move(place) => {
                 if self.phase() == EvalStmtPhase::PostOperands {
-                    let snapshot_location = self.place_obtainer().prev_snapshot_location();
+                    let snapshot_location = self.prev_snapshot_location();
                     self.record_and_apply_action(
-                        BorrowPcgAction::make_place_old(
+                        BorrowPcgAction::label_place_and_update_related_capabilities(
                             (*place).into(),
                             snapshot_location,
                             LabelPlaceReason::MoveOut,
@@ -219,38 +225,67 @@ impl<'tcx> FallableVisitor<'tcx> for PcgVisitor<'_, '_, 'tcx> {
 }
 
 impl<'state, 'mir: 'state> PlaceObtainer<'state, 'mir, '_> {
-    pub(crate) fn collapse_owned_places(&mut self) -> Result<(), PcgError> {
-        let ctxt = self.ctxt;
-        for caps in self.pcg.owned.data.clone().unwrap().expansions() {
-            let mut expansions = caps
-                .expansions()
-                .clone()
-                .into_iter()
-                .sorted_by_key(|(p, _)| p.projection.len())
-                .collect::<Vec<_>>();
-            while let Some((base, expansion)) = expansions.pop() {
-                let expansion_places = base.expansion_places(&expansion, ctxt);
+    fn collapse_iteration(
+        &mut self,
+        local: mir::Local,
+        iteration: usize,
+    ) -> Result<bool, PcgError> {
+        let local_expansions = self.pcg.owned.data.as_ref().unwrap()[local].get_allocated();
+        let leaf_expansions = local_expansions.leaf_expansions(self.ctxt);
+        let parent_places = leaf_expansions
+            .iter()
+            .map(|pe| pe.place)
+            .collect::<HashSet<_>>();
+        let places_to_collapse = parent_places
+            .into_iter()
+            .filter_map(|place| {
+                let expansion_places = local_expansions.all_children_of(place, self.ctxt);
                 if expansion_places
                     .iter()
-                    .all(|p| !self.pcg.borrow.graph.contains(*p, ctxt))
-                    && let Some(candidate_cap) = self.pcg.capabilities.get(expansion_places[0])
-                    && expansion_places
-                        .iter()
-                        .all(|p| self.pcg.capabilities.get(*p) == Some(candidate_cap))
+                    .all(|p| !self.pcg.borrow.graph.contains(*p, self.ctxt))
+                    && let Some(candidate_cap) = self
+                        .pcg
+                        .capabilities
+                        .uniform_capability(expansion_places.into_iter(), self.ctxt)
                 {
-                    self.collapse(
-                        base,
-                        candidate_cap,
-                        format!("Collapse owned place {}", base.to_short_string(self.ctxt)),
-                    )?;
-                    if base.projection.is_empty()
-                        && self.pcg.capabilities.get(base) == Some(CapabilityKind::Read)
-                    {
-                        self.pcg
-                            .capabilities
-                            .insert(base, CapabilityKind::Exclusive, self.ctxt);
-                    }
+                    Some((place, candidate_cap))
+                } else {
+                    None
                 }
+            })
+            .collect::<HashSet<_>>();
+        if places_to_collapse.is_empty() {
+            return Ok(false);
+        }
+        for (place, candidate_cap) in places_to_collapse {
+            self.collapse_owned_places_and_lifetime_projections_to(
+                place,
+                candidate_cap,
+                format!(
+                    "Collapse owned place {} (iteration {})",
+                    place.to_short_string(self.ctxt),
+                    iteration
+                ),
+                self.ctxt,
+            )?;
+            if place.projection.is_empty()
+                && self.pcg.capabilities.get(place, self.ctxt) == Some(CapabilityKind::Read)
+            {
+                self.pcg.capabilities.insert(
+                    place,
+                    CapabilityKind::Exclusive,
+                    self.analysis_ctxt(),
+                );
+            }
+        }
+        Ok(true)
+    }
+    pub(crate) fn collapse_owned_places(&mut self) -> Result<(), PcgError> {
+        let allocated_locals = self.pcg.owned.data.as_ref().unwrap().allocated_locals();
+        for local in allocated_locals {
+            let mut iteration = 1;
+            while self.collapse_iteration(local, iteration)? {
+                iteration += 1;
             }
         }
         Ok(())
@@ -294,13 +329,17 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 self.visit_statement_fallable(statement, location)?
             }
             AnalysisObject::Terminator(terminator) => {
-                self.visit_terminator_fallable(terminator, location)?
+                self.visit_terminator_fallable(terminator, location)?;
+                if self.phase() == EvalStmtPhase::PostMain {
+                    // when the analysis object is a terminator, this step ensures
+                    // the owned PCG is in the most-packed state for the join.
+                    self.place_obtainer().collapse_owned_places()?;
+                }
             }
         }
         if self.phase() == EvalStmtPhase::PostMain {
-            self.pcg
-                .as_mut_ref()
-                .assert_validity_at_location(self.ctxt, location);
+            // self.pcg .as_mut_ref()
+            //     .assert_validity_at_location(self.ctxt, location);
         }
         Ok(self.actions)
     }
@@ -308,8 +347,8 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
     #[allow(unused)]
     fn any_reachable_reverse(
         &self,
-        node: PCGNode<'tcx>,
-        predicate: impl Fn(&PCGNode<'tcx>) -> bool,
+        node: PcgNode<'tcx>,
+        predicate: impl Fn(&PcgNode<'tcx>) -> bool,
     ) -> bool {
         let mut stack = vec![node];
         let mut seen = HashSet::default();
@@ -350,19 +389,19 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             borrow.to_short_string(self.ctxt)
         );
         let blocked_place = borrow.blocked_place.place();
-        if self
-            .pcg
-            .borrow
-            .graph()
-            .contains(borrow.deref_place(self.ctxt), self.ctxt)
-        {
-            let upgrade_action = BorrowPcgAction::restore_capability(
-                borrow.deref_place(self.ctxt).place(),
-                CapabilityKind::Exclusive,
-                "perform_borrow_initial_pre_operand_actions",
-            );
-            self.record_and_apply_action(upgrade_action.into())?;
-        }
+        //     if self
+        //         .pcg
+        //         .borrow
+        //         .graph()
+        //         .contains(borrow.deref_place(self.ctxt), self.ctxt)
+        //     {
+        //         let upgrade_action = BorrowPcgAction::restore_capability(
+        //             borrow.deref_place(self.ctxt).place(),
+        //             CapabilityKind::Exclusive,
+        //             "perform_borrow_initial_pre_operand_actions",
+        //         );
+        //         self.record_and_apply_action(upgrade_action.into())?;
+        //     }
         if !blocked_place.is_owned(self.ctxt) {
             self.place_obtainer()
                 .remove_read_permission_upwards_and_label_rps(
@@ -384,9 +423,9 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         let leaf_future_node_places = leaf_nodes
             .iter()
             .filter_map(|node| match node {
-                PCGNode::Place(_) => None,
-                PCGNode::RegionProjection(region_projection) => {
-                    if region_projection.is_placeholder() {
+                PcgNode::Place(_) => None,
+                PcgNode::LifetimeProjection(region_projection) => {
+                    if region_projection.is_future() {
                         region_projection.base.as_current_place()
                     } else {
                         None
@@ -395,10 +434,13 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             })
             .collect::<HashSet<_>>();
         for place in leaf_future_node_places {
-            if !self
-                .ctxt
-                .bc
-                .is_directly_blocked(place, self.location(), self.ctxt)
+            // If the place is a leaf, and its not borrowed, then we remove the future label
+            if self.pcg.is_expansion_leaf(place, self.ctxt)
+                && !self
+                    .ctxt
+                    .bc
+                    .is_directly_blocked(place, self.location(), self.ctxt)
+                && self.pcg.capabilities.get(place, self.ctxt).is_none()
             {
                 let action = PcgAction::restore_capability(
                     place,
@@ -413,37 +455,14 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
     }
 }
 
-impl<'tcx> FreePlaceCapabilitySummary<'tcx> {
+impl<'tcx> OwnedPcg<'tcx> {
     pub(crate) fn perform_expand_action(
         &mut self,
         expand: RepackExpand<'tcx>,
         capabilities: &mut PlaceCapabilities<'tcx>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
+        ctxt: AnalysisCtxt<'_, 'tcx>,
     ) -> Result<(), PcgError> {
-        let target_places = expand.target_places(ctxt);
-        let capability_projections = self.locals_mut()[expand.local()].get_allocated_mut();
-        capability_projections.insert_expansion(
-            expand.from,
-            PlaceExpansion::from_places(target_places.clone(), ctxt),
-        );
-        let source_cap = if expand.capability.is_read() {
-            expand.capability
-        } else {
-            capabilities.get(expand.from).unwrap_or_else(|| {
-                pcg_validity_assert!(false, "no cap for {}", expand.from.to_short_string(ctxt));
-                panic!("no cap for {}", expand.from.to_short_string(ctxt));
-                // For debugging, assume exclusive, we can visualize the graph to see what's going on
-                // CapabilityKind::Exclusive
-            })
-        };
-        for target_place in target_places {
-            capabilities.insert(target_place, source_cap, ctxt);
-        }
-        if expand.capability.is_read() {
-            capabilities.insert(expand.from, CapabilityKind::Read, ctxt);
-        } else {
-            capabilities.remove(expand.from, ctxt);
-        }
-        Ok(())
+        let expansions = self.locals_mut()[expand.local()].get_allocated_mut();
+        expansions.perform_expand_action(expand, capabilities, ctxt)
     }
 }

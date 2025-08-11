@@ -2,20 +2,21 @@ use crate::{
     borrow_checker::BorrowCheckerInterface,
     borrow_pcg::{
         borrow_pcg_edge::{BlockedNode, LocalNode},
-        domain::{
-            FunctionCallAbstractionInput, FunctionCallAbstractionOutput,
-        },
+        domain::{FunctionCallAbstractionInput, FunctionCallAbstractionOutput},
         edge::abstraction::AbstractionBlockEdge,
         edge_data::{EdgeData, LabelEdgePlaces, LabelPlacePredicate},
-        has_pcs_elem::{HasPcgElems, LabelLifetimeProjection, LabelLifetimeProjectionPredicate, LabelLifetimeProjectionResult, PlaceLabeller},
+        has_pcs_elem::{
+            LabelLifetimeProjection, LabelLifetimeProjectionPredicate,
+            LabelLifetimeProjectionResult, PlaceLabeller,
+        },
         region_projection::LifetimeProjectionLabel,
     },
-    pcg::PCGNode,
+    pcg::PcgNode,
     rustc_interface::{
         hir::def_id::DefId,
         middle::{mir::Location, ty::GenericArgsRef},
     },
-    utils::{display::DisplayWithCompilerCtxt, validity::HasValidityCheck, CompilerCtxt},
+    utils::{CompilerCtxt, display::DisplayWithCompilerCtxt, validity::HasValidityCheck},
 };
 
 #[derive(PartialEq, Eq, Clone, Copy, Debug, Hash)]
@@ -82,7 +83,7 @@ impl<'tcx> EdgeData<'tcx> for FunctionCallAbstraction<'tcx> {
     fn blocked_nodes<'slf, BC: Copy>(
         &'slf self,
         ctxt: CompilerCtxt<'_, 'tcx, BC>,
-    ) -> Box<dyn std::iter::Iterator<Item = PCGNode<'tcx>> + 'slf>
+    ) -> Box<dyn std::iter::Iterator<Item = PcgNode<'tcx>> + 'slf>
     where
         'tcx: 'slf,
     {
@@ -123,19 +124,6 @@ impl<'tcx, 'a> DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx
             self.location,
             self.edge.to_short_string(ctxt)
         )
-    }
-}
-
-impl<'tcx, T> HasPcgElems<T> for FunctionCallAbstraction<'tcx>
-where
-    AbstractionBlockEdge<
-        'tcx,
-        FunctionCallAbstractionInput<'tcx>,
-        FunctionCallAbstractionOutput<'tcx>,
-    >: HasPcgElems<T>,
-{
-    fn pcg_elems(&mut self) -> Vec<&mut T> {
-        self.edge.pcg_elems()
     }
 }
 

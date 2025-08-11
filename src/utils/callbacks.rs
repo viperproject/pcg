@@ -11,7 +11,7 @@ use derive_more::From;
 use crate::{
     PcgCtxt, PcgOutput,
     borrow_checker::{
-        RustBorrowCheckerInterface,
+        InScopeBorrows, RustBorrowCheckerInterface,
         r#impl::{NllBorrowCheckerImpl, PoloniusBorrowChecker},
     },
     borrow_pcg::region_projection::{PcgRegion, RegionIdx},
@@ -23,7 +23,10 @@ use crate::{
             self, BorrowIndex, BorrowSet, LocationTable, PoloniusInput, PoloniusOutput,
             RegionInferenceContext, RichLocation,
         },
-        data_structures::fx::{FxHashMap, FxHashSet},
+        data_structures::{
+            fx::{FxHashMap, FxHashSet},
+            graph::is_cyclic,
+        },
         driver::{self, Compilation, init_rustc_env_logger},
         hir::{def::DefKind, def_id::LocalDefId},
         interface::{Config, interface::Compiler},
@@ -36,7 +39,8 @@ use crate::{
         session::{EarlyDiagCtxt, Session, config::ErrorOutputType},
         span::SpanSnippetError,
     },
-    utils::MAX_BASIC_BLOCKS,
+    utils::{DEBUG_BLOCK, MAX_BASIC_BLOCKS, SKIP_BODIES_WITH_LOOPS},
+    validity_checks_enabled,
 };
 
 #[cfg(feature = "visualization")]
@@ -44,7 +48,7 @@ use crate::visualization::bc_facts_graph::{
     RegionPrettyPrinter, region_inference_outlives, subset_anywhere, subset_at_location,
 };
 
-use super::{CompilerCtxt, Place, env_feature_enabled};
+use super::{CompilerCtxt, Place};
 
 pub struct PcgCallbacks;
 
@@ -65,7 +69,7 @@ impl driver::Callbacks for PcgCallbacks {
         // SAFETY: `config()` overrides the borrowck query to save the bodies
         // from `tcx` in `BODIES`
         unsafe {
-            run_pcg_on_all_fns(tcx, env_feature_enabled("PCG_POLONIUS").unwrap_or(false));
+            run_pcg_on_all_fns(tcx, *crate::utils::POLONIUS);
         }
         if in_cargo_crate() {
             Compilation::Continue
@@ -180,6 +184,9 @@ pub(crate) unsafe fn take_stored_body(
 }
 
 fn should_check_body(body: &Body<'_>) -> bool {
+    if *SKIP_BODIES_WITH_LOOPS && is_cyclic(&body.basic_blocks) {
+        return false;
+    }
     if let Some(len) = *MAX_BASIC_BLOCKS {
         body.basic_blocks.len() <= len
     } else {
@@ -196,6 +203,17 @@ fn is_primary_crate() -> bool {
 /// Functions bodies stored in `BODIES` must come from the same `tcx`.
 pub(crate) unsafe fn run_pcg_on_all_fns(tcx: TyCtxt<'_>, polonius: bool) {
     tracing::info!("Running PCG on all functions");
+    tracing::info!(
+        "Validity checks {}",
+        if validity_checks_enabled() {
+            "enabled"
+        } else {
+            "disabled"
+        }
+    );
+    if let Some(block) = *DEBUG_BLOCK {
+        tracing::info!("Debug block: {:?}", block);
+    }
     if in_cargo_crate() && !is_primary_crate() {
         // We're running in cargo, but not compiling the primary package
         // We don't want to check dependencies, so abort
@@ -212,12 +230,12 @@ pub(crate) unsafe fn run_pcg_on_all_fns(tcx: TyCtxt<'_>, polonius: bool) {
 
     let mut item_names = vec![];
 
-    let user_specified_vis_dir = std::env::var("PCG_VISUALIZATION_DATA_DIR");
-    let vis_dir: Option<&str> = if env_feature_enabled("PCG_VISUALIZATION").unwrap_or(false) {
-        Some(match user_specified_vis_dir.as_ref() {
-            Ok(dir) => dir,
-            Err(_) => "visualization/data",
-        })
+    let vis_dir: Option<&str> = if *crate::utils::VISUALIZATION {
+        Some(
+            crate::utils::VISUALIZATION_DATA_DIR
+                .as_deref()
+                .unwrap_or("visualization/data"),
+        )
     } else {
         None
     };
@@ -243,16 +261,16 @@ pub(crate) unsafe fn run_pcg_on_all_fns(tcx: TyCtxt<'_>, polonius: bool) {
             continue;
         }
         let item_name = tcx.def_path_str(def_id.to_def_id()).to_string();
-        if let Ok(function) = std::env::var("PCG_CHECK_FUNCTION")
-            && function != item_name
+        if let Some(ref function) = *crate::utils::CHECK_FUNCTION
+            && function != &item_name
         {
             tracing::debug!(
                 "Skipping function: {item_name} because PCG_CHECK_FUNCTION is set to {function}"
             );
             continue;
         }
-        if let Ok(function) = std::env::var("PCG_SKIP_FUNCTION")
-            && function == item_name
+        if let Some(ref function) = *crate::utils::SKIP_FUNCTION
+            && function == &item_name
         {
             tracing::info!(
                 "Skipping function: {item_name} because PCG_SKIP_FUNCTION is set to {function}"
@@ -390,7 +408,14 @@ pub enum RustBorrowCheckerImpl<'mir, 'tcx> {
 }
 
 impl<'tcx> RustBorrowCheckerInterface<'tcx> for RustBorrowCheckerImpl<'_, 'tcx> {
-    fn is_live(&self, node: pcg::PCGNode<'tcx>, location: Location) -> bool {
+    fn borrows_in_scope_at(&self, location: Location, before: bool) -> InScopeBorrows {
+        match self {
+            RustBorrowCheckerImpl::Polonius(bc) => bc.borrows_in_scope_at(location, before),
+            RustBorrowCheckerImpl::Nll(bc) => bc.borrows_in_scope_at(location, before),
+        }
+    }
+
+    fn is_live(&self, node: pcg::PcgNode<'tcx>, location: Location) -> bool {
         match self {
             RustBorrowCheckerImpl::Polonius(bc) => bc.is_live(node, location),
             RustBorrowCheckerImpl::Nll(bc) => bc.is_live(node, location),
@@ -465,22 +490,22 @@ impl<'tcx> RustBorrowCheckerInterface<'tcx> for RustBorrowCheckerImpl<'_, 'tcx> 
 impl<'mir, 'tcx> RustBorrowCheckerImpl<'mir, 'tcx> {
     fn region_pretty_printer(&mut self) -> &mut RegionPrettyPrinter<'mir, 'tcx> {
         match self {
-            RustBorrowCheckerImpl::Polonius(bc) => &mut bc.pretty_printer,
-            RustBorrowCheckerImpl::Nll(bc) => &mut bc.pretty_printer,
+            RustBorrowCheckerImpl::Polonius(bc) => &mut bc.borrow_checker_data.pretty_printer,
+            RustBorrowCheckerImpl::Nll(bc) => &mut bc.borrow_checker_data.pretty_printer,
         }
     }
 
     pub fn region_infer_ctxt(&self) -> &RegionInferenceContext<'tcx> {
         match self {
-            RustBorrowCheckerImpl::Polonius(bc) => bc.region_cx,
-            RustBorrowCheckerImpl::Nll(bc) => bc.region_cx,
+            RustBorrowCheckerImpl::Polonius(bc) => bc.borrow_checker_data.region_cx,
+            RustBorrowCheckerImpl::Nll(bc) => bc.borrow_checker_data.region_cx,
         }
     }
 }
 
 fn emit_and_check_annotations(item_name: String, output: &mut PcgOutput<'_, '_, &bumpalo::Bump>) {
-    let emit_pcg_annotations = env_feature_enabled("PCG_EMIT_ANNOTATIONS").unwrap_or(false);
-    let check_pcg_annotations = env_feature_enabled("PCG_CHECK_ANNOTATIONS").unwrap_or(false);
+    let emit_pcg_annotations = *crate::utils::EMIT_ANNOTATIONS;
+    let check_pcg_annotations = *crate::utils::CHECK_ANNOTATIONS;
 
     let ctxt = output.ctxt();
 
@@ -580,7 +605,12 @@ fn emit_borrowcheck_graphs<'a, 'tcx: 'a, 'bc>(
                     for (region, indices) in loans {
                         writeln!(loans_file, "Region: {region:?}").unwrap();
                         for index in indices {
-                            writeln!(loans_file, "  {:?}", bc.borrows[index].region()).unwrap();
+                            writeln!(
+                                loans_file,
+                                "  {:?}",
+                                bc.borrow_checker_data.borrows[index].region()
+                            )
+                            .unwrap();
                         }
                     }
                 }

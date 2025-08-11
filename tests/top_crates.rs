@@ -8,7 +8,7 @@ use serde_derive::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 
 mod common;
-use common::{get, run_on_crate, RunOnCrateOptions, Target};
+use common::{RunOnCrateOptions, Target, get, run_on_crate};
 
 use crate::common::RunOnCrateResult;
 
@@ -17,7 +17,11 @@ use crate::common::RunOnCrateResult;
 pub fn top_crates() {
     let num_crates = std::env::var("PCG_NUM_TEST_CRATES").unwrap_or("500".to_string());
     let parallelism = std::env::var("PCG_TEST_CRATE_PARALLELISM").unwrap_or("1".to_string());
-    top_crates_parallel(num_crates.parse().unwrap(), Some("2025-03-13"), parallelism.parse().unwrap())
+    top_crates_parallel(
+        num_crates.parse().unwrap(),
+        Some("2025-03-13"),
+        parallelism.parse().unwrap(),
+    )
 }
 
 pub fn top_crates_parallel(n: usize, date: Option<&str>, parallelism: usize) {
@@ -37,24 +41,21 @@ pub fn top_crates_parallel(n: usize, date: Option<&str>, parallelism: usize) {
         .panic_fuse()
         .enumerate()
         .for_each(|(i, krate)| {
-            if let Some(start_from) = *TEST_CRATES_START_FROM && i < start_from {
+            if let Some(start_from) = *TEST_CRATES_START_FROM
+                && i < start_from
+            {
                 println!("Skipping: {i} ({})", krate.name);
                 return;
             }
 
             let version = krate.version();
             println!("Starting: {i} ({})", krate.name);
-            let result = run_on_crate(
-                &krate.name,
-                version,
-                date,
-                RunOnCrateOptions::RunPCG {
-                    target: Target::Release,
-                    validity_checks: false,
-                    function: None,
-                    extra_env_vars: extra_env_vars.clone(),
-                },
-            );
+            let result = run_on_crate(&krate.name, version, date, RunOnCrateOptions::RunPCG {
+                target: Target::Release,
+                validity_checks: false,
+                function: None,
+                extra_env_vars: extra_env_vars.clone(),
+            });
             if matches!(result, RunOnCrateResult::Failed) {
                 panic!("Failed: {i} ({}: {})", krate.name, version);
             }

@@ -8,21 +8,21 @@ mod mutate;
 
 use crate::{
     borrow_pcg::{
-        borrow_pcg_expansion::PlaceExpansion,
         has_pcs_elem::{LabelLifetimeProjection, LabelLifetimeProjectionPredicate},
         region_projection::LifetimeProjectionLabel,
     },
-    pcg::{PCGNode, PCGNodeLike},
+    free_pcs::ExpandedPlace,
+    pcg::{PCGNodeLike, PcgNode, PcgUnsupportedError},
     rustc_interface::{
         data_structures::fx::{FxHashMap, FxHashSet},
         middle::mir::{self},
     },
     utils::{
+        DEBUG_BLOCK, DEBUG_IMGCAT, DebugImgcat, Place,
         data_structures::HashSet,
         display::{DebugLines, DisplayWithCompilerCtxt},
-        maybe_old::MaybeOldPlace,
+        maybe_old::MaybeLabelledPlace,
         validity::HasValidityCheck,
-        Place, BORROWS_DEBUG_IMGCAT,
     },
 };
 use frozen::{CachedLeafEdges, FrozenGraphRef};
@@ -38,8 +38,8 @@ use super::{
 use crate::borrow_pcg::edge::abstraction::AbstractionType;
 use crate::borrow_pcg::edge::borrow::BorrowEdge;
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
-use crate::utils::json::ToJsonWithCompilerCtxt;
 use crate::utils::CompilerCtxt;
+use crate::utils::json::ToJsonWithCompilerCtxt;
 
 /// The Borrow PCG Graph.
 #[derive(Clone, Debug, Default)]
@@ -61,8 +61,8 @@ impl<'tcx> HasValidityCheck<'tcx> for BorrowsGraph<'tcx> {
         let nodes = self.nodes(ctxt);
         // TODO
         for node in nodes.iter() {
-            if let Some(PCGNode::RegionProjection(rp)) = node.try_to_local_node(ctxt)
-                && rp.is_placeholder()
+            if let Some(PcgNode::LifetimeProjection(rp)) = node.try_to_local_node(ctxt)
+                && rp.is_future()
                 && rp.base.as_current_place().is_some()
             {
                 let current_rp = rp.with_label(None, ctxt);
@@ -103,11 +103,33 @@ impl PartialEq for BorrowsGraph<'_> {
     }
 }
 
-pub(crate) fn borrows_imgcat_debug() -> bool {
-    *BORROWS_DEBUG_IMGCAT
+pub(crate) fn borrows_imgcat_debug(
+    block: mir::BasicBlock,
+    debug_imgcat: Option<DebugImgcat>,
+) -> bool {
+    if let Some(debug_block) = *DEBUG_BLOCK
+        && debug_block != block
+    {
+        return false;
+    }
+    if let Some(debug_imgcat) = debug_imgcat {
+        DEBUG_IMGCAT.contains(&debug_imgcat)
+    } else {
+        !DEBUG_IMGCAT.is_empty()
+    }
 }
 
 impl<'tcx> BorrowsGraph<'tcx> {
+    pub(crate) fn places(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> HashSet<Place<'tcx>> {
+        self.nodes(ctxt)
+            .into_iter()
+            .filter_map(|node| match node {
+                PcgNode::Place(place) => place.as_current_place(),
+                _ => None,
+            })
+            .collect()
+    }
+
     pub(crate) fn label_region_projection(
         &mut self,
         predicate: &LabelLifetimeProjectionPredicate<'tcx>,
@@ -120,29 +142,52 @@ impl<'tcx> BorrowsGraph<'tcx> {
         })
     }
 
-    pub(crate) fn contains_borrow_pcg_expansion_of(
+    pub(crate) fn leaf_places(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> HashSet<Place<'tcx>> {
+        self.frozen_graph()
+            .leaf_nodes(ctxt)
+            .into_iter()
+            .filter_map(|node| match node {
+                PcgNode::Place(place) => place.as_current_place(),
+                _ => None,
+            })
+            .collect()
+    }
+
+    pub(crate) fn contains_deref_edge_to(&self, place: Place<'tcx>) -> bool {
+        self.edges().any(|edge| {
+            if let BorrowPcgEdgeKind::Deref(e) = edge.kind {
+                e.deref_place == place.into()
+            } else {
+                false
+            }
+        })
+    }
+
+    pub(crate) fn contains_borrow_pcg_expansion(
         &self,
-        base: Place<'tcx>,
-        _place_expansion: &PlaceExpansion<'tcx>,
+        expanded_place: &ExpandedPlace<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> bool {
-        self.edges_blocking(base.into(), ctxt)
-            .any(|edge| matches!(edge.kind(), BorrowPcgEdgeKind::BorrowPcgExpansion(_)))
+    ) -> Result<bool, PcgUnsupportedError> {
+        let expanded_places = expanded_place.expansion_places(ctxt)?;
+        let nodes = self.nodes(ctxt);
+        Ok(expanded_places
+            .into_iter()
+            .all(|place| nodes.contains(&place.into())))
     }
 
     pub(crate) fn owned_places(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> HashSet<Place<'tcx>> {
         let mut result = HashSet::default();
         for edge in self.edges() {
             match edge.kind {
-                BorrowPcgEdgeKind::BorrowPcgExpansion(e) => {
-                    if let Some(base) = e.base.as_current_place()
+                BorrowPcgEdgeKind::Deref(e) => {
+                    if let Some(base) = e.blocked_place.as_current_place()
                         && base.is_owned(ctxt)
                     {
                         result.insert(base);
                     }
                 }
                 BorrowPcgEdgeKind::Borrow(BorrowEdge::Local(borrow)) => {
-                    if let MaybeOldPlace::Current { place } = borrow.blocked_place
+                    if let MaybeLabelledPlace::Current(place) = borrow.blocked_place
                         && place.is_owned(ctxt)
                     {
                         result.insert(place);
@@ -165,7 +210,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         None
     }
 
-    pub(crate) fn contains<T: Into<PCGNode<'tcx>>>(
+    pub(crate) fn contains<T: Into<PcgNode<'tcx>>>(
         &self,
         node: T,
         repacker: CompilerCtxt<'_, 'tcx>,
@@ -249,7 +294,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
     pub(crate) fn nodes<BC: Copy>(
         &self,
         ctxt: CompilerCtxt<'_, 'tcx, BC>,
-    ) -> FxHashSet<PCGNode<'tcx>> {
+    ) -> FxHashSet<PcgNode<'tcx>> {
         self.edges()
             .flat_map(|edge| {
                 edge.blocked_nodes(ctxt)
@@ -259,8 +304,8 @@ impl<'tcx> BorrowsGraph<'tcx> {
             .collect()
     }
 
-    pub(crate) fn roots(&self, repacker: CompilerCtxt<'_, 'tcx>) -> FxHashSet<PCGNode<'tcx>> {
-        let roots: FxHashSet<PCGNode<'tcx>> = self
+    pub(crate) fn roots(&self, repacker: CompilerCtxt<'_, 'tcx>) -> FxHashSet<PcgNode<'tcx>> {
+        let roots: FxHashSet<PcgNode<'tcx>> = self
             .nodes(repacker)
             .into_iter()
             .filter(|node| self.is_root(*node, repacker))
@@ -268,7 +313,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         roots
     }
 
-    pub(crate) fn is_root<T: Copy + Into<PCGNode<'tcx>>>(
+    pub(crate) fn is_root<T: Copy + Into<PcgNode<'tcx>>>(
         &self,
         node: T,
         ctxt: CompilerCtxt<'_, 'tcx>,
@@ -276,7 +321,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         self.contains(node.into(), ctxt)
             && match node.into().as_local_node(ctxt) {
                 Some(node) => match node {
-                    PCGNode::Place(place) if place.is_owned(ctxt) => true,
+                    PcgNode::Place(place) if place.is_owned(ctxt) => true,
                     _ => !self.has_edge_blocked_by(node, ctxt),
                 },
                 None => true,
@@ -305,7 +350,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         &'graph self,
         node: LocalNode<'tcx>,
         ctxt: CompilerCtxt<'mir, 'tcx>,
-    ) -> Vec<PCGNode<'tcx>> {
+    ) -> Vec<PcgNode<'tcx>> {
         self.edges_blocked_by(node, ctxt)
             .flat_map(|edge| edge.blocked_nodes(ctxt).collect::<Vec<_>>())
             .collect()
@@ -372,6 +417,12 @@ impl<'tcx> BorrowsGraph<'tcx> {
 pub(crate) struct Conditioned<T> {
     pub(crate) conditions: ValidityConditions,
     pub(crate) value: T,
+}
+
+impl<T> Conditioned<T> {
+    pub(crate) fn new(value: T, conditions: ValidityConditions) -> Self {
+        Self { conditions, value }
+    }
 }
 
 impl<'tcx, T: ToJsonWithCompilerCtxt<'tcx, BC>, BC: Copy> ToJsonWithCompilerCtxt<'tcx, BC>

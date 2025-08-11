@@ -5,8 +5,9 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 use crate::{
-    free_pcs::{CapabilityKind, CapabilityLocal, CapabilityProjections},
+    free_pcs::{CapabilityKind, LocalExpansions, OwnedPcgLocal},
     pcg::{
+        ctxt::AnalysisCtxt,
         place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface},
         triple::{PlaceCondition, Triple},
     },
@@ -16,9 +17,9 @@ use crate::{
 
 use crate::rustc_interface::middle::mir::RETURN_PLACE;
 
-use super::CapabilityLocals;
+use super::OwnedPcgData;
 
-impl<'tcx> CapabilityLocals<'tcx> {
+impl<'tcx> OwnedPcgData<'tcx> {
     fn check_pre_satisfied(
         &self,
         pre: PlaceCondition<'tcx>,
@@ -56,7 +57,7 @@ impl<'tcx> CapabilityLocals<'tcx> {
                     CapabilityKind::ShallowExclusive => unreachable!(),
                 }
                 if place.is_owned(ctxt) {
-                    if capabilities.get(place).is_some() {
+                    if capabilities.get(place, ctxt).is_some() {
                         // pcg_validity_assert!(
                         //     matches!(
                         //         current_cap.partial_cmp(&required_cap),
@@ -65,13 +66,20 @@ impl<'tcx> CapabilityLocals<'tcx> {
                         //     "Capability {current_cap:?} is not >= {required_cap:?} for {place:?}"
                         // )
                     } else {
-                        pcg_validity_assert!(false, "No capability for {}", place.to_short_string(ctxt));
+                        pcg_validity_assert!(
+                            false,
+                            [ctxt],
+                            "No capability for {}",
+                            place.to_short_string(ctxt)
+                        );
                     }
                 }
             }
             PlaceCondition::Return => {
                 pcg_validity_assert!(
-                    capabilities.get(RETURN_PLACE.into()).unwrap() == CapabilityKind::Exclusive
+                    capabilities.get(RETURN_PLACE.into(), ctxt).unwrap()
+                        == CapabilityKind::Exclusive,
+                    [ctxt]
                 );
             }
             PlaceCondition::RemoveCapability(_) => unreachable!(),
@@ -81,23 +89,36 @@ impl<'tcx> CapabilityLocals<'tcx> {
         &mut self,
         t: Triple<'tcx>,
         place_capabilities: &mut PlaceCapabilities<'tcx>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
+        ctxt: AnalysisCtxt<'_, 'tcx>,
     ) {
-        self.check_pre_satisfied(t.pre(), place_capabilities, ctxt);
+        self.check_pre_satisfied(t.pre(), place_capabilities, ctxt.ctxt);
         let Some(post) = t.post() else {
             return;
         };
         match post {
             PlaceCondition::Return => unreachable!(),
             PlaceCondition::Unalloc(local) => {
-                self[local] = CapabilityLocal::Unallocated;
+                self[local] = OwnedPcgLocal::Unallocated;
+                place_capabilities.remove_all_for_local(local, ctxt.ctxt);
             }
             PlaceCondition::AllocateOrDeallocate(local) => {
-                self[local] = CapabilityLocal::Allocated(CapabilityProjections::new(local));
+                self[local] = OwnedPcgLocal::Allocated(LocalExpansions::new(local));
                 place_capabilities.insert(local.into(), CapabilityKind::Write, ctxt);
             }
             PlaceCondition::Capability(place, cap) => {
                 place_capabilities.insert(place, cap, ctxt);
+                // It's possible that the place could have been already expanded
+                // exclusively (when it could have originally been expanded for
+                // read), in which case we pretend we did the right thing all
+                // along
+                if cap == CapabilityKind::Read {
+                    for (p, _) in place_capabilities
+                        .capabilities_for_strict_postfixes_of(place)
+                        .collect::<Vec<_>>()
+                    {
+                        place_capabilities.insert(p, CapabilityKind::Read, ctxt);
+                    }
+                }
             }
             PlaceCondition::ExpandTwoPhase(place) => {
                 place_capabilities.insert(place, CapabilityKind::Read, ctxt);

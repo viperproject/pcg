@@ -5,7 +5,7 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 /* Depending on the client's rust version, some of the features below
-   may already be stabilized */
+may already be stabilized */
 
 #![allow(stable_features)]
 #![feature(associated_type_defaults)]
@@ -36,18 +36,18 @@ use free_pcs::{CapabilityKind, PcgLocation};
 use pcg::{PcgEngine, PcgSuccessor};
 use rustc_interface::{
     borrowck::{self, BorrowSet, LocationTable, PoloniusInput, RegionInferenceContext},
-    dataflow::{compute_fixpoint, AnalysisEngine},
+    dataflow::{AnalysisEngine, compute_fixpoint},
     middle::{
-        mir::Body,
+        mir::{self, Body},
         ty::{self, TyCtxt},
     },
     mir_dataflow::move_paths::MoveData,
 };
 use serde_json::json;
 use utils::{
+    CompilerCtxt, Place, VALIDITY_CHECKS, VALIDITY_CHECKS_WARN_ONLY,
     display::{DebugLines, DisplayWithCompilerCtxt},
     validity::HasValidityCheck,
-    CompilerCtxt, Place, VALIDITY_CHECKS, VALIDITY_CHECKS_WARN_ONLY,
 };
 use visualization::mir_graph::generate_json_from_mir;
 
@@ -337,6 +337,29 @@ pub fn run_pcg<'a, 'tcx, A: Allocator + Copy + std::fmt::Debug>(
     }
     let mut fpcs_analysis = free_pcs::PcgAnalysis::new(analysis.into_results_cursor(body));
 
+    if validity_checks_enabled() {
+        for (block, _data) in body.basic_blocks.iter_enumerated() {
+            let pcs_block_option = if let Ok(opt) = fpcs_analysis.get_all_for_bb(block) {
+                opt
+            } else {
+                continue;
+            };
+            if pcs_block_option.is_none() {
+                continue;
+            }
+            let pcs_block = pcs_block_option.unwrap();
+            for (statement_index, statement) in pcs_block.statements.iter().enumerate() {
+                statement.assert_validity_at_location(
+                    mir::Location {
+                        block,
+                        statement_index,
+                    },
+                    pcg_ctxt.compiler_ctxt,
+                );
+            }
+        }
+    }
+
     if let Some(dir_path) = visualization_output_path {
         let edge_legend_file_path = format!("{dir_path}/edge_legend.dot");
         let edge_legend_graph = crate::visualization::legend::generate_edge_legend().unwrap();
@@ -362,9 +385,6 @@ pub fn run_pcg<'a, 'tcx, A: Allocator + Copy + std::fmt::Debug>(
             }
             let pcs_block = pcs_block_option.unwrap();
             for (statement_index, statement) in pcs_block.statements.iter().enumerate() {
-                if validity_checks_enabled() {
-                    statement.assert_validity(pcg_ctxt.compiler_ctxt);
-                }
                 let data = PCGStmtVisualizationData::new(statement);
                 let pcg_data_file_path = format!(
                     "{}/block_{}_stmt_{}_pcg_data.json",
@@ -394,43 +414,160 @@ pub fn run_pcg<'a, 'tcx, A: Allocator + Copy + std::fmt::Debug>(
     fpcs_analysis
 }
 
-macro_rules! pcg_validity_assert {
-    ($cond:expr) => {
-        if $crate::validity_checks_enabled() {
-            if $crate::validity_checks_warn_only() {
-                #[allow(clippy::neg_cmp_op_on_partial_ord)]
-                if !$cond {
-                    tracing::error!("assertion failed: {}", stringify!($cond));
-                }
-            } else {
-                #[allow(clippy::neg_cmp_op_on_partial_ord)]
-                if !$cond {
-                    tracing::error!("assertion failed: {}", stringify!($cond));
-                }
-                assert!($cond);
+macro_rules! pcg_validity_expect_some {
+    ($cond:expr, fallback: $fallback:expr, [$($ctxt_and_loc:tt)*], $($arg:tt)*) => {
+        {
+            if $crate::validity_checks_enabled() {
+                pcg_validity_assert!($cond.is_some(), [$($ctxt_and_loc)*], $($arg)*);
             }
+            $cond.unwrap_or($fallback)
+        }
+    };
+    ($cond:expr, fallback: $fallback:expr, $($arg:tt)*) => {
+        {
+            if $crate::validity_checks_enabled() {
+                pcg_validity_assert!($cond.is_some(), $($arg)*);
+            }
+            $cond.unwrap_or($fallback)
+        }
+    };
+
+    ($cond:expr, [$($ctxt_and_loc:tt)*], $($arg:tt)*) => {
+        {
+            if $crate::validity_checks_enabled() {
+                pcg_validity_assert!($cond.is_some(), [$($ctxt_and_loc)*], $($arg)*);
+            }
+            $cond.expect("pcg_validity_expect_some failed")
         }
     };
     ($cond:expr, $($arg:tt)*) => {
-        if $crate::validity_checks_enabled() {
-            if $crate::validity_checks_warn_only() {
-                #[allow(clippy::neg_cmp_op_on_partial_ord)]
-                if !$cond {
-                    tracing::error!($($arg)*);
-                }
-            } else {
-                #[allow(clippy::neg_cmp_op_on_partial_ord)]
+        {
+            if $crate::validity_checks_enabled() {
+                pcg_validity_assert!($cond.is_some(), $($arg)*);
+            }
+            $cond.expect("pcg_validity_expect_some failed")
+        }
+    };
+}
 
-                if !$cond {
-                    tracing::error!($($arg)*);
+macro_rules! pcg_validity_expect_ok {
+    ($cond:expr, fallback: $fallback:expr, [$($ctxt_and_loc:tt)*], $($arg:tt)*) => {
+        {
+            let result = $cond;
+            if $crate::validity_checks_enabled() {
+                pcg_validity_assert!(result.is_ok(), [$($ctxt_and_loc)*], "{}: {:?}", format!($($arg)*), result.as_ref().err());
+            }
+            result.unwrap_or($fallback)
+        }
+    };
+    ($cond:expr, fallback: $fallback:expr, [$($ctxt_and_loc:tt)*]) => {
+        {
+            let result = $cond;
+            if $crate::validity_checks_enabled() {
+                pcg_validity_assert!(result.is_ok(), [$($ctxt_and_loc)*], "{}", result.as_ref().err().unwrap() );
+            }
+            result.unwrap_or($fallback)
+        }
+    };
+    ($cond:expr, fallback: $fallback:expr, $($arg:tt)*) => {
+        {
+            let result = $cond;
+            if $crate::validity_checks_enabled() {
+                pcg_validity_assert!(result.is_ok(), "{}: {:?}", format!($($arg)*), result.as_ref().err());
+            }
+            result.unwrap_or($fallback)
+        }
+    };
+
+    ($cond:expr, [$($ctxt_and_loc:tt)*], $($arg:tt)*) => {
+        {
+            let result = $cond;
+            if $crate::validity_checks_enabled() {
+                pcg_validity_assert!(result.is_ok(), [$($ctxt_and_loc)*], "{}: {:?}", format!($($arg)*), result.as_ref().err());
+            }
+            result.expect("pcg_validity_expect_ok failed")
+        }
+    };
+    ($cond:expr, $($arg:tt)*) => {
+        {
+            let result = $cond;
+            if $crate::validity_checks_enabled() {
+                pcg_validity_assert!(result.is_ok(), "{}: {:?}", format!($($arg)*), result.as_ref().err());
+            }
+            result.expect("pcg_validity_expect_ok failed")
+        }
+    };
+}
+
+macro_rules! pcg_validity_assert {
+    // Entry point with brackets - parse using token trees
+    ($cond:expr, [$($ctxt_and_loc:tt)*]) => {
+        pcg_validity_assert!(@parse_context $cond, [$($ctxt_and_loc)*], "{}", stringify!($cond))
+    };
+    ($cond:expr, [$($ctxt_and_loc:tt)*], $($arg:tt)*) => {
+        pcg_validity_assert!(@parse_context $cond, [$($ctxt_and_loc)*], $($arg)*)
+    };
+
+    // Parse context patterns - match the entire token sequence
+    (@parse_context $cond:expr, [$ctxt:tt at $loc:tt], $($arg:tt)*) => {
+        {
+            let ctxt = $ctxt;
+            let loc = $loc;
+            let func_name = ctxt.tcx().def_path_str(ctxt.body().source.def_id());
+            let crate_part = std::env::var("CARGO_CRATE_NAME").map(|s| format!(" (Crate: {})", s)).unwrap_or_default();
+            pcg_validity_assert!(@with_test_case $cond, ctxt, func_name, "PCG Assertion Failed {crate_part}: [{func_name} at {loc:?}] {}", format!($($arg)*));
+        }
+    };
+    (@parse_context $cond:expr, [$ctxt:tt], $($arg:tt)*) => {
+        {
+            let ctxt = $ctxt;
+            let func_name = ctxt.tcx().def_path_str(ctxt.body().source.def_id());
+            let crate_part = std::env::var("CARGO_CRATE_NAME").map(|s| format!(" (Crate: {})", s)).unwrap_or_default();
+            pcg_validity_assert!(@with_test_case $cond, ctxt, func_name, "PCG Assertion Failed {crate_part}: [{func_name}] {}", format!($($arg)*));
+        }
+    };
+
+    // Helper branch that generates test case format when context is available
+    (@with_test_case $cond:expr, $ctxt:expr, $func_name:expr, $($arg:tt)*) => {
+        if $crate::validity_checks_enabled() {
+            #[allow(clippy::neg_cmp_op_on_partial_ord)]
+            if !$cond {
+                tracing::error!($($arg)*);
+                // Generate test case format if we're in a crate
+                if let Ok(crate_name) = std::env::var("CARGO_CRATE_NAME") {
+                    let crate_version = std::env::var("CARGO_PKG_VERSION").unwrap_or_else(|_| "unknown".to_string());
+                    let num_bbs = $ctxt.body().basic_blocks.len();
+                    let test_case = format!("{};{};2025-03-13;{};{}",
+                        crate_name, crate_version, $func_name, num_bbs);
+                    tracing::error!("To reproduce this failure, use test case: {}", test_case);
                 }
-                assert!($cond, $($arg)*);
+                if !$crate::validity_checks_warn_only() {
+                    assert!($cond, $($arg)*);
+                }
+            }
+        }
+    };
+
+    // Without brackets
+    ($cond:expr) => {
+        pcg_validity_assert!($cond, "PCG Assertion Failed: {}", stringify!($cond));
+    };
+    ($cond:expr, $($arg:tt)*) => {
+        if $crate::validity_checks_enabled() {
+            #[allow(clippy::neg_cmp_op_on_partial_ord)]
+            if !$cond {
+                tracing::error!($($arg)*);
+                if !$crate::validity_checks_warn_only() {
+                    assert!($cond, $($arg)*);
+                }
             }
         }
     };
 }
 
 pub(crate) use pcg_validity_assert;
+pub(crate) use pcg_validity_expect_ok;
+pub(crate) use pcg_validity_expect_some;
 
 pub(crate) fn validity_checks_enabled() -> bool {
     *VALIDITY_CHECKS

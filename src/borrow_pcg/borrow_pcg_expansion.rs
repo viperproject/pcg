@@ -1,5 +1,5 @@
 //! Definition of expansion edges in the Borrow PCG.
-use std::{collections::BTreeMap, marker::PhantomData};
+use std::{collections::BTreeMap, hash::Hash, marker::PhantomData};
 
 use derive_more::From;
 use itertools::Itertools;
@@ -8,35 +8,37 @@ use serde_json::json;
 use super::{
     borrow_pcg_edge::{BlockedNode, BlockingNode, LocalNode},
     edge_data::EdgeData,
-    has_pcs_elem::{HasPcgElems, LabelPlace, LabelLifetimeProjection},
-    region_projection::{RegionProjection, LifetimeProjectionLabel},
+    has_pcs_elem::LabelLifetimeProjection,
+    region_projection::LifetimeProjectionLabel,
 };
 use crate::{
     borrow_checker::BorrowCheckerInterface,
     borrow_pcg::{
         edge_data::{LabelEdgePlaces, LabelPlacePredicate},
         has_pcs_elem::{
-            LabelLifetimeProjectionPredicate, LabelLifetimeProjectionResult, PlaceLabeller,
+            LabelLifetimeProjectionPredicate, LabelLifetimeProjectionResult, LabelNodeContext,
+            LabelPlaceWithContext, PlaceLabeller,
         },
-        region_projection::LocalRegionProjection,
     },
     free_pcs::{CapabilityKind, RepackGuide},
+    r#loop::PlaceUsageType,
     pcg::{
         MaybeHasLocation, PcgUnsupportedError,
         obtain::ObtainType,
         place_capabilities::{BlockType, PlaceCapabilities, PlaceCapabilitiesInterface},
     },
-    utils::{SnapshotLocation, json::ToJsonWithCompilerCtxt},
+    pcg_validity_assert,
+    utils::json::ToJsonWithCompilerCtxt,
 };
 use crate::{pcg::PcgError, utils::place::corrected::CorrectedPlace};
 use crate::{
-    pcg::{PCGNode, PCGNodeLike},
+    pcg::{PCGNodeLike, PcgNode},
     rustc_interface::middle::{mir::PlaceElem, ty},
     utils::{
         CompilerCtxt, HasPlace, Place, display::DisplayWithCompilerCtxt, validity::HasValidityCheck,
     },
 };
-use crate::{rustc_interface::FieldIdx, utils::place::maybe_old::MaybeOldPlace};
+use crate::{rustc_interface::FieldIdx, utils::place::maybe_old::MaybeLabelledPlace};
 
 /// The projections resulting from an expansion of a place.
 ///
@@ -77,14 +79,21 @@ impl<'tcx> PlaceExpansion<'tcx> {
     ) -> BlockType {
         if matches!(
             obtain_type,
-            ObtainType::TwoPhaseExpand | ObtainType::Capability(CapabilityKind::Read)
+            ObtainType::Capability(CapabilityKind::Read)
+                | ObtainType::TwoPhaseExpand
+                | ObtainType::LoopInvariant {
+                    usage_type: PlaceUsageType::Read,
+                    ..
+                }
         ) {
             BlockType::Read
         } else if matches!(self, PlaceExpansion::Deref) {
             if base_place.is_shared_ref(ctxt) || base_place.projects_shared_ref(ctxt) {
                 BlockType::Read
+            } else if base_place.is_mut_ref(ctxt) {
+                BlockType::DerefRefExclusive
             } else {
-                BlockType::DerefExclusive
+                BlockType::Other
             }
         } else {
             BlockType::Other
@@ -97,11 +106,11 @@ impl<'tcx> PlaceExpansion<'tcx> {
         }
     }
 
-    pub(crate) fn from_places(places: Vec<Place<'tcx>>, repacker: CompilerCtxt<'_, 'tcx>) -> Self {
+    pub(crate) fn from_places(places: Vec<Place<'tcx>>, ctxt: CompilerCtxt<'_, 'tcx>) -> Self {
         let mut fields = BTreeMap::new();
 
         for place in places {
-            let corrected_place = CorrectedPlace::new(place, repacker);
+            let corrected_place = CorrectedPlace::new(place, ctxt);
             let last_projection = corrected_place.last_projection();
             if let Some(elem) = last_projection {
                 match *elem {
@@ -134,6 +143,11 @@ impl<'tcx> PlaceExpansion<'tcx> {
                 .map(|(idx, ty)| PlaceElem::Field(*idx, *ty))
                 .collect(),
             PlaceExpansion::Deref => vec![PlaceElem::Deref],
+            PlaceExpansion::Guided(RepackGuide::ConstantIndex(c)) => {
+                let mut elems = vec![(*c).into()];
+                elems.extend(c.other_elems());
+                elems
+            }
             PlaceExpansion::Guided(guided) => vec![(*guided).into()],
         }
     }
@@ -146,12 +160,6 @@ impl<'tcx> PlaceExpansion<'tcx> {
 pub struct BorrowPcgExpansion<'tcx, P = LocalNode<'tcx>> {
     pub(crate) base: P,
     pub(crate) expansion: Vec<P>,
-    /// If this expansion is a deref, this is the label associated with the
-    /// region projection. This label must be None if:
-    /// - The place of `base` is not a mutable reference, or
-    /// - `expansion` does not contain any region projections, or
-    /// - this deref is for a shared borrow / read access
-    deref_rp_label: Option<LifetimeProjectionLabel>,
     _marker: PhantomData<&'tcx ()>,
 }
 
@@ -167,7 +175,9 @@ impl<'tcx> LabelEdgePlaces<'tcx> for BorrowPcgExpansion<'tcx> {
             self.to_short_string(ctxt),
             predicate
         );
-        let result = self.base.label_place(predicate, labeller, ctxt);
+        let result =
+            self.base
+                .label_place_with_context(predicate, labeller, LabelNodeContext::Other, ctxt);
         self.assert_validity(ctxt);
         result
     }
@@ -180,7 +190,12 @@ impl<'tcx> LabelEdgePlaces<'tcx> for BorrowPcgExpansion<'tcx> {
     ) -> bool {
         let mut changed = false;
         for p in &mut self.expansion {
-            changed |= p.label_place(predicate, labeller, ctxt);
+            changed |= p.label_place_with_context(
+                predicate,
+                labeller,
+                LabelNodeContext::TargetOfExpansion,
+                ctxt,
+            );
         }
         self.assert_validity(ctxt);
         changed
@@ -197,11 +212,6 @@ impl<'tcx> LabelLifetimeProjection<'tcx> for BorrowPcgExpansion<'tcx> {
         let mut changed = self.base.label_lifetime_projection(predicate, label, ctxt);
         for p in &mut self.expansion {
             changed |= p.label_lifetime_projection(predicate, label, ctxt);
-        }
-        if let Some(rp) = self.deref_blocked_region_projection(ctxt)
-            && predicate.matches(rp.into(), ctxt)
-        {
-            self.deref_rp_label = label;
         }
         self.assert_validity(ctxt);
         changed
@@ -227,10 +237,21 @@ impl<'tcx, 'a, P: DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'
     }
 }
 
-impl<'tcx, P: Eq + std::fmt::Debug> HasValidityCheck<'tcx> for BorrowPcgExpansion<'tcx, P> {
-    fn check_validity(&self, _ctxt: CompilerCtxt<'_, 'tcx>) -> Result<(), String> {
+impl<'tcx, P: PCGNodeLike<'tcx>> HasValidityCheck<'tcx> for BorrowPcgExpansion<'tcx, P> {
+    fn check_validity(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Result<(), String> {
         if self.expansion.contains(&self.base) {
             return Err(format!("expansion contains base: {:?}", self));
+        }
+        for p in &self.expansion {
+            if let Some(node) = p.try_to_local_node(ctxt) {
+                if node.is_place() && node.place().is_owned(ctxt) {
+                    return Err(format!(
+                        "Expansion of {:?} contains owned place {}",
+                        self,
+                        node.place().to_short_string(ctxt)
+                    ));
+                }
+            }
         }
         Ok(())
     }
@@ -238,31 +259,17 @@ impl<'tcx, P: Eq + std::fmt::Debug> HasValidityCheck<'tcx> for BorrowPcgExpansio
 
 impl<'tcx> EdgeData<'tcx> for BorrowPcgExpansion<'tcx> {
     fn blocks_node<'slf>(&self, node: BlockedNode<'tcx>, repacker: CompilerCtxt<'_, 'tcx>) -> bool {
-        if self.base.to_pcg_node(repacker) == node {
-            return true;
-        }
-        if let Some(blocked_rp) = self.deref_blocked_region_projection(repacker) {
-            node == blocked_rp.into()
-        } else {
-            false
-        }
+        self.base.to_pcg_node(repacker) == node
     }
 
-    // `return` is needed because both branches have different types
-    #[allow(clippy::needless_return)]
     fn blocked_nodes<'slf, BC: Copy>(
         &self,
-        ctxt: CompilerCtxt<'_, 'tcx, BC>,
-    ) -> Box<dyn std::iter::Iterator<Item = PCGNode<'tcx>> + 'slf>
+        _ctxt: CompilerCtxt<'_, 'tcx, BC>,
+    ) -> Box<dyn std::iter::Iterator<Item = PcgNode<'tcx>> + 'slf>
     where
         'tcx: 'slf,
     {
-        let iter = std::iter::once(self.base.into());
-        if let Some(blocked_rp) = self.deref_blocked_region_projection(ctxt) {
-            return Box::new(iter.chain(std::iter::once(blocked_rp.into())));
-        } else {
-            return Box::new(iter);
-        }
+        Box::new(std::iter::once(self.base.into()))
     }
 
     fn blocked_by_nodes<'slf, 'mir: 'slf, BC: Copy>(
@@ -277,13 +284,12 @@ impl<'tcx> EdgeData<'tcx> for BorrowPcgExpansion<'tcx> {
 }
 
 impl<'tcx> TryFrom<BorrowPcgExpansion<'tcx, LocalNode<'tcx>>>
-    for BorrowPcgExpansion<'tcx, MaybeOldPlace<'tcx>>
+    for BorrowPcgExpansion<'tcx, MaybeLabelledPlace<'tcx>>
 {
     type Error = ();
     fn try_from(expansion: BorrowPcgExpansion<'tcx, LocalNode<'tcx>>) -> Result<Self, Self::Error> {
         Ok(BorrowPcgExpansion {
             base: expansion.base.try_into()?,
-            deref_rp_label: expansion.deref_rp_label,
             expansion: expansion
                 .expansion
                 .into_iter()
@@ -291,23 +297,6 @@ impl<'tcx> TryFrom<BorrowPcgExpansion<'tcx, LocalNode<'tcx>>>
                 .collect::<Result<Vec<_>, _>>()?,
             _marker: PhantomData,
         })
-    }
-}
-
-impl<'tcx> HasPcgElems<MaybeOldPlace<'tcx>> for BorrowPcgExpansion<'tcx> {
-    fn pcg_elems(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
-        let mut elems = self.base.pcg_elems();
-        elems.extend(self.expansion.iter_mut().flat_map(|p| p.pcg_elems()));
-        elems
-    }
-}
-
-impl<'tcx, T> HasPcgElems<RegionProjection<'tcx, T>> for BorrowPcgExpansion<'tcx>
-where
-    BorrowPcgExpansion<'tcx>: HasPcgElems<T>,
-{
-    fn pcg_elems(&mut self) -> Vec<&mut RegionProjection<'tcx, T>> {
-        vec![]
     }
 }
 
@@ -320,97 +309,33 @@ impl<'tcx> BorrowPcgExpansion<'tcx> {
         }
     }
 
-    /// If this expansion is a dereference of a place `p`, this returns the
-    /// source lifetime projection of this edge For example if this is a shared
-    /// reference , it could be an unlabelled lifetime projection e.g. p|'a For
-    /// a mutable reference, this will be labelled with the location of the
-    /// dereference (e.g p|'a@l),
-    pub(crate) fn deref_blocked_region_projection<BC: Copy>(
-        &self,
-        ctxt: CompilerCtxt<'_, 'tcx, BC>,
-    ) -> Option<LocalRegionProjection<'tcx>> {
-        if let BlockingNode::Place(p) = self.base
-            && let Some(projection) = p.base_region_projection(ctxt)
-        {
-            if let Some(SnapshotLocation::BeforeRefReassignment(_)) = p.location() {
-                // This is somewhat of a hack to support the following kind of scenario:
-                //
-                //  - `s` is to be re-assigned or borrowed mutably at location `l`
-                //  - `s.f` is shared a reference with lifetime 'a reborrowed into `x`
-                //
-                // We want to keep the edge {s.f@l, s.f|'a@l} -> {*s.f@l} in the graph
-                // Note that s.f|'a@l will be connected to the snapshot of
-                // `s|'a@l` (otherwise it would be disconnected from the graph)
-                //
-                // But in general the snapshot of the place in the places and
-                // the lifetime projection are the same, so using the normal
-                // logic we couldn't have refer to s.f@l in the place and s.f in
-                // the lifetime projection. Therefore we have this special case.
-                Some(
-                    projection
-                        .with_label(self.deref_rp_label, ctxt)
-                        .with_base(p.place().into()),
-                )
-            } else {
-                Some(projection.with_label(self.deref_rp_label, ctxt))
-            }
-        } else {
-            None
-        }
-    }
-
-    /// If this expansion is a dereference of a place `p`, this returns the
-    /// dereferenced place `*p`.
-    ///
-    /// Note that this node is NOT necessary the target node of the graph,
-    /// in particular, the target node might be labelled
-    pub(crate) fn deref_of_blocked_place(
-        &self,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> Option<Place<'tcx>> {
-        if let BlockingNode::Place(MaybeOldPlace::Current { place }) = self.base
-            && place.is_ref(ctxt)
-        {
-            Some(place.project_deref(ctxt))
-        } else {
-            None
-        }
-    }
-
     /// Returns true iff the expansion is packable, i.e. without losing any
     /// information. This is the case when the expansion node labels (for
     /// places, and for region projections) are the same as the base node
     /// labels.
-    pub(crate) fn is_packable(&self, capabilities: &PlaceCapabilities<'tcx>) -> bool {
+    pub(crate) fn is_packable(
+        &self,
+        capabilities: &PlaceCapabilities<'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
         match self.base {
-            PCGNode::Place(base_place) => {
+            PcgNode::Place(base_place) => {
                 let mut fst_cap = None;
                 self.expansion.iter().all(|p| {
-                    if let PCGNode::Place(MaybeOldPlace::Current { place }) = p {
+                    if let PcgNode::Place(MaybeLabelledPlace::Current(place)) = p {
                         if let Some(cap) = fst_cap {
-                            if cap != capabilities.get(*place) {
+                            if cap != capabilities.get(*place, ctxt) {
                                 return false;
                             }
                         } else {
-                            fst_cap = Some(capabilities.get(*place));
+                            fst_cap = Some(capabilities.get(*place, ctxt));
                         }
                     }
                     base_place.place().is_prefix_exact(p.place())
                         && p.location() == base_place.location()
                 })
             }
-            PCGNode::RegionProjection(base_rp) => self.expansion.iter().all(|p| {
-                if let PCGNode::RegionProjection(p_rp) = p {
-                    p_rp.place().location() == base_rp.place().location()
-                        && base_rp
-                            .place()
-                            .place()
-                            .is_prefix_exact(p_rp.place().place())
-                        && p_rp.label() == base_rp.label()
-                } else {
-                    false
-                }
-            }),
+            PcgNode::LifetimeProjection(_) => false,
         }
     }
 }
@@ -426,17 +351,9 @@ impl<'tcx, P: PCGNodeLike<'tcx> + HasPlace<'tcx> + Into<BlockingNode<'tcx>>>
         &self.expansion
     }
 
-    pub(crate) fn is_owned_expansion(&self, repacker: CompilerCtxt<'_, 'tcx>) -> bool {
-        match self.base.into() {
-            BlockingNode::Place(p) => p.is_owned(repacker),
-            BlockingNode::RegionProjection(_) => false,
-        }
-    }
-
     pub(crate) fn new(
         base: P,
         expansion: PlaceExpansion<'tcx>,
-        deref_blocked_region_projection_label: Option<LifetimeProjectionLabel>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> Result<Self, PcgError>
     where
@@ -450,6 +367,12 @@ impl<'tcx, P: PCGNodeLike<'tcx> + HasPlace<'tcx> + Into<BlockingNode<'tcx>>>
         if is_raw_ptr {
             return Err(PcgUnsupportedError::DerefUnsafePtr.into());
         }
+        pcg_validity_assert!(
+            !(base.is_place() && base.place().is_ref(ctxt) && expansion == PlaceExpansion::Deref),
+            [ctxt],
+            "Deref expansion of {} should be a Deref edge, not an expansion",
+            base.place().to_short_string(ctxt)
+        );
         let result = Self {
             base,
             expansion: expansion
@@ -457,7 +380,6 @@ impl<'tcx, P: PCGNodeLike<'tcx> + HasPlace<'tcx> + Into<BlockingNode<'tcx>>>
                 .into_iter()
                 .map(|elem| base.project_deeper(elem, ctxt))
                 .collect::<Result<Vec<_>, _>>()?,
-            deref_rp_label: deref_blocked_region_projection_label,
             _marker: PhantomData,
         };
         result.assert_validity(ctxt);

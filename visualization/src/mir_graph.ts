@@ -19,7 +19,7 @@ export function filterNodesAndEdges(
   let filteredNodes = nodes;
   let filteredEdges = edges;
   if (!options.showUnwindEdges) {
-    filteredNodes = nodes.filter((node) => node.terminator !== "resume");
+    filteredNodes = nodes.filter((node) => node.terminator.stmt !== "resume");
     filteredEdges = edges.filter((edge) => edge.label !== "unwind");
   }
   if (options.path) {
@@ -63,7 +63,7 @@ export function layoutSizedNodes(
     edges,
     height,
   };
-};
+}
 
 export function layoutUnsizedNodes(
   nodes: MirGraphNode[],

@@ -9,13 +9,15 @@ export type MirStmt = {
   stmt: string;
   loans_invalidated_start: string[];
   loans_invalidated_mid: string[];
+  borrows_in_scope_start: string[];
+  borrows_in_scope_mid: string[];
 };
 
 export type MirGraphNode = {
   id: string;
   block: number;
   stmts: MirStmt[];
-  terminator: string;
+  terminator: MirStmt;
 };
 
 export type MirGraphEdge = {

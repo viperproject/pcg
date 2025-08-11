@@ -7,14 +7,14 @@ use super::{
     edge::outlives::BorrowFlowEdge,
     edge_data::EdgeData,
     graph::Conditioned,
-    has_pcs_elem::{HasPcgElems, LabelPlace, LabelLifetimeProjection},
+    has_pcs_elem::LabelLifetimeProjection,
     path_condition::ValidityConditions,
-    region_projection::{
-        LocalRegionProjection, MaybeRemoteRegionProjectionBase, RegionProjection,
-        LifetimeProjectionLabel,
-    },
+    region_projection::{LifetimeProjection, LifetimeProjectionLabel, LocalLifetimeProjection},
 };
-use crate::utils::place::maybe_remote::MaybeRemotePlace;
+use crate::borrow_pcg::{
+    edge::{deref::DerefEdge, kind::BorrowPcgEdgeKind},
+    edge_data::{LabelEdgePlaces, LabelPlacePredicate},
+};
 use crate::{
     borrow_checker::BorrowCheckerInterface,
     borrow_pcg::{
@@ -23,20 +23,18 @@ use crate::{
             LabelLifetimeProjectionPredicate, LabelLifetimeProjectionResult, PlaceLabeller,
         },
     },
-    utils::place::maybe_old::MaybeOldPlace,
-};
-use crate::{
-    borrow_pcg::{
-        edge::kind::BorrowPcgEdgeKind,
-        edge_data::{LabelEdgePlaces, LabelPlacePredicate},
-    },
+    utils::place::maybe_old::MaybeLabelledPlace,
 };
 use crate::{borrow_pcg::edge::abstraction::AbstractionType, pcg::PcgError};
 use crate::{borrow_pcg::edge::borrow::BorrowEdge, utils::HasPlace};
 use crate::{
-    pcg::PCGNode,
+    borrow_pcg::has_pcs_elem::{LabelNodeContext, LabelPlaceWithContext},
+    utils::place::maybe_remote::MaybeRemotePlace,
+};
+use crate::{
+    pcg::PcgNode,
     rustc_interface,
-    utils::{display::DisplayWithCompilerCtxt, validity::HasValidityCheck, CompilerCtxt, Place},
+    utils::{CompilerCtxt, Place, display::DisplayWithCompilerCtxt, validity::HasValidityCheck},
 };
 
 /// A reference to an edge in the Borrow PCG
@@ -169,14 +167,14 @@ impl<'tcx, 'a, T: BorrowPcgEdgeLike<'tcx>>
 impl<'tcx> LocalNode<'tcx> {
     pub(crate) fn is_old(&self) -> bool {
         match self {
-            PCGNode::Place(p) => p.is_old(),
-            PCGNode::RegionProjection(region_projection) => region_projection.place().is_old(),
+            PcgNode::Place(p) => p.is_old(),
+            PcgNode::LifetimeProjection(region_projection) => region_projection.place().is_old(),
         }
     }
     pub(crate) fn related_current_place(self) -> Option<Place<'tcx>> {
         match self {
-            PCGNode::Place(p) => p.as_current_place(),
-            PCGNode::RegionProjection(rp) => rp.base().as_current_place(),
+            PcgNode::Place(p) => p.as_current_place(),
+            PcgNode::LifetimeProjection(rp) => rp.base().as_current_place(),
         }
     }
 }
@@ -185,52 +183,40 @@ impl<'tcx> LocalNode<'tcx> {
 /// referring to a (potentially labelled) place, i.e. any node with an associated
 /// place.
 /// This excludes nodes that refer to remote places or constants.
-pub type LocalNode<'tcx> = PCGNode<'tcx, MaybeOldPlace<'tcx>, MaybeOldPlace<'tcx>>;
+pub type LocalNode<'tcx> = PcgNode<'tcx, MaybeLabelledPlace<'tcx>, MaybeLabelledPlace<'tcx>>;
 
-impl<'tcx> LabelPlace<'tcx> for LocalNode<'tcx> {
-    fn label_place(
+impl<'tcx> LabelPlaceWithContext<'tcx, LabelNodeContext> for LocalNode<'tcx> {
+    fn label_place_with_context(
         &mut self,
         predicate: &LabelPlacePredicate<'tcx>,
         labeller: &impl PlaceLabeller<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx>,
+        label_context: LabelNodeContext,
+        ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         match self {
-            LocalNode::Place(p) => p.label_place(predicate, labeller, repacker),
-            LocalNode::RegionProjection(rp) => rp.base.label_place(predicate, labeller, repacker),
+            LocalNode::Place(p) => {
+                p.label_place_with_context(predicate, labeller, label_context, ctxt)
+            }
+            LocalNode::LifetimeProjection(rp) => {
+                rp.base
+                    .label_place_with_context(predicate, labeller, label_context, ctxt)
+            }
         }
     }
 }
 
-impl<'tcx> From<LocalRegionProjection<'tcx>> for LocalNode<'tcx> {
-    fn from(rp: LocalRegionProjection<'tcx>) -> Self {
-        LocalNode::RegionProjection(rp)
+impl<'tcx> From<LocalLifetimeProjection<'tcx>> for LocalNode<'tcx> {
+    fn from(rp: LocalLifetimeProjection<'tcx>) -> Self {
+        LocalNode::LifetimeProjection(rp)
     }
 }
 
-impl<'tcx> TryFrom<LocalNode<'tcx>> for MaybeOldPlace<'tcx> {
+impl<'tcx> TryFrom<LocalNode<'tcx>> for MaybeLabelledPlace<'tcx> {
     type Error = ();
     fn try_from(node: LocalNode<'tcx>) -> Result<Self, Self::Error> {
         match node {
             LocalNode::Place(maybe_old_place) => Ok(maybe_old_place),
-            LocalNode::RegionProjection(_) => Err(()),
-        }
-    }
-}
-
-impl<'tcx> HasPcgElems<MaybeOldPlace<'tcx>> for LocalNode<'tcx> {
-    fn pcg_elems(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
-        match self {
-            LocalNode::Place(p) => vec![p],
-            LocalNode::RegionProjection(rp) => vec![rp.place_mut()],
-        }
-    }
-}
-
-impl<'tcx> HasPcgElems<RegionProjection<'tcx, MaybeOldPlace<'tcx>>> for LocalNode<'tcx> {
-    fn pcg_elems(&mut self) -> Vec<&mut RegionProjection<'tcx, MaybeOldPlace<'tcx>>> {
-        match self {
-            LocalNode::Place(_) => vec![],
-            LocalNode::RegionProjection(rp) => vec![rp],
+            LocalNode::LifetimeProjection(_) => Err(()),
         }
     }
 }
@@ -241,9 +227,9 @@ impl<'tcx> From<Place<'tcx>> for LocalNode<'tcx> {
     }
 }
 
-impl<'tcx> From<RegionProjection<'tcx, Place<'tcx>>> for LocalNode<'tcx> {
-    fn from(rp: RegionProjection<'tcx, Place<'tcx>>) -> Self {
-        LocalNode::RegionProjection(rp.into())
+impl<'tcx> From<LifetimeProjection<'tcx, Place<'tcx>>> for LocalNode<'tcx> {
+    fn from(rp: LifetimeProjection<'tcx, Place<'tcx>>) -> Self {
+        LocalNode::LifetimeProjection(rp.into())
     }
 }
 
@@ -253,17 +239,24 @@ impl<'tcx> From<RegionProjection<'tcx, Place<'tcx>>> for LocalNode<'tcx> {
 pub type BlockingNode<'tcx> = LocalNode<'tcx>;
 
 impl<'tcx> HasPlace<'tcx> for LocalNode<'tcx> {
+    fn is_place(&self) -> bool {
+        match self {
+            LocalNode::Place(_) => true,
+            LocalNode::LifetimeProjection(_) => false,
+        }
+    }
+
     fn place(&self) -> Place<'tcx> {
         match self {
             LocalNode::Place(p) => p.place(),
-            LocalNode::RegionProjection(rp) => rp.place().place(),
+            LocalNode::LifetimeProjection(rp) => rp.place().place(),
         }
     }
 
     fn place_mut(&mut self) -> &mut Place<'tcx> {
         match self {
             LocalNode::Place(p) => p.place_mut(),
-            LocalNode::RegionProjection(rp) => rp.place_mut().place_mut(),
+            LocalNode::LifetimeProjection(rp) => rp.place_mut().place_mut(),
         }
     }
 
@@ -277,10 +270,10 @@ impl<'tcx> HasPlace<'tcx> for LocalNode<'tcx> {
                 .into_iter()
                 .map(|(p, e)| (p.into(), e))
                 .collect(),
-            LocalNode::RegionProjection(rp) => rp
+            LocalNode::LifetimeProjection(rp) => rp
                 .iter_projections(repacker)
                 .into_iter()
-                .map(|(p, e)| (LocalNode::RegionProjection(p), e))
+                .map(|(p, e)| (LocalNode::LifetimeProjection(p), e))
                 .collect(),
         }
     }
@@ -292,8 +285,8 @@ impl<'tcx> HasPlace<'tcx> for LocalNode<'tcx> {
     ) -> Result<Self, PcgError> {
         Ok(match self {
             LocalNode::Place(p) => LocalNode::Place(p.project_deeper(elem, repacker)?),
-            LocalNode::RegionProjection(rp) => {
-                LocalNode::RegionProjection(rp.project_deeper(elem, repacker)?)
+            LocalNode::LifetimeProjection(rp) => {
+                LocalNode::LifetimeProjection(rp.project_deeper(elem, repacker)?)
             }
         })
     }
@@ -305,65 +298,30 @@ impl<'tcx> HasValidityCheck<'tcx> for MaybeRemotePlace<'tcx> {
     }
 }
 
-impl<T: std::fmt::Display> std::fmt::Display for PCGNode<'_, T> {
+impl<T: std::fmt::Display> std::fmt::Display for PcgNode<'_, T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            PCGNode::Place(p) => write!(f, "{p}"),
-            PCGNode::RegionProjection(rp) => write!(f, "{rp}"),
+            PcgNode::Place(p) => write!(f, "{p}"),
+            PcgNode::LifetimeProjection(rp) => write!(f, "{rp}"),
         }
-    }
-}
-
-impl<'tcx, T> HasPcgElems<RegionProjection<'tcx, MaybeRemoteRegionProjectionBase<'tcx>>>
-    for PCGNode<'tcx, T>
-{
-    fn pcg_elems(
-        &mut self,
-    ) -> Vec<&mut RegionProjection<'tcx, MaybeRemoteRegionProjectionBase<'tcx>>> {
-        match self {
-            PCGNode::Place(_) => vec![],
-            PCGNode::RegionProjection(rp) => vec![rp],
-        }
-    }
-}
-
-impl<'tcx, T> HasPcgElems<T> for PCGNode<'tcx>
-where
-    MaybeRemotePlace<'tcx>: HasPcgElems<T>,
-    RegionProjection<'tcx>: HasPcgElems<T>,
-{
-    fn pcg_elems(&mut self) -> Vec<&mut T> {
-        match self {
-            PCGNode::Place(p) => p.pcg_elems(),
-            PCGNode::RegionProjection(rp) => rp.pcg_elems(),
-        }
-    }
-}
-
-impl<'tcx> HasPcgElems<RegionProjection<'tcx, MaybeOldPlace<'tcx>>> for PCGNode<'tcx> {
-    fn pcg_elems(&mut self) -> Vec<&mut RegionProjection<'tcx, MaybeOldPlace<'tcx>>> {
-        vec![]
     }
 }
 
 impl<'tcx> LocalNode<'tcx> {
-    pub(crate) fn as_current_place(self) -> Option<Place<'tcx>> {
+    pub fn as_current_place(self) -> Option<Place<'tcx>> {
         match self {
-            LocalNode::Place(MaybeOldPlace::Current { place }) => Some(place),
+            LocalNode::Place(MaybeLabelledPlace::Current(place)) => Some(place),
             _ => None,
         }
-    }
-    pub(crate) fn is_current_place(self) -> bool {
-        self.as_current_place().is_some()
     }
 }
 
 /// A node that could potentially be blocked in the PCG. In principle any kind
 /// of PCG node could be blocked; however this type alias should be preferred to
 /// [`PCGNode`] in contexts where the blocking is relevant.
-pub type BlockedNode<'tcx> = PCGNode<'tcx>;
+pub type BlockedNode<'tcx> = PcgNode<'tcx>;
 
-impl<'tcx> PCGNode<'tcx> {
+impl<'tcx> PcgNode<'tcx> {
     pub(crate) fn as_blocking_node(
         &self,
         repacker: CompilerCtxt<'_, 'tcx>,
@@ -373,19 +331,19 @@ impl<'tcx> PCGNode<'tcx> {
 
     pub(crate) fn as_local_node(&self, _ctxt: CompilerCtxt<'_, 'tcx>) -> Option<LocalNode<'tcx>> {
         match self {
-            PCGNode::Place(MaybeRemotePlace::Local(maybe_old_place)) => {
+            PcgNode::Place(MaybeRemotePlace::Local(maybe_old_place)) => {
                 Some(LocalNode::Place(*maybe_old_place))
             }
-            PCGNode::Place(MaybeRemotePlace::Remote(_)) => None,
-            PCGNode::RegionProjection(rp) => {
+            PcgNode::Place(MaybeRemotePlace::Remote(_)) => None,
+            PcgNode::LifetimeProjection(rp) => {
                 let place = rp.place().as_local_place()?;
-                Some(LocalNode::RegionProjection(rp.with_base(place)))
+                Some(LocalNode::LifetimeProjection(rp.with_base(place)))
             }
         }
     }
     pub fn as_current_place(&self) -> Option<Place<'tcx>> {
         match self {
-            BlockedNode::Place(MaybeRemotePlace::Local(MaybeOldPlace::Current { place })) => {
+            BlockedNode::Place(MaybeRemotePlace::Local(MaybeLabelledPlace::Current(place))) => {
                 Some(*place)
             }
             _ => None,
@@ -395,15 +353,11 @@ impl<'tcx> PCGNode<'tcx> {
     pub(crate) fn as_place(&self) -> Option<MaybeRemotePlace<'tcx>> {
         match self {
             BlockedNode::Place(maybe_remote_place) => Some(*maybe_remote_place),
-            BlockedNode::RegionProjection(_) => None,
+            BlockedNode::LifetimeProjection(_) => None,
         }
     }
-
-    #[allow(unused)]
-    pub(crate) fn as_maybe_old_place(&self) -> Option<MaybeOldPlace<'tcx>> {
-        self.as_place()?.try_into().ok()
-    }
 }
+
 impl<'tcx> From<mir::Place<'tcx>> for BlockedNode<'tcx> {
     fn from(place: mir::Place<'tcx>) -> Self {
         BlockedNode::Place(place.into())
@@ -416,8 +370,8 @@ impl<'tcx> From<Place<'tcx>> for BlockedNode<'tcx> {
     }
 }
 
-impl<'tcx> From<MaybeOldPlace<'tcx>> for BlockedNode<'tcx> {
-    fn from(maybe_old_place: MaybeOldPlace<'tcx>) -> Self {
+impl<'tcx> From<MaybeLabelledPlace<'tcx>> for BlockedNode<'tcx> {
+    fn from(maybe_old_place: MaybeLabelledPlace<'tcx>) -> Self {
         BlockedNode::Place(maybe_old_place.into())
     }
 }
@@ -426,7 +380,7 @@ impl<'tcx> From<LocalNode<'tcx>> for BlockedNode<'tcx> {
     fn from(blocking_node: LocalNode<'tcx>) -> Self {
         match blocking_node {
             LocalNode::Place(maybe_old_place) => BlockedNode::Place(maybe_old_place.into()),
-            LocalNode::RegionProjection(rp) => BlockedNode::RegionProjection(rp.into()),
+            LocalNode::LifetimeProjection(rp) => BlockedNode::LifetimeProjection(rp.into()),
         }
     }
 }
@@ -466,7 +420,7 @@ impl<'tcx, T: BorrowPcgEdgeLike<'tcx>> EdgeData<'tcx> for T {
     fn blocked_nodes<'slf, BC: Copy>(
         &'slf self,
         repacker: CompilerCtxt<'_, 'tcx, BC>,
-    ) -> Box<dyn std::iter::Iterator<Item = PCGNode<'tcx>> + 'slf>
+    ) -> Box<dyn std::iter::Iterator<Item = PcgNode<'tcx>> + 'slf>
     where
         'tcx: 'slf,
     {
@@ -482,21 +436,13 @@ impl<'tcx, T: BorrowPcgEdgeLike<'tcx>> EdgeData<'tcx> for T {
     }
 }
 
-impl<'tcx, T> HasPcgElems<T> for BorrowPcgEdge<'tcx>
-where
-    BorrowPcgEdgeKind<'tcx>: HasPcgElems<T>,
-{
-    fn pcg_elems(&mut self) -> Vec<&mut T> {
-        self.kind.pcg_elems()
-    }
-}
-
 edgedata_enum!(
     BorrowPcgEdgeKind<'tcx>,
     Borrow(BorrowEdge<'tcx>),
     BorrowPcgExpansion(BorrowPcgExpansion<'tcx>),
     Abstraction(AbstractionType<'tcx>),
     BorrowFlow(BorrowFlowEdge<'tcx>),
+    Deref(DerefEdge<'tcx>),
 );
 
 impl<'tcx, 'a> DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>

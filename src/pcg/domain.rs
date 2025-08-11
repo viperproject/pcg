@@ -15,39 +15,44 @@ use derive_more::TryInto;
 use serde::{Serialize, Serializer};
 
 use crate::{
+    AnalysisEngine, DebugLines,
     action::PcgActions,
     borrow_pcg::{
+        edge::{borrow::BorrowEdge, kind::BorrowPcgEdgeKind},
         graph::BorrowsGraph,
         state::{BorrowStateMutRef, BorrowStateRef, BorrowsState, BorrowsStateLike},
     },
     borrows_imgcat_debug,
+    free_pcs::{CapabilityKind, join::data::JoinOwnedData},
+    r#loop::{LoopAnalysis, LoopPlaceUsageAnalysis, PlaceUsages},
     pcg::{
-        dot_graphs::{generate_dot_graph, PcgDotGraphsForBlock, ToGraph},
+        ctxt::AnalysisCtxt,
+        dot_graphs::{PcgDotGraphsForBlock, ToGraph, generate_dot_graph},
+        place_capabilities::PlaceCapabilitiesInterface,
         triple::Triple,
     },
-    r#loop::{LoopAnalysis, LoopPlaceUsageAnalysis},
     rustc_interface::{
-        middle::mir::{self, BasicBlock},
-        mir_dataflow::{fmt::DebugWithContext, move_paths::MoveData, JoinSemiLattice},
+        middle::mir::{self, BasicBlock, START_BLOCK},
+        mir_dataflow::{JoinSemiLattice, fmt::DebugWithContext, move_paths::MoveData},
     },
     utils::{
+        CHECK_CYCLES, CompilerCtxt, DebugImgcat, PANIC_ON_ERROR, Place,
         arena::ArenaRef,
         data_structures::HashSet,
+        display::DisplayWithCompilerCtxt,
         domain_data::{DomainData, DomainDataIndex},
         eval_stmt_data::EvalStmtData,
         incoming_states::IncomingStates,
         initialized::DefinitelyInitialized,
         liveness::PlaceLiveness,
+        maybe_old::MaybeLabelledPlace,
         validity::HasValidityCheck,
-        CompilerCtxt, Place, CHECK_CYCLES, PANIC_ON_ERROR,
     },
-    validity_checks_enabled, validity_checks_warn_only,
     visualization::{dot_graph::DotGraph, generate_pcg_dot_graph},
-    AnalysisEngine, DebugLines,
 };
 
-use super::{place_capabilities::PlaceCapabilities, PcgEngine};
-use crate::free_pcs::FreePlaceCapabilitySummary;
+use super::{PcgEngine, place_capabilities::PlaceCapabilities};
+use crate::free_pcs::OwnedPcg;
 
 #[derive(Copy, Clone)]
 pub struct DataflowIterationDebugInfo {
@@ -164,7 +169,7 @@ pub(crate) struct PcgDebugData {
 
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
 pub struct Pcg<'tcx> {
-    pub(crate) owned: FreePlaceCapabilitySummary<'tcx>,
+    pub(crate) owned: OwnedPcg<'tcx>,
     pub(crate) borrow: BorrowsState<'tcx>,
     pub(crate) capabilities: PlaceCapabilities<'tcx>,
 }
@@ -177,9 +182,26 @@ impl<'tcx> HasValidityCheck<'tcx> for Pcg<'tcx> {
 
 #[derive(Clone, Copy)]
 pub(crate) struct PcgRef<'pcg, 'tcx> {
-    pub(crate) owned: &'pcg FreePlaceCapabilitySummary<'tcx>,
+    pub(crate) owned: &'pcg OwnedPcg<'tcx>,
     pub(crate) borrow: BorrowStateRef<'pcg, 'tcx>,
     pub(crate) capabilities: &'pcg PlaceCapabilities<'tcx>,
+}
+
+impl<'tcx> PcgRef<'_, 'tcx> {
+    pub(crate) fn render_debug_graph(
+        &self,
+        location: mir::Location,
+        debug_imgcat: Option<DebugImgcat>,
+        comment: &str,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) {
+        if borrows_imgcat_debug(location.block, debug_imgcat) {
+            let dot_graph = generate_pcg_dot_graph(self.as_ref(), ctxt, location).unwrap();
+            DotGraph::render_with_imgcat(&dot_graph, comment).unwrap_or_else(|e| {
+                eprintln!("Error rendering self graph: {e}");
+            });
+        }
+    }
 }
 
 impl<'pcg, 'tcx> From<&'pcg Pcg<'tcx>> for PcgRef<'pcg, 'tcx> {
@@ -204,14 +226,14 @@ impl<'pcg, 'tcx> From<&'pcg PcgMutRef<'pcg, 'tcx>> for PcgRef<'pcg, 'tcx> {
 }
 
 pub(crate) struct PcgMutRef<'pcg, 'tcx> {
-    pub(crate) owned: &'pcg mut FreePlaceCapabilitySummary<'tcx>,
+    pub(crate) owned: &'pcg mut OwnedPcg<'tcx>,
     pub(crate) borrow: BorrowStateMutRef<'pcg, 'tcx>,
     pub(crate) capabilities: &'pcg mut PlaceCapabilities<'tcx>,
 }
 
 impl<'pcg, 'tcx> PcgMutRef<'pcg, 'tcx> {
     pub(crate) fn new(
-        owned: &'pcg mut FreePlaceCapabilitySummary<'tcx>,
+        owned: &'pcg mut OwnedPcg<'tcx>,
         borrow: BorrowStateMutRef<'pcg, 'tcx>,
         capabilities: &'pcg mut PlaceCapabilities<'tcx>,
     ) -> Self {
@@ -233,69 +255,30 @@ impl<'pcg, 'tcx> From<&'pcg mut Pcg<'tcx>> for PcgMutRef<'pcg, 'tcx> {
     }
 }
 
-impl<'tcx> PcgMutRef<'_, 'tcx> {
-    pub(crate) fn leaf_places_where(
-        &self,
-        predicate: impl Fn(Place<'tcx>) -> bool,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> HashSet<Place<'tcx>> {
-        let mut places: HashSet<Place<'tcx>> = self
-            .borrow
-            .leaf_nodes(ctxt)
-            .into_iter()
-            .flat_map(|node| node.as_current_place())
-            .filter(|p| predicate(*p))
-            .collect();
-
-        let mut owned_leaf_places = self
-            .owned
-            .leaf_places(ctxt)
-            .into_iter()
-            .filter(|p| predicate(*p))
-            .peekable();
-
-        if owned_leaf_places.peek().is_none() {
-            return places;
-        }
-
-        let owned_places_in_borrow_pcg = self.borrow.graph().owned_places(ctxt);
-
-        for place in owned_leaf_places {
-            if !owned_places_in_borrow_pcg.contains(&place) {
-                places.insert(place);
-            }
-        }
-
-        places
-    }
-
-    pub(crate) fn assert_validity_at_location(
-        &self,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-        _location: mir::Location,
-    ) {
-        if validity_checks_enabled()
-            && let Err(err) = self.as_ref().check_validity(ctxt)
-        {
-            // if borrows_imgcat_debug() {
-            //     self.render_debug_graph(ctxt, location, "Validity check failed");
-            // }
-            if validity_checks_warn_only() {
-                tracing::error!("Validity check failed: {}", err.to_string());
-            } else {
-                panic!("Validity check failed: {}", err);
-            }
-        }
-    }
-}
-
 pub(crate) trait PcgRefLike<'tcx> {
     fn as_ref(&self) -> PcgRef<'_, 'tcx>;
+
     fn borrows_graph(&self) -> &BorrowsGraph<'tcx> {
         self.as_ref().borrow.graph
     }
+
     fn is_acyclic(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
         self.borrows_graph().frozen_graph().is_acyclic(ctxt)
+    }
+
+    fn owned_pcg(&self) -> &OwnedPcg<'tcx> {
+        self.as_ref().owned
+    }
+
+    fn leaf_places(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> HashSet<Place<'tcx>> {
+        let mut leaf_places = self.owned_pcg().leaf_places(ctxt);
+        leaf_places.retain(|p| !self.borrows_graph().places(ctxt).contains(p));
+        leaf_places.extend(self.borrows_graph().leaf_places(ctxt));
+        leaf_places
+    }
+
+    fn is_leaf_place(&self, place: Place<'tcx>, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
+        self.leaf_places(ctxt).contains(&place)
     }
 }
 
@@ -317,58 +300,106 @@ impl<'tcx> PcgRefLike<'tcx> for PcgRef<'_, 'tcx> {
     }
 }
 
-pub(crate) trait PcgMutRefLike<'pcg, 'tcx: 'pcg> {
-    fn as_mut_ref(&'pcg mut self) -> PcgMutRef<'pcg, 'tcx>;
-}
-
-impl<'pcg, 'tcx: 'pcg> PcgMutRefLike<'pcg, 'tcx> for PcgMutRef<'pcg, 'tcx> {
-    fn as_mut_ref(&'pcg mut self) -> PcgMutRef<'pcg, 'tcx> {
-        PcgMutRef {
-            owned: self.owned,
-            borrow: self.borrow.as_mut_ref(),
-            capabilities: self.capabilities,
-        }
-    }
-}
-
-impl<'pcg, 'tcx: 'pcg> PcgMutRefLike<'pcg, 'tcx> for Pcg<'tcx> {
-    fn as_mut_ref(&'pcg mut self) -> PcgMutRef<'pcg, 'tcx> {
-        self.into()
-    }
-}
-
 impl<'tcx> HasValidityCheck<'tcx> for PcgRef<'_, 'tcx> {
     fn check_validity(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> std::result::Result<(), String> {
         self.capabilities.check_validity(ctxt)?;
         self.borrow.check_validity(ctxt)?;
+        self.owned.check_validity(self.capabilities, ctxt)?;
         if *CHECK_CYCLES && !self.is_acyclic(ctxt) {
             return Err("PCG is not acyclic".to_string());
+        }
+
+        for (place, cap) in self.capabilities.iter() {
+            if !self.owned.contains_place(place, ctxt)
+                && !self.borrow.graph.places(ctxt).contains(&place)
+            {
+                return Err(format!(
+                    "Place {} has capability {:?} but is not in the owned PCG or borrow graph",
+                    place.to_short_string(ctxt),
+                    cap
+                ));
+            }
+        }
+
+        // For now we don't do this, due to interactions with future nodes: we
+        // detect that a node is no longer blocked but still technically not a
+        // leaf due to historical reborrows that could have changed the value in
+        // its lifetime projections see format_fields in tracing-subscriber
+        //
+        // In the future we might want to change how this works
+        //
+        // let leaf_places = self.leaf_places(ctxt);
+        // for place in self.places(ctxt) {
+        //     if self.capabilities.get(place, ctxt) == Some(CapabilityKind::Exclusive)
+        //         && !leaf_places.contains(&place)
+        //     {
+        //         return Err(format!(
+        //             "Place {} has exclusive capability but is not a leaf place",
+        //             place.to_short_string(ctxt)
+        //         ));
+        //     }
+        // }
+
+        for edge in self.borrow.graph.edges() {
+            match edge.kind {
+                BorrowPcgEdgeKind::Deref(deref_edge) => {
+                    if let MaybeLabelledPlace::Current(blocked_place) = deref_edge.blocked_place
+                        && let MaybeLabelledPlace::Current(deref_place) = deref_edge.deref_place
+                        && let Some(c @ (CapabilityKind::Read | CapabilityKind::Exclusive)) =
+                            self.capabilities.get(blocked_place, ctxt)
+                        && self.capabilities.get(deref_place, ctxt).is_none()
+                    {
+                        return Err(format!(
+                            "Deref edge {} blocked place {} has capability {:?} but deref place {} has no capability",
+                            deref_edge.to_short_string(ctxt),
+                            blocked_place.to_short_string(ctxt),
+                            c,
+                            deref_place.to_short_string(ctxt)
+                        ));
+                    }
+                }
+                BorrowPcgEdgeKind::Borrow(BorrowEdge::Local(borrow_edge)) => {
+                    if let MaybeLabelledPlace::Current(blocked_place) = borrow_edge.blocked_place
+                        && blocked_place.is_owned(ctxt)
+                        && !self.owned.contains_place(blocked_place, ctxt)
+                    {
+                        return Err(format!(
+                            "Borrow edge {} blocks owned place {}, which is not in the owned PCG",
+                            borrow_edge.to_short_string(ctxt),
+                            blocked_place.to_short_string(ctxt)
+                        ));
+                    }
+                }
+                _ => {}
+            }
         }
         Ok(())
     }
 }
 
 impl<'mir, 'tcx: 'mir> Pcg<'tcx> {
-    #[allow(unused)]
-    pub(crate) fn render_debug_graph(
+    pub(crate) fn is_expansion_leaf(
         &self,
-        ctxt: CompilerCtxt<'mir, 'tcx>,
-        location: mir::Location,
-        comment: &str,
-    ) {
-        if borrows_imgcat_debug() {
-            let dot_graph = generate_pcg_dot_graph(self.as_ref(), ctxt, location).unwrap();
-            DotGraph::render_with_imgcat(&dot_graph, comment).unwrap_or_else(|e| {
-                eprintln!("Error rendering self graph: {e}");
-            });
+        place: Place<'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> bool {
+        if self
+            .borrow
+            .graph()
+            .edges_blocking(place.into(), ctxt)
+            .any(|e| matches!(e.kind, BorrowPcgEdgeKind::BorrowPcgExpansion(_)))
+        {
+            return false;
         }
+
+        return !place.is_owned(ctxt) || self.owned.leaf_places(ctxt).contains(&place);
     }
 
     pub fn capabilities(&self) -> &PlaceCapabilities<'tcx> {
         &self.capabilities
     }
 
-    pub fn owned_pcg(&self) -> &FreePlaceCapabilitySummary<'tcx> {
+    pub fn owned_pcg(&self) -> &OwnedPcg<'tcx> {
         &self.owned
     }
 
@@ -376,7 +407,7 @@ impl<'mir, 'tcx: 'mir> Pcg<'tcx> {
         &self.borrow
     }
 
-    pub(crate) fn owned_ensures(&mut self, t: Triple<'tcx>, ctxt: CompilerCtxt<'_, 'tcx>) {
+    pub(crate) fn ensure_triple(&mut self, t: Triple<'tcx>, ctxt: AnalysisCtxt<'_, 'tcx>) {
         self.owned
             .locals_mut()
             .ensures(t, &mut self.capabilities, ctxt);
@@ -389,19 +420,30 @@ impl<'mir, 'tcx: 'mir> Pcg<'tcx> {
         self_block: BasicBlock,
         other_block: BasicBlock,
         body_analysis: &BodyAnalysis<'mir, 'tcx>,
-        ctxt: CompilerCtxt<'mir, 'tcx>,
+        ctxt: AnalysisCtxt<'mir, 'tcx>,
     ) -> std::result::Result<bool, PcgError> {
-        let mut res = self.owned.join(
-            &other.owned,
-            &mut self.capabilities,
-            &other.capabilities,
-            ctxt,
-        )?;
+        let mut other_capabilities = other.capabilities.clone();
+        let mut other_borrows = other.borrow.clone();
+        let mut self_owned_data = JoinOwnedData {
+            owned: &mut self.owned,
+            borrows: &mut self.borrow,
+            capabilities: &mut self.capabilities,
+            block: self_block,
+        };
+        let other_owned_data = JoinOwnedData {
+            owned: &other.owned,
+            borrows: &mut other_borrows,
+            capabilities: &mut other_capabilities,
+            block: other_block,
+        };
+        let mut res = self_owned_data.join(other_owned_data, ctxt)?;
         // For edges in the other graph that actually belong to it,
         // add the path condition that leads them to this block
         let mut other = other.clone();
-        other.borrow.add_cfg_edge(other_block, self_block, ctxt);
-        res |= self.capabilities.join(&other.capabilities);
+        other
+            .borrow
+            .add_cfg_edge(other_block, self_block, ctxt.ctxt);
+        res |= self.capabilities.join(&other_capabilities);
         res |= self.borrow.join(
             &other.borrow,
             self_block,
@@ -409,7 +451,7 @@ impl<'mir, 'tcx: 'mir> Pcg<'tcx> {
             body_analysis,
             &mut self.capabilities,
             &mut self.owned,
-            ctxt,
+            ctxt.ctxt,
         )?;
         Ok(res)
     }
@@ -423,8 +465,9 @@ impl<'mir, 'tcx: 'mir> Pcg<'tcx> {
         result
     }
     pub(crate) fn initialize_as_start_block(&mut self, repacker: CompilerCtxt<'_, 'tcx>) {
+        let analysis_ctxt = AnalysisCtxt::new(repacker, START_BLOCK);
         self.owned
-            .initialize_as_start_block(&mut self.capabilities, repacker);
+            .initialize_as_start_block(&mut self.capabilities, analysis_ctxt);
         self.borrow
             .initialize_as_start_block(&mut self.capabilities, repacker);
     }
@@ -480,7 +523,7 @@ impl<'a, 'tcx> BodyAnalysis<'a, 'tcx> {
     pub(crate) fn get_places_used_in_loop(
         &self,
         loop_head: BasicBlock,
-    ) -> Option<&HashSet<Place<'tcx>>> {
+    ) -> Option<&PlaceUsages<'tcx>> {
         self.loop_analysis.get_used_places(loop_head)
     }
 
@@ -775,7 +818,7 @@ impl<A: Allocator + Clone> JoinSemiLattice for PcgDomain<'_, '_, A> {
             self_block,
             other_block,
             &self.body_analysis,
-            self.ctxt,
+            AnalysisCtxt::new(self.ctxt, self_block),
         ) {
             Ok(changed) => changed,
             Err(e) => {

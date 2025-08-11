@@ -8,8 +8,9 @@ use crate::{
     borrow_checker::BorrowCheckerInterface,
     borrow_pcg::borrow_pcg_expansion::PlaceExpansion,
     free_pcs::RepackGuide,
+    pcg_validity_assert,
     rustc_interface::{
-        data_structures::fx::FxHashSet,
+        FieldIdx, PlaceTy, RustBitSet,
         index::Idx,
         middle::{
             mir::{
@@ -18,15 +19,15 @@ use crate::{
             },
             ty::{TyCtxt, TyKind},
         },
-        FieldIdx, PlaceTy, RustBitSet,
     },
+    validity_checks_enabled,
 };
 
 use crate::rustc_interface::mir_dataflow;
 
 use crate::{
     borrow_pcg::region_projection::PcgRegion,
-    pcg::{PcgUnsupportedError, PcgError},
+    pcg::{PcgError, PcgUnsupportedError},
 };
 
 use super::Place;
@@ -40,7 +41,7 @@ pub enum ProjectionKind {
     ConstantIndex(ConstantIndex),
     Other,
 }
-
+// TODO: Merge with ExpandedPlace?
 #[derive(Clone)]
 pub struct ShallowExpansion<'tcx> {
     pub(crate) target_place: Place<'tcx>,
@@ -57,7 +58,11 @@ impl<'tcx> ShallowExpansion<'tcx> {
         target_place: Place<'tcx>,
         other_places: Vec<Place<'tcx>>,
         kind: ProjectionKind,
+        ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> Self {
+        if validity_checks_enabled() && matches!(kind, ProjectionKind::DerefRef(_)) {
+            pcg_validity_assert!(!target_place.is_owned(ctxt));
+        }
         Self {
             target_place,
             other_places,
@@ -93,7 +98,7 @@ impl<'tcx> ShallowExpansion<'tcx> {
         self.expansion()
             .iter()
             .filter(|e| {
-                e.region_projections(ctxt)
+                e.lifetime_projections(ctxt)
                     .into_iter()
                     .any(|child_rp| region == child_rp.region(ctxt))
             })
@@ -134,6 +139,10 @@ impl ProjectionKind {
             }
         }
     }
+}
+
+pub(crate) trait HasCompilerCtxt<'a, 'tcx> {
+    fn ctxt(&self) -> CompilerCtxt<'a, 'tcx>;
 }
 
 #[derive(Copy, Clone)]
@@ -186,10 +195,6 @@ impl<'a, 'tcx, T> CompilerCtxt<'a, 'tcx, T> {
 }
 
 impl CompilerCtxt<'_, '_> {
-    pub(crate) fn is_arg(self, local: Local) -> bool {
-        local.as_usize() != 0 && local.as_usize() <= self.mir.arg_count
-    }
-
     /// Returns `true` iff the edge from `from` to `to` is a back edge (i.e.
     /// `to` dominates `from`).
     pub(crate) fn is_back_edge(&self, from: BasicBlock, to: BasicBlock) -> bool {
@@ -225,23 +230,43 @@ pub struct ConstantIndex {
     pub(crate) from_end: bool,
 }
 
-pub(crate) struct DeepExpansion<'tcx>(Vec<ShallowExpansion<'tcx>>);
-
-impl<'tcx> DeepExpansion<'tcx> {
-    pub(crate) fn new(expansions: Vec<ShallowExpansion<'tcx>>) -> Self {
-        Self(expansions)
+impl From<ConstantIndex> for PlaceElem<'_> {
+    fn from(val: ConstantIndex) -> Self {
+        PlaceElem::ConstantIndex {
+            offset: val.offset,
+            min_length: val.min_length,
+            from_end: val.from_end,
+        }
     }
+}
 
-    pub(crate) fn other_expansions(&self) -> FxHashSet<Place<'tcx>> {
-        self.0
-            .iter()
-            .flat_map(|e| e.other_places.iter())
-            .cloned()
+impl ConstantIndex {
+    pub(crate) fn other_places<'tcx>(
+        self,
+        from: Place<'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> Vec<Place<'tcx>> {
+        self.other_elems()
+            .into_iter()
+            .map(|e| from.project_deeper(e, ctxt).unwrap())
             .collect()
     }
 
-    pub(crate) fn expansions(&self) -> &[ShallowExpansion<'tcx>] {
-        &self.0
+    pub(crate) fn other_elems<'tcx>(self) -> Vec<PlaceElem<'tcx>> {
+        let range = if self.from_end {
+            1..self.min_length + 1
+        } else {
+            0..self.min_length
+        };
+        assert!(range.contains(&self.offset));
+        range
+            .filter(|&i| i != self.offset)
+            .map(|i| ProjectionElem::ConstantIndex {
+                offset: i,
+                min_length: self.min_length,
+                from_end: self.from_end,
+            })
+            .collect()
     }
 }
 
@@ -253,47 +278,20 @@ impl<'tcx> Place<'tcx> {
         }
     }
 
-    /// Subtract the `to` place from the `self` place. The
-    /// subtraction is defined as set minus between `self` place replaced
-    /// with a set of places that are unrolled up to the same level as
-    /// `to` and the singleton `to` set. For example,
-    /// `expand(x.f, x.f.g.h)` is performed by unrolling `x.f` into
-    /// `{x.g, x.h, x.f.f, x.f.h, x.f.g.f, x.f.g.g, x.f.g.h}` and
-    /// subtracting `{x.f.g.h}` from it, which results into (`{x.f, x.f.g}`, `{x.g, x.h,
-    /// x.f.f, x.f.h, x.f.g.f, x.f.g.g}`). The result contains the chain of
-    /// places that were expanded along with the target to of each expansion.
-    pub(crate) fn expand(
-        mut self,
-        to: Self,
-        repacker: CompilerCtxt<'_, 'tcx>,
-    ) -> Result<DeepExpansion<'tcx>, PcgError> {
-        assert!(
-            self.is_prefix_of(to),
-            "The minuend ({self:?}) must be the prefix of the subtrahend ({to:?})."
-        );
-        let mut expanded = Vec::new();
-        while self.projection.len() < to.projection.len() {
-            let expansion = self.expand_one_level(to, repacker)?;
-            self = expansion.target_place;
-            expanded.push(expansion);
-        }
-        Ok(DeepExpansion::new(expanded))
-    }
-
     /// Expand `self` one level down by following the `guide_place`.
     /// Returns the new `self` and a vector containing other places that
     /// could have resulted from the expansion.
     pub fn expand_one_level(
         self,
         guide_place: Self,
-        repacker: CompilerCtxt<'_, 'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> Result<ShallowExpansion<'tcx>, PcgError> {
         let index = self.projection.len();
         assert!(
             index < guide_place.projection.len(),
             "self place {self:?} is not a prefix of guide place {guide_place:?}"
         );
-        let new_projection = repacker.tcx.mk_place_elems_from_iter(
+        let new_projection = ctxt.tcx.mk_place_elems_from_iter(
             self.projection
                 .iter()
                 .copied()
@@ -302,7 +300,7 @@ impl<'tcx> Place<'tcx> {
         let new_current_place = Place::new(self.local, new_projection);
         let (other_places, kind) = match guide_place.projection[index] {
             ProjectionElem::Field(projected_field, _field_ty) => {
-                let other_places = self.expand_field(Some(projected_field.index()), repacker)?;
+                let other_places = self.expand_field(Some(projected_field.index()), ctxt)?;
                 (other_places, ProjectionKind::Field(projected_field))
             }
             ProjectionElem::ConstantIndex {
@@ -316,22 +314,12 @@ impl<'tcx> Place<'tcx> {
                     0..min_length
                 };
                 assert!(range.contains(&offset));
-                let other_places = range
-                    .filter(|&i| i != offset)
-                    .map(|i| {
-                        repacker
-                            .tcx
-                            .mk_place_elem(
-                                self.to_rust_place(repacker),
-                                ProjectionElem::ConstantIndex {
-                                    offset: i,
-                                    min_length,
-                                    from_end,
-                                },
-                            )
-                            .into()
-                    })
-                    .collect();
+                let other_places = ConstantIndex {
+                    offset,
+                    min_length,
+                    from_end,
+                }
+                .other_places(self, ctxt);
                 (
                     other_places,
                     ProjectionKind::ConstantIndex(ConstantIndex {
@@ -342,7 +330,7 @@ impl<'tcx> Place<'tcx> {
                 )
             }
             ProjectionElem::Deref => {
-                let typ = self.ty(repacker);
+                let typ = self.ty(ctxt);
                 let kind = match typ.ty.kind() {
                     TyKind::Ref(_, _, mutbl) => ProjectionKind::DerefRef(*mutbl),
                     TyKind::RawPtr(_, mutbl) => ProjectionKind::DerefRawPtr(*mutbl),
@@ -363,7 +351,12 @@ impl<'tcx> Place<'tcx> {
                 "expanded place {p:?} is not a direct child of {self:?}",
             );
         }
-        Ok(ShallowExpansion::new(new_current_place, other_places, kind))
+        Ok(ShallowExpansion::new(
+            new_current_place,
+            other_places,
+            kind,
+            ctxt,
+        ))
     }
 
     /// Expands a place `x.f.g` of type struct into a vector of places for
@@ -482,7 +475,7 @@ impl<'tcx> Place<'tcx> {
         }
     }
 
-    pub(crate) fn projects_shared_ref(self, repacker: CompilerCtxt<'_, 'tcx>) -> bool {
+    pub(crate) fn projects_shared_ref(self, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
         self.projects_ty(
             |typ| {
                 typ.ty
@@ -490,7 +483,7 @@ impl<'tcx> Place<'tcx> {
                     .map(|m| m.is_not())
                     .unwrap_or_default()
             },
-            repacker,
+            ctxt,
         )
         .is_some()
     }

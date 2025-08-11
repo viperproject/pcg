@@ -1,35 +1,38 @@
 use crate::borrow_pcg::borrow_pcg_edge::LocalNode;
 use crate::borrow_pcg::edge_data::LabelPlacePredicate;
-use crate::borrow_pcg::has_pcs_elem::{HasPcgElems, LabelPlace, PlaceLabeller};
+use crate::borrow_pcg::has_pcs_elem::{LabelNodeContext, LabelPlaceWithContext, PlaceLabeller};
 use crate::borrow_pcg::region_projection::{
-    MaybeRemoteRegionProjectionBase, PcgRegion, RegionIdx, RegionProjection,
+    LifetimeProjection, MaybeRemoteRegionProjectionBase, PcgRegion, RegionIdx,
     RegionProjectionBaseLike,
 };
 use crate::borrow_pcg::visitor::extract_regions;
-use crate::pcg::{LocalNodeLike, MaybeHasLocation, PCGNode, PCGNodeLike, PcgError};
+use crate::pcg::{LocalNodeLike, MaybeHasLocation, PCGNodeLike, PcgError, PcgNode};
+use crate::rustc_interface::PlaceTy;
 use crate::rustc_interface::index::IndexVec;
 use crate::rustc_interface::middle::mir;
 use crate::rustc_interface::middle::mir::PlaceElem;
-use crate::rustc_interface::PlaceTy;
 use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::json::ToJsonWithCompilerCtxt;
 use crate::utils::maybe_remote::MaybeRemotePlace;
 use crate::utils::validity::HasValidityCheck;
-use crate::utils::{CompilerCtxt, HasPlace, Place, PlaceSnapshot, SnapshotLocation};
+use crate::utils::{CompilerCtxt, HasPlace, LabelledPlace, Place, SnapshotLocation};
 use derive_more::{From, TryInto};
 use serde_json::json;
 
+#[deprecated(note = "Use MaybeLabelledPlace instead")]
+pub type MaybeOldPlace<'tcx> = MaybeLabelledPlace<'tcx>;
+
 #[derive(PartialEq, Eq, Clone, Debug, Hash, Copy, From, Ord, PartialOrd, TryInto)]
-pub enum MaybeOldPlace<'tcx> {
-    Current { place: Place<'tcx> },
-    OldPlace(PlaceSnapshot<'tcx>),
+pub enum MaybeLabelledPlace<'tcx> {
+    Current(Place<'tcx>),
+    Labelled(LabelledPlace<'tcx>),
 }
 
-impl<'tcx> MaybeOldPlace<'tcx> {
-    pub(crate) fn as_current_place(self) -> Option<Place<'tcx>> {
+impl<'tcx> MaybeLabelledPlace<'tcx> {
+    pub fn as_current_place(self) -> Option<Place<'tcx>> {
         match self {
-            MaybeOldPlace::Current { place } => Some(place),
-            MaybeOldPlace::OldPlace(_) => None,
+            MaybeLabelledPlace::Current(place) => Some(place),
+            MaybeLabelledPlace::Labelled(_) => None,
         }
     }
 
@@ -40,20 +43,22 @@ impl<'tcx> MaybeOldPlace<'tcx> {
     }
 }
 
-impl<'tcx> LocalNodeLike<'tcx> for MaybeOldPlace<'tcx> {
+impl<'tcx> LocalNodeLike<'tcx> for MaybeLabelledPlace<'tcx> {
     fn to_local_node<C: Copy>(self, repacker: CompilerCtxt<'_, 'tcx, C>) -> LocalNode<'tcx> {
         match self {
-            MaybeOldPlace::Current { place } => place.to_local_node(repacker),
-            MaybeOldPlace::OldPlace(snapshot) => snapshot.to_local_node(repacker),
+            MaybeLabelledPlace::Current(place) => place.to_local_node(repacker),
+            MaybeLabelledPlace::Labelled(snapshot) => snapshot.to_local_node(repacker),
         }
     }
 }
 
-impl<'tcx> RegionProjectionBaseLike<'tcx> for MaybeOldPlace<'tcx> {
+impl<'tcx> RegionProjectionBaseLike<'tcx> for MaybeLabelledPlace<'tcx> {
     fn to_maybe_remote_region_projection_base(&self) -> MaybeRemoteRegionProjectionBase<'tcx> {
         match self {
-            MaybeOldPlace::Current { place } => place.to_maybe_remote_region_projection_base(),
-            MaybeOldPlace::OldPlace(snapshot) => snapshot.to_maybe_remote_region_projection_base(),
+            MaybeLabelledPlace::Current(place) => place.to_maybe_remote_region_projection_base(),
+            MaybeLabelledPlace::Labelled(snapshot) => {
+                snapshot.to_maybe_remote_region_projection_base()
+            }
         }
     }
 
@@ -62,22 +67,22 @@ impl<'tcx> RegionProjectionBaseLike<'tcx> for MaybeOldPlace<'tcx> {
         repacker: CompilerCtxt<'_, 'tcx, C>,
     ) -> IndexVec<RegionIdx, PcgRegion> {
         match self {
-            MaybeOldPlace::Current { place } => place.regions(repacker),
-            MaybeOldPlace::OldPlace(snapshot) => snapshot.place.regions(repacker),
+            MaybeLabelledPlace::Current(place) => place.regions(repacker),
+            MaybeLabelledPlace::Labelled(snapshot) => snapshot.place.regions(repacker),
         }
     }
 }
 
-impl<'tcx> PCGNodeLike<'tcx> for MaybeOldPlace<'tcx> {
-    fn to_pcg_node<C: Copy>(self, repacker: CompilerCtxt<'_, 'tcx, C>) -> PCGNode<'tcx> {
+impl<'tcx> PCGNodeLike<'tcx> for MaybeLabelledPlace<'tcx> {
+    fn to_pcg_node<C: Copy>(self, repacker: CompilerCtxt<'_, 'tcx, C>) -> PcgNode<'tcx> {
         match self {
-            MaybeOldPlace::Current { place } => place.to_pcg_node(repacker),
-            MaybeOldPlace::OldPlace(snapshot) => snapshot.to_pcg_node(repacker),
+            MaybeLabelledPlace::Current(place) => place.to_pcg_node(repacker),
+            MaybeLabelledPlace::Labelled(snapshot) => snapshot.to_pcg_node(repacker),
         }
     }
 }
 
-impl<'tcx> TryFrom<MaybeRemoteRegionProjectionBase<'tcx>> for MaybeOldPlace<'tcx> {
+impl<'tcx> TryFrom<MaybeRemoteRegionProjectionBase<'tcx>> for MaybeLabelledPlace<'tcx> {
     type Error = String;
 
     fn try_from(value: MaybeRemoteRegionProjectionBase<'tcx>) -> Result<Self, Self::Error> {
@@ -92,37 +97,37 @@ impl<'tcx> TryFrom<MaybeRemoteRegionProjectionBase<'tcx>> for MaybeOldPlace<'tcx
     }
 }
 
-impl<'tcx> HasValidityCheck<'tcx> for MaybeOldPlace<'tcx> {
+impl<'tcx> HasValidityCheck<'tcx> for MaybeLabelledPlace<'tcx> {
     fn check_validity(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Result<(), String> {
         match self {
-            MaybeOldPlace::Current { place } => place.check_validity(ctxt),
-            MaybeOldPlace::OldPlace(snapshot) => snapshot.check_validity(ctxt),
+            MaybeLabelledPlace::Current(place) => place.check_validity(ctxt),
+            MaybeLabelledPlace::Labelled(snapshot) => snapshot.check_validity(ctxt),
         }
     }
 }
 
-impl<'tcx, BC: Copy> ToJsonWithCompilerCtxt<'tcx, BC> for MaybeOldPlace<'tcx> {
+impl<'tcx, BC: Copy> ToJsonWithCompilerCtxt<'tcx, BC> for MaybeLabelledPlace<'tcx> {
     fn to_json(&self, repacker: CompilerCtxt<'_, 'tcx, BC>) -> serde_json::Value {
         match self {
-            MaybeOldPlace::Current { place } => place.to_json(repacker),
-            MaybeOldPlace::OldPlace(snapshot) => snapshot.to_json(repacker),
+            MaybeLabelledPlace::Current(place) => place.to_json(repacker),
+            MaybeLabelledPlace::Labelled(snapshot) => snapshot.to_json(repacker),
         }
     }
 }
 
-impl<'tcx> TryFrom<PCGNode<'tcx>> for MaybeOldPlace<'tcx> {
+impl<'tcx> TryFrom<PcgNode<'tcx>> for MaybeLabelledPlace<'tcx> {
     type Error = String;
-    fn try_from(node: PCGNode<'tcx>) -> Result<Self, Self::Error> {
+    fn try_from(node: PcgNode<'tcx>) -> Result<Self, Self::Error> {
         match node {
-            PCGNode::Place(p) => Ok(p.try_into()?),
-            PCGNode::RegionProjection(_) => {
+            PcgNode::Place(p) => Ok(p.try_into()?),
+            PcgNode::LifetimeProjection(_) => {
                 Err("Region projection cannot be converted to a maybe old place".to_string())
             }
         }
     }
 }
 
-impl<'tcx> TryFrom<MaybeRemotePlace<'tcx>> for MaybeOldPlace<'tcx> {
+impl<'tcx> TryFrom<MaybeRemotePlace<'tcx>> for MaybeLabelledPlace<'tcx> {
     type Error = String;
     fn try_from(remote_place: MaybeRemotePlace<'tcx>) -> Result<Self, Self::Error> {
         match remote_place {
@@ -134,42 +139,38 @@ impl<'tcx> TryFrom<MaybeRemotePlace<'tcx>> for MaybeOldPlace<'tcx> {
     }
 }
 
-impl From<mir::Local> for MaybeOldPlace<'_> {
+impl From<mir::Local> for MaybeLabelledPlace<'_> {
     fn from(local: mir::Local) -> Self {
-        Self::Current {
-            place: local.into(),
-        }
+        Self::Current(local.into())
     }
 }
 
-impl<'tcx> From<mir::Place<'tcx>> for MaybeOldPlace<'tcx> {
+impl<'tcx> From<mir::Place<'tcx>> for MaybeLabelledPlace<'tcx> {
     fn from(place: mir::Place<'tcx>) -> Self {
-        Self::Current {
-            place: place.into(),
-        }
+        Self::Current(place.into())
     }
 }
 
-impl std::fmt::Display for MaybeOldPlace<'_> {
+impl std::fmt::Display for MaybeLabelledPlace<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            MaybeOldPlace::Current { place } => write!(f, "{place:?}"),
-            MaybeOldPlace::OldPlace(old_place) => write!(f, "{old_place}"),
+            MaybeLabelledPlace::Current(place) => write!(f, "{place:?}"),
+            MaybeLabelledPlace::Labelled(old_place) => write!(f, "{old_place}"),
         }
     }
 }
 
-impl<'tcx> HasPlace<'tcx> for MaybeOldPlace<'tcx> {
+impl<'tcx> HasPlace<'tcx> for MaybeLabelledPlace<'tcx> {
     fn place(&self) -> Place<'tcx> {
         match self {
-            MaybeOldPlace::Current { place } => *place,
-            MaybeOldPlace::OldPlace(old_place) => old_place.place,
+            MaybeLabelledPlace::Current(place) => *place,
+            MaybeLabelledPlace::Labelled(old_place) => old_place.place,
         }
     }
     fn place_mut(&mut self) -> &mut Place<'tcx> {
         match self {
-            MaybeOldPlace::Current { place } => place,
-            MaybeOldPlace::OldPlace(old_place) => &mut old_place.place,
+            MaybeLabelledPlace::Current(place) => place,
+            MaybeLabelledPlace::Labelled(old_place) => &mut old_place.place,
         }
     }
 
@@ -191,12 +192,12 @@ impl<'tcx> HasPlace<'tcx> for MaybeOldPlace<'tcx> {
         repacker: CompilerCtxt<'_, 'tcx, C>,
     ) -> Vec<(Self, PlaceElem<'tcx>)> {
         match self {
-            MaybeOldPlace::Current { place } => place
+            MaybeLabelledPlace::Current(place) => place
                 .iter_projections(repacker)
                 .into_iter()
                 .map(|(p, e)| (p.into(), e))
                 .collect(),
-            MaybeOldPlace::OldPlace(old_place) => old_place
+            MaybeLabelledPlace::Labelled(old_place) => old_place
                 .place
                 .iter_projections(repacker)
                 .into_iter()
@@ -204,9 +205,13 @@ impl<'tcx> HasPlace<'tcx> for MaybeOldPlace<'tcx> {
                 .collect(),
         }
     }
+
+    fn is_place(&self) -> bool {
+        true
+    }
 }
 
-impl<'tcx, BC: Copy> DisplayWithCompilerCtxt<'tcx, BC> for MaybeOldPlace<'tcx> {
+impl<'tcx, BC: Copy> DisplayWithCompilerCtxt<'tcx, BC> for MaybeLabelledPlace<'tcx> {
     fn to_short_string(&self, repacker: CompilerCtxt<'_, 'tcx, BC>) -> String {
         let p = self.place().to_short_string(repacker);
         format!(
@@ -221,17 +226,17 @@ impl<'tcx, BC: Copy> DisplayWithCompilerCtxt<'tcx, BC> for MaybeOldPlace<'tcx> {
     }
 }
 
-impl MaybeHasLocation for MaybeOldPlace<'_> {
+impl MaybeHasLocation for MaybeLabelledPlace<'_> {
     fn location(&self) -> Option<SnapshotLocation> {
         match self {
-            MaybeOldPlace::Current { .. } => None,
-            MaybeOldPlace::OldPlace(old_place) => Some(old_place.at),
+            MaybeLabelledPlace::Current(_) => None,
+            MaybeLabelledPlace::Labelled(old_place) => Some(old_place.at),
         }
     }
 }
-impl<'tcx> MaybeOldPlace<'tcx> {
+impl<'tcx> MaybeLabelledPlace<'tcx> {
     pub fn is_old(&self) -> bool {
-        matches!(self, MaybeOldPlace::OldPlace(_))
+        matches!(self, MaybeLabelledPlace::Labelled(_))
     }
 
     pub fn projection(&self) -> &'tcx [PlaceElem<'tcx>] {
@@ -241,20 +246,20 @@ impl<'tcx> MaybeOldPlace<'tcx> {
     pub(crate) fn deref_to_rp<C: Copy>(
         &self,
         repacker: CompilerCtxt<'_, 'tcx, C>,
-    ) -> Option<RegionProjection<'tcx, Self>> {
+    ) -> Option<LifetimeProjection<'tcx, Self>> {
         if let Some((place, PlaceElem::Deref)) = self.last_projection() {
-            place.base_region_projection(repacker)
+            place.base_lifetime_projection(repacker)
         } else {
             None
         }
     }
 
-    pub(crate) fn base_region_projection<C: Copy>(
+    pub(crate) fn base_lifetime_projection<C: Copy>(
         &self,
         repacker: CompilerCtxt<'_, 'tcx, C>,
-    ) -> Option<RegionProjection<'tcx, Self>> {
+    ) -> Option<LifetimeProjection<'tcx, Self>> {
         self.place()
-            .base_region_projection(repacker)
+            .base_lifetime_projection(repacker)
             .map(|rp| rp.with_base(*self))
     }
 
@@ -270,42 +275,46 @@ impl<'tcx> MaybeOldPlace<'tcx> {
         self.place().ty_region(repacker)
     }
 
-    pub fn last_projection(&self) -> Option<(MaybeOldPlace<'tcx>, PlaceElem<'tcx>)> {
+    pub fn last_projection(&self) -> Option<(MaybeLabelledPlace<'tcx>, PlaceElem<'tcx>)> {
         match self {
-            MaybeOldPlace::Current { place } => place.last_projection().map(|(p, e)| (p.into(), e)),
-            MaybeOldPlace::OldPlace(snapshot) => snapshot
+            MaybeLabelledPlace::Current(place) => {
+                place.last_projection().map(|(p, e)| (p.into(), e))
+            }
+            MaybeLabelledPlace::Labelled(snapshot) => snapshot
                 .place
                 .last_projection()
-                .map(|(p, e)| (PlaceSnapshot::new(p, snapshot.at).into(), e)),
+                .map(|(p, e)| (LabelledPlace::new(p, snapshot.at).into(), e)),
         }
     }
 
     pub(crate) fn with_inherent_region(
         &self,
         repacker: CompilerCtxt<'_, 'tcx>,
-    ) -> MaybeOldPlace<'tcx> {
+    ) -> MaybeLabelledPlace<'tcx> {
         match self {
-            MaybeOldPlace::Current { place } => place.with_inherent_region(repacker).into(),
-            MaybeOldPlace::OldPlace(snapshot) => snapshot.with_inherent_region(repacker).into(),
+            MaybeLabelledPlace::Current(place) => place.with_inherent_region(repacker).into(),
+            MaybeLabelledPlace::Labelled(snapshot) => {
+                snapshot.with_inherent_region(repacker).into()
+            }
         }
     }
 
-    pub(crate) fn region_projections(
+    pub(crate) fn lifetime_projections(
         &self,
         repacker: CompilerCtxt<'_, 'tcx>,
-    ) -> Vec<RegionProjection<'tcx, Self>> {
+    ) -> Vec<LifetimeProjection<'tcx, Self>> {
         let place = self.with_inherent_region(repacker);
         extract_regions(place.ty(repacker).ty, repacker)
             .iter()
-            .map(|region| RegionProjection::new(*region, place, None, repacker).unwrap())
+            .map(|region| LifetimeProjection::new(*region, place, None, repacker).unwrap())
             .collect()
     }
 
     pub fn new<T: Into<SnapshotLocation>>(place: Place<'tcx>, at: Option<T>) -> Self {
         if let Some(at) = at {
-            Self::OldPlace(PlaceSnapshot::new(place, at))
+            Self::Labelled(LabelledPlace::new(place, at))
         } else {
-            Self::Current { place }
+            Self::Current(place)
         }
     }
 
@@ -313,12 +322,15 @@ impl<'tcx> MaybeOldPlace<'tcx> {
         self.place().ty(repacker)
     }
 
-    pub(crate) fn project_deref(&self, repacker: CompilerCtxt<'_, 'tcx>) -> MaybeOldPlace<'tcx> {
-        MaybeOldPlace::new(self.place().project_deref(repacker), self.location())
+    pub(crate) fn project_deref<BC: Copy>(
+        &self,
+        repacker: CompilerCtxt<'_, 'tcx, BC>,
+    ) -> MaybeLabelledPlace<'tcx> {
+        MaybeLabelledPlace::new(self.place().project_deref(repacker), self.location())
     }
 
     pub fn is_current(&self) -> bool {
-        matches!(self, MaybeOldPlace::Current { .. })
+        matches!(self, MaybeLabelledPlace::Current { .. })
     }
 
     pub fn to_json<BC: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, BC>) -> serde_json::Value {
@@ -329,19 +341,20 @@ impl<'tcx> MaybeOldPlace<'tcx> {
     }
 }
 
-impl<'tcx> LabelPlace<'tcx> for MaybeOldPlace<'tcx> {
-    fn label_place(
+impl<'tcx> LabelPlaceWithContext<'tcx, LabelNodeContext> for MaybeLabelledPlace<'tcx> {
+    fn label_place_with_context(
         &mut self,
         predicate: &LabelPlacePredicate<'tcx>,
         labeller: &impl PlaceLabeller<'tcx>,
+        label_context: LabelNodeContext,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         match self {
-            MaybeOldPlace::Current { place } => {
-                if predicate.applies_to(*place, ctxt) {
-                    *self = MaybeOldPlace::OldPlace(PlaceSnapshot::new(
+            MaybeLabelledPlace::Current(place) => {
+                if predicate.applies_to(*place, label_context, ctxt) {
+                    *self = MaybeLabelledPlace::Labelled(LabelledPlace::new(
                         *place,
-                        labeller.label_place(*place, ctxt),
+                        labeller.place_label(*place, ctxt),
                     ));
                     true
                 } else {
@@ -349,15 +362,6 @@ impl<'tcx> LabelPlace<'tcx> for MaybeOldPlace<'tcx> {
                 }
             }
             _ => false,
-        }
-    }
-}
-
-impl<'tcx> HasPcgElems<Place<'tcx>> for MaybeOldPlace<'tcx> {
-    fn pcg_elems(&mut self) -> Vec<&mut Place<'tcx>> {
-        match self {
-            MaybeOldPlace::Current { place } => vec![place],
-            MaybeOldPlace::OldPlace(snapshot) => snapshot.pcg_elems(),
         }
     }
 }

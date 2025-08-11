@@ -19,18 +19,22 @@ use super::{
     visitor::PcgVisitor,
 };
 use crate::{
-    pcg::{triple::TripleWalker, PcgUnsupportedError}, rustc_interface::{
+    BodyAndBorrows,
+    pcg::{PcgUnsupportedError, triple::TripleWalker},
+    rustc_interface::{
         borrowck::{self, BorrowSet, LocationTable, PoloniusInput, RegionInferenceContext},
         dataflow::Analysis,
         index::{Idx, IndexVec},
         middle::{
             mir::{
-                self, BasicBlock, Body, Location, Promoted, Statement, Terminator, TerminatorEdges, START_BLOCK
+                self, BasicBlock, Body, Location, Promoted, START_BLOCK, Statement, Terminator,
+                TerminatorEdges,
             },
             ty::{self, GenericArgsRef},
         },
-        mir_dataflow::{move_paths::MoveData, Forward},
-    }, utils::{domain_data::DomainDataIndex, visitor::FallableVisitor, AnalysisLocation, MAX_NODES}, BodyAndBorrows
+        mir_dataflow::{Forward, move_paths::MoveData},
+    },
+    utils::{AnalysisLocation, MAX_NODES, domain_data::DomainDataIndex, visitor::FallableVisitor},
 };
 use crate::{
     pcg::{BodyAnalysis, dot_graphs::PcgDotGraphsForBlock},

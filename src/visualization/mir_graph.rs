@@ -29,6 +29,8 @@ struct MirStmt {
     stmt: String,
     loans_invalidated_start: Vec<String>,
     loans_invalidated_mid: Vec<String>,
+    borrows_in_scope_start: Vec<String>,
+    borrows_in_scope_mid: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -36,7 +38,7 @@ struct MirNode {
     id: String,
     block: usize,
     stmts: Vec<MirStmt>,
-    terminator: String,
+    terminator: MirStmt,
 }
 
 #[derive(Serialize)]
@@ -169,9 +171,20 @@ fn format_rvalue<'tcx>(rvalue: &Rvalue<'tcx>, ctxt: CompilerCtxt<'_, 'tcx>) -> S
 }
 fn format_terminator<'tcx>(
     terminator: &TerminatorKind<'tcx>,
-    repacker: CompilerCtxt<'_, 'tcx>,
+    ctxt: CompilerCtxt<'_, 'tcx>,
 ) -> String {
     match terminator {
+        TerminatorKind::Drop {
+            place,
+            target,
+            unwind,
+            ..
+        } => {
+            format!(
+                "drop({}) -> [return: {target:?}, unwind: {unwind:?}]",
+                format_place(place, ctxt)
+            )
+        }
         TerminatorKind::Call {
             func,
             args,
@@ -183,10 +196,10 @@ fn format_terminator<'tcx>(
         } => {
             format!(
                 "{} = {}({})",
-                format_place(destination, repacker),
-                format_operand(func, repacker),
+                format_place(destination, ctxt),
+                format_operand(func, ctxt),
                 args.iter()
-                    .map(|arg| format_operand(&arg.node, repacker))
+                    .map(|arg| format_operand(&arg.node, ctxt))
                     .collect::<Vec<_>>()
                     .join(", ")
             )
@@ -237,50 +250,71 @@ fn format_stmt<'tcx>(stmt: &Statement<'tcx>, repacker: CompilerCtxt<'_, 'tcx>) -
     }
 }
 
+fn mk_mir_stmt(stmt: String, location: mir::Location, ctxt: CompilerCtxt<'_, '_>) -> MirStmt {
+    let bc = ctxt.bc.rust_borrow_checker().unwrap();
+    let location_table = ctxt.bc.rust_borrow_checker().unwrap().location_table();
+    let invalidated_at = &bc.input_facts().loan_invalidated_at;
+    let loans_invalidated_start = invalidated_at
+        .iter()
+        .filter_map(|(point, idx)| {
+            if *point == location_table.start_index(location) {
+                let borrow_region = bc.borrow_index_to_region(*idx);
+                Some(format!("{borrow_region:?}"))
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+    let loans_invalidated_mid = invalidated_at
+        .iter()
+        .filter_map(|(point, idx)| {
+            if *point == location_table.mid_index(location) {
+                let borrow_region = bc.borrow_index_to_region(*idx);
+                Some(format!("{borrow_region:?}"))
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+    let borrows_in_scope_start = bc
+        .borrows_in_scope_at(location, true)
+        .iter()
+        .map(|bi| format!("{bi:?}"))
+        .collect::<Vec<_>>();
+    let borrows_in_scope_mid = bc
+        .borrows_in_scope_at(location, false)
+        .iter()
+        .map(|bi| format!("{bi:?}"))
+        .collect::<Vec<_>>();
+    MirStmt {
+        stmt,
+        loans_invalidated_start,
+        loans_invalidated_mid,
+        borrows_in_scope_start,
+        borrows_in_scope_mid,
+    }
+}
+
 fn mk_mir_graph(ctxt: CompilerCtxt<'_, '_>) -> MirGraph {
     let mut nodes = Vec::new();
     let mut edges = Vec::new();
 
-    let location_table = ctxt.bc.rust_borrow_checker().unwrap().location_table();
     for (bb, data) in ctxt.body().basic_blocks.iter_enumerated() {
         let stmts = data.statements.iter().enumerate().map(|(idx, stmt)| {
-            let stmt = format_stmt(stmt, ctxt);
-            let bc = ctxt.bc;
-            let invalidated_at = &bc.input_facts().loan_invalidated_at;
+            let stmt_text = format_stmt(stmt, ctxt);
             let location = mir::Location {
                 block: bb,
                 statement_index: idx,
             };
-            let loans_invalidated_start = invalidated_at
-                .iter()
-                .filter_map(|(point, idx)| {
-                    if *point == location_table.start_index(location) {
-                        let borrow_region = bc.borrow_index_to_region(*idx);
-                        Some(format!("{borrow_region:?}"))
-                    } else {
-                        None
-                    }
-                })
-                .collect::<Vec<_>>();
-            let loans_invalidated_mid = invalidated_at
-                .iter()
-                .filter_map(|(point, idx)| {
-                    if *point == location_table.mid_index(location) {
-                        let borrow_region = bc.borrow_index_to_region(*idx);
-                        Some(format!("{borrow_region:?}"))
-                    } else {
-                        None
-                    }
-                })
-                .collect::<Vec<_>>();
-            MirStmt {
-                stmt,
-                loans_invalidated_start,
-                loans_invalidated_mid,
-            }
+            mk_mir_stmt(stmt_text, location, ctxt)
         });
 
-        let terminator = format_terminator(&data.terminator().kind, ctxt);
+        let terminator_text = format_terminator(&data.terminator().kind, ctxt);
+        let terminator_location = mir::Location {
+            block: bb,
+            statement_index: data.statements.len(),
+        };
+        let terminator = mk_mir_stmt(terminator_text, terminator_location, ctxt);
 
         nodes.push(MirNode {
             id: format!("{bb:?}"),

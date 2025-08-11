@@ -2,14 +2,14 @@
 use crate::{
     borrow_checker::BorrowCheckerInterface,
     borrow_pcg::{
-        edge_data::{edgedata_enum, LabelEdgePlaces, LabelPlacePredicate},
+        edge_data::{LabelEdgePlaces, LabelPlacePredicate, edgedata_enum},
         has_pcs_elem::{
-            LabelPlace, LabelLifetimeProjection, LabelLifetimeProjectionPredicate,
-            LabelLifetimeProjectionResult, PlaceLabeller,
+            LabelLifetimeProjection, LabelLifetimeProjectionPredicate,
+            LabelLifetimeProjectionResult, LabelNodeContext, LabelPlaceWithContext, PlaceLabeller,
         },
         region_projection::LifetimeProjectionLabel,
     },
-    pcg::PCGNode,
+    pcg::PcgNode,
     rustc_interface::{
         ast::Mutability,
         borrowck::BorrowIndex,
@@ -18,26 +18,25 @@ use crate::{
             ty::{self},
         },
     },
-    utils::{remote::RemotePlace, HasPlace},
+    utils::{HasPlace, remote::RemotePlace},
 };
 
 use crate::borrow_pcg::borrow_pcg_edge::{BlockedNode, LocalNode};
 use crate::borrow_pcg::edge_data::EdgeData;
-use crate::borrow_pcg::has_pcs_elem::HasPcgElems;
-use crate::borrow_pcg::region_projection::RegionProjection;
+use crate::borrow_pcg::region_projection::LifetimeProjection;
+use crate::utils::CompilerCtxt;
 use crate::utils::display::DisplayWithCompilerCtxt;
-use crate::utils::place::maybe_old::MaybeOldPlace;
+use crate::utils::place::maybe_old::MaybeLabelledPlace;
 use crate::utils::place::maybe_remote::MaybeRemotePlace;
 use crate::utils::validity::HasValidityCheck;
-use crate::utils::CompilerCtxt;
 
 /// A borrow that is explicit in the MIR (e.g. `let x = &mut y;`)
 #[derive(PartialEq, Eq, Clone, Debug, Hash)]
 pub struct LocalBorrow<'tcx> {
     /// The place that is blocked by the borrow, e.g. the y in `let x = &mut y;`
-    pub blocked_place: MaybeOldPlace<'tcx>,
+    pub blocked_place: MaybeLabelledPlace<'tcx>,
     /// The place that is assigned by the borrow, e.g. the x in `let x = &mut y;`
-    pub(crate) assigned_ref: MaybeOldPlace<'tcx>,
+    pub(crate) assigned_ref: MaybeLabelledPlace<'tcx>,
     kind: mir::BorrowKind,
 
     /// The location when the borrow was created
@@ -48,7 +47,7 @@ pub struct LocalBorrow<'tcx> {
     // For some reason this may not be defined for certain shared borrows
     borrow_index: Option<BorrowIndex>,
 
-    assigned_rp_snapshot: Option<LifetimeProjectionLabel>,
+    assigned_lifetime_projection_label: Option<LifetimeProjectionLabel>,
 }
 
 impl<'tcx> LabelLifetimeProjection<'tcx> for LocalBorrow<'tcx> {
@@ -59,8 +58,11 @@ impl<'tcx> LabelLifetimeProjection<'tcx> for LocalBorrow<'tcx> {
         repacker: CompilerCtxt<'_, 'tcx>,
     ) -> LabelLifetimeProjectionResult {
         let mut changed = LabelLifetimeProjectionResult::Unchanged;
-        if predicate.matches(self.assigned_region_projection(repacker).rebase(), repacker) {
-            self.assigned_rp_snapshot = label;
+        if predicate.matches(
+            self.assigned_lifetime_projection(repacker).rebase(),
+            repacker,
+        ) {
+            self.assigned_lifetime_projection_label = label;
             changed = LabelLifetimeProjectionResult::Changed;
         }
         changed
@@ -74,7 +76,12 @@ impl<'tcx> LabelEdgePlaces<'tcx> for LocalBorrow<'tcx> {
         labeller: &impl PlaceLabeller<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
-        self.blocked_place.label_place(predicate, labeller, ctxt)
+        self.blocked_place.label_place_with_context(
+            predicate,
+            labeller,
+            LabelNodeContext::Other,
+            ctxt,
+        )
     }
 
     fn label_blocked_by_places(
@@ -86,7 +93,12 @@ impl<'tcx> LabelEdgePlaces<'tcx> for LocalBorrow<'tcx> {
         // Technically, `assigned_ref` does not block this node, but this place
         // is used to compute `assigned_region_projection` which *does* block this node
         // So we should label it
-        self.assigned_ref.label_place(predicate, labeller, ctxt)
+        self.assigned_ref.label_place_with_context(
+            predicate,
+            labeller,
+            LabelNodeContext::Other,
+            ctxt,
+        )
     }
 }
 
@@ -99,7 +111,7 @@ pub struct RemoteBorrow<'tcx> {
 
     // We don't assume that it's still the dereference of the local of the remote place,
     // because that local could be moved and the assigned ref should be renamed accordingly.
-    assigned_ref: MaybeOldPlace<'tcx>,
+    assigned_ref: MaybeLabelledPlace<'tcx>,
 
     rp_snapshot_location: Option<LifetimeProjectionLabel>,
 }
@@ -111,7 +123,10 @@ impl<'tcx> LabelLifetimeProjection<'tcx> for RemoteBorrow<'tcx> {
         label: Option<LifetimeProjectionLabel>,
         repacker: CompilerCtxt<'_, 'tcx>,
     ) -> LabelLifetimeProjectionResult {
-        if predicate.matches(self.assigned_region_projection(repacker).rebase(), repacker) {
+        if predicate.matches(
+            self.assigned_lifetime_projection(repacker).rebase(),
+            repacker,
+        ) {
             self.rp_snapshot_location = label;
             LabelLifetimeProjectionResult::Changed
         } else {
@@ -136,18 +151,17 @@ impl<'tcx> LabelEdgePlaces<'tcx> for RemoteBorrow<'tcx> {
         labeller: &impl PlaceLabeller<'tcx>,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
-        self.assigned_ref.label_place(predicate, labeller, ctxt)
-    }
-}
-
-impl<'tcx> HasPcgElems<MaybeOldPlace<'tcx>> for RemoteBorrow<'tcx> {
-    fn pcg_elems(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
-        vec![&mut self.assigned_ref]
+        self.assigned_ref.label_place_with_context(
+            predicate,
+            labeller,
+            LabelNodeContext::Other,
+            ctxt,
+        )
     }
 }
 
 impl<'tcx> RemoteBorrow<'tcx> {
-    pub(crate) fn deref_place(&self, repacker: CompilerCtxt<'_, 'tcx>) -> MaybeOldPlace<'tcx> {
+    pub(crate) fn deref_place(&self, repacker: CompilerCtxt<'_, 'tcx>) -> MaybeLabelledPlace<'tcx> {
         self.assigned_ref.project_deref(repacker)
     }
 
@@ -155,15 +169,15 @@ impl<'tcx> RemoteBorrow<'tcx> {
         RemotePlace::new(self.local)
     }
 
-    pub(crate) fn assigned_ref(&self) -> MaybeOldPlace<'tcx> {
+    pub(crate) fn assigned_ref(&self) -> MaybeLabelledPlace<'tcx> {
         self.assigned_ref
     }
 
-    pub(crate) fn assigned_region_projection<BC: Copy>(
+    pub(crate) fn assigned_lifetime_projection<BC: Copy>(
         &self,
         ctxt: CompilerCtxt<'_, 'tcx, BC>,
-    ) -> RegionProjection<'tcx, MaybeOldPlace<'tcx>> {
-        let rp = self.assigned_ref.base_region_projection(ctxt).unwrap();
+    ) -> LifetimeProjection<'tcx, MaybeLabelledPlace<'tcx>> {
+        let rp = self.assigned_ref.base_lifetime_projection(ctxt).unwrap();
         if let Some(location) = self.rp_snapshot_location {
             rp.with_label(Some(location), ctxt)
         } else {
@@ -186,7 +200,8 @@ impl<'tcx, 'a> DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx
         format!(
             "{} -> {}",
             self.blocked_place().to_short_string(ctxt),
-            self.assigned_region_projection(ctxt).to_short_string(ctxt)
+            self.assigned_lifetime_projection(ctxt)
+                .to_short_string(ctxt)
         )
     }
 }
@@ -213,7 +228,7 @@ impl<'tcx> EdgeData<'tcx> for RemoteBorrow<'tcx> {
     fn blocked_nodes<'slf, BC: Copy>(
         &'slf self,
         _ctxt: CompilerCtxt<'_, 'tcx, BC>,
-    ) -> Box<dyn Iterator<Item = PCGNode<'tcx>> + 'slf>
+    ) -> Box<dyn Iterator<Item = PcgNode<'tcx>> + 'slf>
     where
         'tcx: 'slf,
     {
@@ -228,7 +243,7 @@ impl<'tcx> EdgeData<'tcx> for RemoteBorrow<'tcx> {
         'tcx: 'mir,
     {
         Box::new(std::iter::once(
-            self.assigned_region_projection(repacker).into(),
+            self.assigned_lifetime_projection(repacker).into(),
         ))
     }
 }
@@ -291,13 +306,13 @@ impl<'tcx> BorrowEdge<'tcx> {
         }
     }
 
-    pub(crate) fn assigned_region_projection(
+    pub(crate) fn assigned_lifetime_projection(
         &self,
-        repacker: CompilerCtxt<'_, 'tcx>,
-    ) -> RegionProjection<'tcx, MaybeOldPlace<'tcx>> {
+        ctxt: CompilerCtxt<'_, 'tcx>,
+    ) -> LifetimeProjection<'tcx, MaybeLabelledPlace<'tcx>> {
         match self {
-            BorrowEdge::Local(borrow) => borrow.assigned_region_projection(repacker),
-            BorrowEdge::Remote(borrow) => borrow.assigned_region_projection(repacker),
+            BorrowEdge::Local(borrow) => borrow.assigned_lifetime_projection(ctxt),
+            BorrowEdge::Remote(borrow) => borrow.assigned_lifetime_projection(ctxt),
         }
     }
 
@@ -308,14 +323,14 @@ impl<'tcx> BorrowEdge<'tcx> {
         }
     }
 
-    pub fn deref_place(&self, repacker: CompilerCtxt<'_, 'tcx>) -> MaybeOldPlace<'tcx> {
+    pub fn deref_place(&self, repacker: CompilerCtxt<'_, 'tcx>) -> MaybeLabelledPlace<'tcx> {
         match self {
             BorrowEdge::Local(borrow) => borrow.deref_place(repacker),
             BorrowEdge::Remote(borrow) => borrow.deref_place(repacker),
         }
     }
 
-    pub(crate) fn assigned_ref(&self) -> MaybeOldPlace<'tcx> {
+    pub(crate) fn assigned_ref(&self) -> MaybeLabelledPlace<'tcx> {
         match self {
             BorrowEdge::Local(borrow) => borrow.assigned_ref,
             BorrowEdge::Remote(remote) => remote.assigned_ref(),
@@ -332,7 +347,7 @@ impl<'tcx> HasValidityCheck<'tcx> for LocalBorrow<'tcx> {
 
 impl<'tcx, BC: Copy> DisplayWithCompilerCtxt<'tcx, BC> for LocalBorrow<'tcx> {
     fn to_short_string(&self, ctxt: CompilerCtxt<'_, 'tcx, BC>) -> String {
-        let rp_part = if let Some(rp) = self.assigned_rp_snapshot {
+        let rp_part = if let Some(rp) = self.assigned_lifetime_projection_label {
             format!(" <{}>", rp)
         } else {
             "".to_string()
@@ -351,12 +366,6 @@ impl<'tcx, BC: Copy> DisplayWithCompilerCtxt<'tcx, BC> for LocalBorrow<'tcx> {
     }
 }
 
-impl<'tcx, T> HasPcgElems<RegionProjection<'tcx, T>> for BorrowEdge<'tcx> {
-    fn pcg_elems(&mut self) -> Vec<&mut RegionProjection<'tcx, T>> {
-        vec![]
-    }
-}
-
 impl<'tcx> EdgeData<'tcx> for LocalBorrow<'tcx> {
     fn blocks_node<'slf>(
         &self,
@@ -364,16 +373,16 @@ impl<'tcx> EdgeData<'tcx> for LocalBorrow<'tcx> {
         _repacker: CompilerCtxt<'_, 'tcx>,
     ) -> bool {
         match node {
-            PCGNode::Place(MaybeRemotePlace::Local(p)) => self.blocked_place == p,
+            PcgNode::Place(MaybeRemotePlace::Local(p)) => self.blocked_place == p,
             _ => false,
         }
     }
 
     fn is_blocked_by<'slf>(&self, node: LocalNode<'tcx>, repacker: CompilerCtxt<'_, 'tcx>) -> bool {
         match node {
-            PCGNode::Place(_) => false,
-            PCGNode::RegionProjection(region_projection) => {
-                region_projection == self.assigned_region_projection(repacker)
+            PcgNode::Place(_) => false,
+            PcgNode::LifetimeProjection(region_projection) => {
+                region_projection == self.assigned_lifetime_projection(repacker)
             }
         }
     }
@@ -395,15 +404,15 @@ impl<'tcx> EdgeData<'tcx> for LocalBorrow<'tcx> {
     where
         'tcx: 'mir,
     {
-        let rp = self.assigned_region_projection(repacker);
-        Box::new(std::iter::once(LocalNode::RegionProjection(rp)))
+        let rp = self.assigned_lifetime_projection(repacker);
+        Box::new(std::iter::once(LocalNode::LifetimeProjection(rp)))
     }
 }
 
 impl<'tcx> LocalBorrow<'tcx> {
     pub(crate) fn new(
-        blocked_place: MaybeOldPlace<'tcx>,
-        assigned_place: MaybeOldPlace<'tcx>,
+        blocked_place: MaybeLabelledPlace<'tcx>,
+        assigned_place: MaybeLabelledPlace<'tcx>,
         kind: mir::BorrowKind,
         reservation_location: Location,
         region: ty::Region<'tcx>,
@@ -416,7 +425,7 @@ impl<'tcx> LocalBorrow<'tcx> {
             kind,
             reserve_location: reservation_location,
             region,
-            assigned_rp_snapshot: None,
+            assigned_lifetime_projection_label: None,
             borrow_index: ctxt.bc.region_to_borrow_index(region.into()),
         }
     }
@@ -431,22 +440,22 @@ impl<'tcx> LocalBorrow<'tcx> {
 
     /// The deref of the assigned place of the borrow. For example, if the borrow is
     /// `let x = &mut y;`, then the deref place is `*x`.
-    pub fn deref_place(&self, repacker: CompilerCtxt<'_, 'tcx>) -> MaybeOldPlace<'tcx> {
+    pub fn deref_place(&self, repacker: CompilerCtxt<'_, 'tcx>) -> MaybeLabelledPlace<'tcx> {
         self.assigned_ref.project_deref(repacker)
     }
 
     /// The region projection associated with the *type* of the assigned place
     /// of the borrow. For example in `let x: &'x mut i32 = ???`, the assigned
     /// region projection is `x↓'x`.
-    pub(crate) fn assigned_region_projection<C: Copy>(
+    pub(crate) fn assigned_lifetime_projection<C: Copy>(
         &self,
         repacker: CompilerCtxt<'_, 'tcx, C>,
-    ) -> RegionProjection<'tcx, MaybeOldPlace<'tcx>> {
+    ) -> LifetimeProjection<'tcx, MaybeLabelledPlace<'tcx>> {
         match self.assigned_ref.ty(repacker).ty.kind() {
-            ty::TyKind::Ref(region, _, _) => RegionProjection::new(
+            ty::TyKind::Ref(region, _, _) => LifetimeProjection::new(
                 (*region).into(),
                 self.assigned_ref,
-                self.assigned_rp_snapshot,
+                self.assigned_lifetime_projection_label,
                 repacker,
             )
             .unwrap(),
@@ -463,11 +472,5 @@ impl std::fmt::Display for BorrowEdge<'_> {
             self.blocked_place(),
             self.assigned_ref()
         )
-    }
-}
-
-impl<'tcx> HasPcgElems<MaybeOldPlace<'tcx>> for LocalBorrow<'tcx> {
-    fn pcg_elems(&mut self) -> Vec<&mut MaybeOldPlace<'tcx>> {
-        vec![&mut self.assigned_ref, &mut self.blocked_place]
     }
 }

@@ -5,18 +5,22 @@ use crate::borrow_pcg::domain::LoopAbstractionOutput;
 use crate::borrow_pcg::edge::abstraction::{AbstractionType, LoopAbstractionInput};
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::borrow_pcg::edge_data::{EdgeData, LabelEdgePlaces, LabelPlacePredicate};
-use crate::borrow_pcg::has_pcs_elem::{HasPcgElems, LabelLifetimeProjection, LabelLifetimeProjectionPredicate, LabelLifetimeProjectionResult, PlaceLabeller};
+use crate::borrow_pcg::has_pcs_elem::{
+    LabelLifetimeProjection, LabelLifetimeProjectionPredicate, LabelLifetimeProjectionResult,
+    PlaceLabeller,
+};
 use crate::borrow_pcg::path_condition::ValidityConditions;
 use crate::borrow_pcg::region_projection::LifetimeProjectionLabel;
-use crate::pcg::PCGNode;
+use crate::pcg::PcgNode;
 use crate::rustc_interface::middle::mir::{BasicBlock, Location};
+use crate::utils::CompilerCtxt;
 use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::validity::HasValidityCheck;
-use crate::utils::CompilerCtxt;
 
 #[derive(PartialEq, Eq, Clone, Debug, Hash)]
 pub struct LoopAbstraction<'tcx> {
-    pub(crate) edge: AbstractionBlockEdge<'tcx, LoopAbstractionInput<'tcx>, LoopAbstractionOutput<'tcx>>,
+    pub(crate) edge:
+        AbstractionBlockEdge<'tcx, LoopAbstractionInput<'tcx>, LoopAbstractionOutput<'tcx>>,
     pub(crate) block: BasicBlock,
 }
 
@@ -38,7 +42,7 @@ impl<'tcx> EdgeData<'tcx> for LoopAbstraction<'tcx> {
     fn blocked_nodes<'slf, BC: Copy>(
         &'slf self,
         repacker: CompilerCtxt<'_, 'tcx, BC>,
-    ) -> Box<dyn std::iter::Iterator<Item = PCGNode<'tcx>> + 'slf>
+    ) -> Box<dyn std::iter::Iterator<Item = PcgNode<'tcx>> + 'slf>
     where
         'tcx: 'slf,
     {
@@ -93,15 +97,6 @@ impl<'tcx, 'a> DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx
             self.block,
             self.edge.to_short_string(ctxt)
         )
-    }
-}
-
-impl<'tcx, T> HasPcgElems<T> for LoopAbstraction<'tcx>
-where
-    AbstractionBlockEdge<'tcx, LoopAbstractionInput<'tcx>, LoopAbstractionOutput<'tcx>>: HasPcgElems<T>,
-{
-    fn pcg_elems(&mut self) -> Vec<&mut T> {
-        self.edge.pcg_elems()
     }
 }
 

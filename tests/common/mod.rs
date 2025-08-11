@@ -233,15 +233,15 @@ pub enum RunOnCrateOptions {
     RunPCG {
         target: Target,
         validity_checks: bool,
-        function: Option<&'static str>,
+        function: Option<String>,
         extra_env_vars: Vec<(String, String)>,
     },
 }
 
 impl RunOnCrateOptions {
-    pub fn function(&self) -> Option<&'static str> {
+    pub fn function(&self) -> Option<&str> {
         match self {
-            RunOnCrateOptions::RunPCG { function, .. } => *function,
+            RunOnCrateOptions::RunPCG { function, .. } => function.as_deref(),
             RunOnCrateOptions::TypecheckOnly { .. } => None,
         }
     }
@@ -273,7 +273,7 @@ impl RunOnCrateOptions {
 pub enum RunOnCrateResult {
     Success,
     Skipped,
-    Failed
+    Failed,
 }
 
 #[must_use]
@@ -313,7 +313,10 @@ pub fn ensure_successful_run_on_crate(
     options: RunOnCrateOptions,
 ) {
     let result = run_on_crate(name, version, date, options);
-    assert!(matches!(result, RunOnCrateResult::Success), "PCG check failed for crate {name} {version}");
+    assert!(
+        matches!(result, RunOnCrateResult::Success),
+        "PCG check failed for crate {name} {version}"
+    );
 }
 
 #[allow(dead_code)]

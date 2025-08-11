@@ -28,6 +28,13 @@ jobs:
     - name: Run Clippy
       run: cargo clippy -- -D warnings
 
+  rustfmt:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Check code formatting
+      run: cargo fmt --all -- --check
+
   test_files:
     runs-on: ubuntu-latest
     steps:
@@ -119,11 +126,11 @@ jobs:
       with:
         path: pcg
 
-    - name: Checkout flowistry repository
+    - name: Checkout mutation testing repository
       uses: actions/checkout@v4
       with:
-        repository: jaspergeer/pcg-mutation-testing
-        ref: main
+        repository: zgrannan/pcg-mutation-testing
+        ref: zgrannan/update-pcg
         path: pcg-mutation-testing
 
     - name: Build mutation testing tool
