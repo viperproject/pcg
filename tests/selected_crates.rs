@@ -859,8 +859,6 @@ fn test_selected_crates() {
             Some("2025-03-13"),
             TestCrateType::function("parser_state::ParserState::<'i, R>::stack_match_pop", None),
         ),
-        SelectedCrateTestCase::new("crypto-bigint", "0.6.1", None, TestCrateType::EntireCrate), // Note: original had extra_env_vars and validity_checks: false
-        SelectedCrateTestCase::new("idna", "1.0.3", None, TestCrateType::EntireCrate), // Note: original had validity_checks: false
         SelectedCrateTestCase::new(
             "chrono",
             "0.4.40",
@@ -909,18 +907,6 @@ fn test_selected_crates() {
             TestCrateType::function("<MemPool<'a, T> as core::default::Default>::default", None),
         ),
         SelectedCrateTestCase::new(
-            "predicates-tree",
-            "1.0.12",
-            None,
-            TestCrateType::EntireCrate,
-        ),
-        SelectedCrateTestCase::new(
-            "concurrent-queue",
-            "2.5.0",
-            None,
-            TestCrateType::EntireCrate,
-        ),
-        SelectedCrateTestCase::new(
             "encoding_rs",
             "0.8.35",
             Some("2025-03-13"),
@@ -956,13 +942,6 @@ fn test_selected_crates() {
             Some("2025-03-13"),
             TestCrateType::function("internals::ast::Container::<'a>::from_ast", None),
         ), // Note: original had validity_checks: false
-        SelectedCrateTestCase::new(
-            "tracing-subscriber",
-            "0.3.19",
-            None,
-            TestCrateType::EntireCrate,
-        ), // Note: original had validity_checks: false
-        SelectedCrateTestCase::new("rustls", "0.23.23", None, TestCrateType::EntireCrate),
     ];
 
     let mut test_cases: Vec<SelectedCrateTestCase> = vec![

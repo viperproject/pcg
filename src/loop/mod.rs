@@ -278,29 +278,8 @@ impl<'tcx> PlaceUsages<'tcx> {
             self.0.insert(place, usage);
             true
         }
-        // let mut changed;
-        // if let Some(existing_related_place_usages) = self.postfix_place_usages(place) {
-        //     let max_cap = existing_related_place_usages.max_usage();
-        //     if max_cap >= usage {
-        //         return false;
-        //     } else {
-        //         self.0.insert(place, usage);
-        //         changed = true;
-        //     }
-        // } else {
-        //     self.0.insert(place, usage);
-        //     changed = true;
-        // }
-        // if let Some(existing_related_place_usages) = self.prefix_place_usages(place) {
-        //     for existing_prefix_usage in existing_related_place_usages.0.iter() {
-        //         if existing_prefix_usage.usage < usage {
-        //             self.0.remove(&existing_prefix_usage.place);
-        //             changed = true;
-        //         }
-        //     }
-        // }
-        // changed
     }
+
     pub(crate) fn iter(&self) -> impl Iterator<Item = PlaceUsage<'tcx>> + '_ {
         self.0.iter().map(|(p, usage)| PlaceUsage {
             place: *p,
