@@ -58,11 +58,21 @@ pub trait EdgeData<'tcx> {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum LabelPlacePredicate<'tcx> {
+    /// Label only this exact place, not including any of its pre-or postfix places.
     Exact(Place<'tcx>),
+    /// Label all places that (transitively) project from a postfix of `place`,
+    /// including `place` itself. If `label_place_in_expansion` is `false`,
+    /// then we would not label places e.g `place.foo` when `place.foo` is the
+    /// child of a [`BorrowPcgExpansion`] or [`DerefEdge`].
     Postfix {
         place: Place<'tcx>,
         label_place_in_expansion: bool,
     },
+    /// Label all places that (transitively) project from a dereference of ///
+    /// `place`. In general, this includes the dereference itself, but this can
+    /// also depend on the context. If `shared_refs_only` is true, then
+    /// dereferences of mutable references are not considered when determining
+    /// whether a place projects from a dereference.
     DerefPostfixOf {
         place: Place<'tcx>,
         shared_refs_only: bool,

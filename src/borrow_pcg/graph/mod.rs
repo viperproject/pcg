@@ -62,7 +62,7 @@ impl<'tcx> HasValidityCheck<'tcx> for BorrowsGraph<'tcx> {
         // TODO
         for node in nodes.iter() {
             if let Some(PcgNode::LifetimeProjection(rp)) = node.try_to_local_node(ctxt)
-                && rp.is_placeholder()
+                && rp.is_future()
                 && rp.base.as_current_place().is_some()
             {
                 let current_rp = rp.with_label(None, ctxt);

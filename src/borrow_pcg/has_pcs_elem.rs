@@ -11,10 +11,20 @@ use crate::utils::{CompilerCtxt, FilterMutResult, HasPlace, Place, SnapshotLocat
 
 #[derive(PartialEq, Eq, Hash, Debug, Clone)]
 pub enum LabelLifetimeProjectionPredicate<'tcx> {
+    /// Label all lifetime projections `rp` where the base of rp has related
+    /// place `p`, where `p` is a postfix of the predicate projection `rp_c`'s
+    /// base related place `p_c` and replacing `p` with `p_c` in `rp` yields
+    /// `rp_c`.
     Postfix(LifetimeProjection<'tcx, MaybeLabelledPlace<'tcx>>),
+    /// Labels all lifetime projections that are equal to the provided lifetime
+    /// projection.
     Equals(LifetimeProjection<'tcx, MaybeLabelledPlace<'tcx>>),
-    AllNonPlaceHolder(MaybeLabelledPlace<'tcx>, RegionIdx),
-    AllPlaceholderPostfixes(Place<'tcx>),
+    /// Labels all lifetime projections `rp` where the base and region match
+    /// that of the predicate and `rp` is not a future lifetime projection.
+    AllNonFuture(MaybeLabelledPlace<'tcx>, RegionIdx),
+    /// Labels all lifetime projections `rp` where the base is `place`
+    /// and `rp` is a future lifetime projection.
+    AllFuturePostfixes(Place<'tcx>),
 }
 
 impl<'tcx, 'a> DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>>
@@ -31,14 +41,14 @@ impl<'tcx, 'a> DisplayWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx
             LabelLifetimeProjectionPredicate::Equals(region_projection) => {
                 region_projection.to_short_string(ctxt)
             }
-            LabelLifetimeProjectionPredicate::AllNonPlaceHolder(maybe_old_place, region_idx) => {
+            LabelLifetimeProjectionPredicate::AllNonFuture(maybe_old_place, region_idx) => {
                 format!(
-                    "AllNonPlaceHolder: {}, {:?}",
+                    "AllNonFuture: {}, {:?}",
                     maybe_old_place.to_short_string(ctxt),
                     region_idx
                 )
             }
-            LabelLifetimeProjectionPredicate::AllPlaceholderPostfixes(place) => {
+            LabelLifetimeProjectionPredicate::AllFuturePostfixes(place) => {
                 format!("AllPlaceholderPostfixes: {}", place.to_short_string(ctxt))
             }
         }
@@ -55,10 +65,10 @@ impl<'tcx> LabelLifetimeProjectionPredicate<'tcx> {
             LabelLifetimeProjectionPredicate::Equals(projection) => {
                 (*projection).rebase() == to_match
             }
-            LabelLifetimeProjectionPredicate::AllNonPlaceHolder(maybe_old_place, region_idx) => {
+            LabelLifetimeProjectionPredicate::AllNonFuture(maybe_old_place, region_idx) => {
                 to_match.region_idx == *region_idx
                     && to_match.place() == (*maybe_old_place).into()
-                    && !to_match.is_placeholder()
+                    && !to_match.is_future()
             }
             LabelLifetimeProjectionPredicate::Postfix(predicate_projection) => {
                 if let Some(crate::pcg::PcgNode::LifetimeProjection(to_match)) =
@@ -75,11 +85,11 @@ impl<'tcx> LabelLifetimeProjectionPredicate<'tcx> {
                     false
                 }
             }
-            LabelLifetimeProjectionPredicate::AllPlaceholderPostfixes(place) => {
+            LabelLifetimeProjectionPredicate::AllFuturePostfixes(place) => {
                 if let Some(crate::pcg::PcgNode::LifetimeProjection(to_match)) =
                     to_match.try_to_local_node(ctxt)
                 {
-                    to_match.is_placeholder()
+                    to_match.is_future()
                         && to_match.base.is_current()
                         && place.is_prefix_of(to_match.base.place())
                 } else {
@@ -126,6 +136,7 @@ pub(crate) trait LabelLifetimeProjection<'tcx> {
 
 #[derive(PartialEq, Eq, Hash, Debug, Clone, Copy)]
 pub(crate) enum LabelNodeContext {
+    /// The node to be labelled is the target of a [`BorrowPcgExpansion`] or [`DerefEdge`]
     TargetOfExpansion,
     Other,
 }

@@ -158,7 +158,7 @@ pub(crate) trait BorrowsStateLike<'tcx> {
                 }
                 if restore.capability() == CapabilityKind::Exclusive {
                     self.label_region_projection(
-                        &LabelLifetimeProjectionPredicate::AllPlaceholderPostfixes(restore_place),
+                        &LabelLifetimeProjectionPredicate::AllFuturePostfixes(restore_place),
                         None,
                         ctxt.ctxt,
                     );
@@ -405,16 +405,13 @@ impl<'tcx> BorrowsState<'tcx> {
     ) -> Option<MaybeLabelledPlace<'tcx>> {
         let edges = self.edges_blocking(place.into(), ctxt);
         if edges.len() != 1 {
-            eprintln!("Expected 1 edge blocking {:?}, got {}", place, edges.len());
             return None;
         }
         let nodes = edges[0].blocked_by_nodes(ctxt).collect::<Vec<_>>();
         if nodes.len() != 1 {
-            eprintln!("Expected 1 node blocking {:?}, got {}", place, nodes.len());
             return None;
         }
         let node = nodes.into_iter().next().unwrap();
-        eprintln!("Node blocking {:?}: {}", place, node.to_short_string(ctxt));
         match node {
             PcgNode::Place(_) => todo!(),
             PcgNode::LifetimeProjection(region_projection) => region_projection.deref(ctxt),

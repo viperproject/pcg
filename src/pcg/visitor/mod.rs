@@ -425,7 +425,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             .filter_map(|node| match node {
                 PcgNode::Place(_) => None,
                 PcgNode::LifetimeProjection(region_projection) => {
-                    if region_projection.is_placeholder() {
+                    if region_projection.is_future() {
                         region_projection.base.as_current_place()
                     } else {
                         None

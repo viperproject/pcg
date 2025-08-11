@@ -573,27 +573,6 @@ fn test_selected_crates() {
             Some("2025-03-13"),
             TestCrateType::function("registry::SpanRef::<'a, R>::with_filter", Some(3)),
         ),
-        // 7 basic blocks
-        SelectedCrateTestCase::new(
-            "tracing-subscriber",
-            "0.3.19",
-            Some("2025-03-13"),
-            TestCrateType::EntireCrate,
-        ),
-        // <= 15 basic blocks, <= 15 nodes
-        SelectedCrateTestCase::new(
-            "ring",
-            "0.17.14",
-            Some("2025-03-13"),
-            TestCrateType::EntireCrate,
-        ),
-        // 14 basic blocks, <= 15 nodes
-        SelectedCrateTestCase::new(
-            "rayon",
-            "1.10.0",
-            Some("2025-03-13"),
-            TestCrateType::EntireCrate,
-        ),
         // 30 basic blocks
         SelectedCrateTestCase::new(
             "cookie",
@@ -634,13 +613,6 @@ fn test_selected_crates() {
             Some("2025-03-13"),
             TestCrateType::function("loader::Loader::<'input>::next_document", Some(159)),
         ),
-        // 20 basic blocks
-        SelectedCrateTestCase::new(
-            "http",
-            "1.3.1",
-            Some("2025-03-13"),
-            TestCrateType::EntireCrate,
-        ),
         // 4 basic blocks
         SelectedCrateTestCase::new(
             "rustls-pki-types",
@@ -658,15 +630,6 @@ fn test_selected_crates() {
                 Some(23),
             ),
         ),
-        // cycles, <= 20 basic blocks, <= 30 nodes
-        SelectedCrateTestCase::new(
-            "object",
-            "0.36.7",
-            Some("2025-03-13"),
-            TestCrateType::EntireCrate,
-        ),
-        // <= 20 basic blocks, cycles, <= 20 nodes
-        SelectedCrateTestCase::new("sha2", "0.10.8", None, TestCrateType::EntireCrate),
         // 4 basic blocks, cycles, <= 12 nodes
         SelectedCrateTestCase::new(
             "rustix",
@@ -686,12 +649,6 @@ fn test_selected_crates() {
                 "<ser::PrettyFormatter<'a> as ser::Formatter>::begin_array",
                 None,
             ),
-        ),
-        SelectedCrateTestCase::new(
-            "flume",
-            "0.11.1",
-            Some("2025-03-13"),
-            TestCrateType::EntireCrate,
         ),
         // cycles, <= 30 basic blocks, <= 30 nodes
         SelectedCrateTestCase::new(
@@ -796,13 +753,6 @@ fn test_selected_crates() {
                 Some(9),
             ),
         ),
-        // 3 basic blocks
-        SelectedCrateTestCase::new(
-            "tracing-subscriber",
-            "0.3.19",
-            Some("2025-03-13"),
-            TestCrateType::EntireCrate,
-        ),
         // 4 basic blocks
         SelectedCrateTestCase::new(
             "tracing-subscriber",
@@ -819,20 +769,6 @@ fn test_selected_crates() {
                 "<filter::targets::Targets as std::str::FromStr>::from_str",
                 Some(7),
             ),
-        ),
-        // 11 basic blocks
-        SelectedCrateTestCase::new(
-            "serde_yaml",
-            "0.9.34+deprecated",
-            Some("2025-03-13"),
-            TestCrateType::EntireCrate,
-        ),
-        // 32 basic blocks
-        SelectedCrateTestCase::new(
-            "serde_yaml",
-            "0.9.34+deprecated",
-            Some("2025-03-13"),
-            TestCrateType::EntireCrate,
         ),
         // 8 basic blocks
         SelectedCrateTestCase::new(

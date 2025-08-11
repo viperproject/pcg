@@ -166,7 +166,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                     add_block_edges(&mut expander, *root, blocker, ctxt);
                     if let MaybeRemoteCurrentPlace::Local(root) = root {
                         for rp in root.lifetime_projections(ctxt) {
-                            to_label.insert(LabelLifetimeProjectionPredicate::AllNonPlaceHolder(
+                            to_label.insert(LabelLifetimeProjectionPredicate::AllNonFuture(
                                 (*root).into(),
                                 rp.region_idx,
                             ));
@@ -199,7 +199,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                     capability_updates.insert(blocked_place, Some(CapabilityKind::Read));
                 }
                 for rp in blocked_place.lifetime_projections(ctxt) {
-                    to_label.insert(LabelLifetimeProjectionPredicate::AllNonPlaceHolder(
+                    to_label.insert(LabelLifetimeProjectionPredicate::AllNonFuture(
                         blocked_place.into(),
                         rp.region_idx,
                     ));

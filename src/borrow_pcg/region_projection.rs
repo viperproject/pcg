@@ -263,14 +263,14 @@ pub type RegionProjectionLabel = LifetimeProjectionLabel;
 #[derive(PartialEq, Eq, Clone, Debug, Hash, Copy, Ord, PartialOrd, From)]
 pub enum LifetimeProjectionLabel {
     Location(SnapshotLocation),
-    Placeholder,
+    Future,
 }
 
 impl std::fmt::Display for LifetimeProjectionLabel {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             LifetimeProjectionLabel::Location(location) => write!(f, "{}", location),
-            LifetimeProjectionLabel::Placeholder => write!(f, "FUTURE"),
+            LifetimeProjectionLabel::Future => write!(f, "FUTURE"),
         }
     }
 }
@@ -305,8 +305,8 @@ impl<'tcx> LabelPlaceWithContext<'tcx, LabelNodeContext> for LifetimeProjection<
 }
 
 impl<P> LifetimeProjection<'_, P> {
-    pub(crate) fn is_placeholder(&self) -> bool {
-        self.label == Some(LifetimeProjectionLabel::Placeholder)
+    pub(crate) fn is_future(&self) -> bool {
+        self.label == Some(LifetimeProjectionLabel::Future)
     }
     pub(crate) fn label(&self) -> Option<LifetimeProjectionLabel> {
         self.label
@@ -427,7 +427,7 @@ impl<'tcx, T: RegionProjectionBaseLike<'tcx>> LifetimeProjection<'tcx, T> {
         self,
         ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> LifetimeProjection<'tcx, T> {
-        self.with_label(Some(LifetimeProjectionLabel::Placeholder), ctxt)
+        self.with_label(Some(LifetimeProjectionLabel::Future), ctxt)
     }
 
     #[must_use]
@@ -543,7 +543,7 @@ impl<
     ) -> String {
         let label_part = match self.label {
             Some(LifetimeProjectionLabel::Location(location)) => format!(" {location}"),
-            Some(LifetimeProjectionLabel::Placeholder) => " FUTURE".to_string(),
+            Some(LifetimeProjectionLabel::Future) => " FUTURE".to_string(),
             _ => "".to_string(),
         };
         format!(

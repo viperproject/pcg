@@ -205,7 +205,7 @@ impl<'tcx> PlaceCapabilities<'tcx> {
         self.insert((*place).into(), capability, ctxt);
         if capability == CapabilityKind::Exclusive {
             borrows.label_region_projection(
-                &LabelLifetimeProjectionPredicate::AllPlaceholderPostfixes(place),
+                &LabelLifetimeProjectionPredicate::AllFuturePostfixes(place),
                 None,
                 ctxt.ctxt,
             );

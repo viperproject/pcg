@@ -50,7 +50,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         let nodes = self.nodes(ctxt);
         for node in nodes {
             if let PcgNode::LifetimeProjection(rp) = node
-                && rp.is_placeholder()
+                && rp.is_future()
                 && let Some(PcgNode::LifetimeProjection(local_rp)) = rp.try_to_local_node(ctxt)
             {
                 // if let MaybeOldPlace::Current(place) = local_rp.base
@@ -62,7 +62,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 self.filter_mut_edges(|edge| {
                     edge.label_lifetime_projection(
                         &LabelLifetimeProjectionPredicate::Equals(orig_rp),
-                        Some(LifetimeProjectionLabel::Placeholder),
+                        Some(LifetimeProjectionLabel::Future),
                         ctxt,
                     )
                     .to_filter_mut_result()
