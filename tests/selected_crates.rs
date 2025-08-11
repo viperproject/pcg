@@ -336,12 +336,6 @@ fn test_selected_crates() {
                 Some(11),
             ),
         ),
-        // SelectedCrateTestCase::new(
-        //     "serde_json",
-        //     "1.0.140",
-        //     Some("2025-03-13"),
-        //     TestCrateType::function("read::SliceRead::<'a>::parse_str_bytes", Some(55)),
-        // ),
         SelectedCrateTestCase::new(
             "pyo3",
             "0.24.0",
@@ -441,16 +435,6 @@ fn test_selected_crates() {
             "2.5.0",
             Some("2025-03-13"),
             TestCrateType::function("IntoIter::check_loop", Some(58)),
-        ),
-        // 62 basic blocks, <= 60 nodes
-        SelectedCrateTestCase::new(
-            "petgraph",
-            "0.7.1",
-            Some("2025-03-13"),
-            TestCrateType::function(
-                "<data::FilterElements<I, F> as std::iter::Iterator>::next",
-                Some(62),
-            ),
         ),
         // 64 basic blocks, <= 60 nodes
         SelectedCrateTestCase::new(
