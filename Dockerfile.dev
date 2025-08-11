@@ -2,18 +2,15 @@
 FROM rust:1.75
 
 # Install required dependencies for development
-RUN apt-get update && apt-get install -y \
+# Use -o Acquire::Check-Valid-Until=false to handle time sync issues in Docker
+RUN apt-get -o Acquire::Check-Valid-Until=false update && apt-get install -y \
     pkg-config \
-    golang-go \
     tmux \
     vim \
     graphviz \
     nodejs \
     npm \
     && rm -rf /var/lib/apt/lists/*
-
-# Install latest pprof for profiling
-RUN go install github.com/google/pprof@latest
 
 # Set working directory
 WORKDIR /workspace
@@ -22,9 +19,8 @@ WORKDIR /workspace
 COPY rust-toolchain ./
 
 # Install the correct Rust toolchain based on rust-toolchain file
-RUN rustup toolchain install $(cat rust-toolchain) && \
-    rustup default $(cat rust-toolchain) && \
-    rustup component add rustfmt clippy
+# rustup will automatically read the rust-toolchain file and install the specified toolchain with components
+RUN rustup show
 
 # Set up Rust environment variables
 ENV PATH="/usr/local/cargo/bin:${PATH}"
