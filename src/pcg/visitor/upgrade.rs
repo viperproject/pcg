@@ -21,7 +21,7 @@ use crate::{
 };
 
 impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
-    fn weaken_place_from_read(
+    fn weaken_place_from_read_upwards(
         &mut self,
         place: Place<'tcx>,
         debug_ctxt: &str,
@@ -35,7 +35,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                     BorrowPcgAction::weaken(
                         place,
                         CapabilityKind::Read,
-                        BlockType::DerefRefExclusive.blocked_place_retained_capability(),
+                        BlockType::DerefMutRefForExclusive.blocked_place_maximum_retained_capability(),
                         format!(
                             "{}: remove read permission upwards from base place {} (downgrade R to W for mut ref)",
                             debug_ctxt,
@@ -77,7 +77,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
         let mut prev = None;
         let mut current = place;
         while self.pcg.capabilities.get(current, self.ctxt) == Some(CapabilityKind::Read) {
-            self.weaken_place_from_read(current, debug_ctxt)?;
+            self.weaken_place_from_read_upwards(current, debug_ctxt)?;
             let leaf_nodes = self.pcg.borrow.graph.frozen_graph().leaf_nodes(self.ctxt);
             for place in self.pcg.borrow.graph.places(self.ctxt) {
                 if prev != Some(place)

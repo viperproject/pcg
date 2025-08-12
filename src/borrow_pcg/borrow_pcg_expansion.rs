@@ -89,10 +89,14 @@ impl<'tcx> PlaceExpansion<'tcx> {
         ) {
             BlockType::Read
         } else if matches!(self, PlaceExpansion::Deref) {
-            if base_place.is_shared_ref(ctxt) || base_place.projects_shared_ref(ctxt) {
-                BlockType::Read
+            if base_place.is_shared_ref(ctxt) {
+                BlockType::DerefSharedRef
             } else if base_place.is_mut_ref(ctxt) {
-                BlockType::DerefRefExclusive
+                if base_place.projects_shared_ref(ctxt) {
+                    BlockType::DerefMutRefUnderSharedRef
+                } else {
+                    BlockType::DerefMutRefForExclusive
+                }
             } else {
                 BlockType::Other
             }

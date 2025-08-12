@@ -152,15 +152,20 @@ impl<'tcx> DebugLines<CompilerCtxt<'_, 'tcx>> for PlaceCapabilities<'tcx> {
 pub(crate) enum BlockType {
     /// Derefing a mutable reference, *not* in the context of a two-phase borrow
     /// of otherwise just for read. The reference will be downgraded to w.
-    DerefRefExclusive,
+    DerefMutRefForExclusive,
+    /// Dereferencing a mutable reference that is stored under a shared borrow
+    DerefMutRefUnderSharedRef,
+    DerefSharedRef,
     Read,
     Other,
 }
 
 impl BlockType {
-    pub(crate) fn blocked_place_retained_capability(self) -> Option<CapabilityKind> {
+    pub(crate) fn blocked_place_maximum_retained_capability(self) -> Option<CapabilityKind> {
         match self {
-            BlockType::DerefRefExclusive => Some(CapabilityKind::Write),
+            BlockType::DerefSharedRef => Some(CapabilityKind::Exclusive),
+            BlockType::DerefMutRefForExclusive => Some(CapabilityKind::Write),
+            BlockType::DerefMutRefUnderSharedRef => Some(CapabilityKind::Read),
             BlockType::Read => Some(CapabilityKind::Read),
             BlockType::Other => None,
         }
@@ -172,9 +177,11 @@ impl BlockType {
         _ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> CapabilityKind {
         match self {
-            BlockType::DerefRefExclusive => CapabilityKind::Exclusive,
+            BlockType::DerefMutRefUnderSharedRef => CapabilityKind::Read,
+            BlockType::DerefMutRefForExclusive => CapabilityKind::Exclusive,
             BlockType::Read => CapabilityKind::Read,
             BlockType::Other => blocked_capability,
+            BlockType::DerefSharedRef => CapabilityKind::Read,
         }
     }
 }
@@ -312,9 +319,14 @@ impl<'tcx> PlaceCapabilities<'tcx> {
         block_type: BlockType,
         ctxt: AnalysisCtxt<'_, 'tcx>,
     ) -> bool {
-        let retained_capability = block_type.blocked_place_retained_capability();
-        if let Some(capability) = retained_capability {
-            self.insert(blocked_place, capability, ctxt)
+        let max_retained_capability = block_type.blocked_place_maximum_retained_capability();
+        if let Some(max_retained_cap) = max_retained_capability {
+            let resulting_cap = self
+                .get(blocked_place, ctxt.ctxt)
+                .unwrap()
+                .minimum(max_retained_cap)
+                .unwrap();
+            self.insert(blocked_place, resulting_cap, ctxt)
         } else {
             self.remove(blocked_place, ctxt).is_some()
         }

@@ -197,6 +197,7 @@ impl<'pcg, 'tcx> JoinOwnedData<'pcg, 'tcx, &'pcg mut LocalExpansions<'tcx>> {
         Ok(actions)
     }
 
+    /// See https://viperproject.github.io/pcg-docs/join.html#local-expansions-join--joine
     fn join_other_expanded_place(
         &mut self,
         other: &mut JoinOwnedData<'pcg, 'tcx, &'pcg mut LocalExpansions<'tcx>>,
