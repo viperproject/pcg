@@ -3,7 +3,8 @@ use crate::borrow_pcg::action::LabelPlaceReason;
 use crate::borrow_pcg::borrow_pcg_edge::BorrowPcgEdge;
 use crate::borrow_pcg::edge::outlives::{BorrowFlowEdge, BorrowFlowEdgeKind};
 use crate::borrow_pcg::region_projection::{LifetimeProjection, PcgRegion};
-use crate::free_pcs::{CapabilityKind, OwnedPcg, RepackExpand};
+use crate::owned_pcg::{OwnedPcg, RepackExpand};
+use crate::pcg::CapabilityKind;
 use crate::pcg::PcgDebugData;
 use crate::pcg::ctxt::AnalysisCtxt;
 use crate::pcg::obtain::{PlaceCollapser, PlaceObtainer};
@@ -78,7 +79,7 @@ impl<'pcg, 'mir, 'tcx> PcgVisitor<'pcg, 'mir, 'tcx> {
                                 self.ctxt,
                             )
                             .into(),
-                            self.pcg.borrow.path_conditions.clone(),
+                            self.pcg.borrow.validity_conditions.clone(),
                         ),
                         "connect_outliving_projections",
                         self.ctxt,

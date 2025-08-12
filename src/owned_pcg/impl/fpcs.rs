@@ -7,9 +7,9 @@
 use std::fmt::{Debug, Formatter, Result};
 
 use crate::{
-    free_pcs::RepackOp,
+    owned_pcg::RepackOp,
     pcg::{
-        PcgError,
+        CapabilityKind, PcgError,
         ctxt::AnalysisCtxt,
         place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface},
     },
@@ -21,8 +21,7 @@ use crate::{
 };
 use derive_more::{Deref, DerefMut};
 
-use super::CapabilityKind;
-use crate::{free_pcs::OwnedPcgLocal, utils::CompilerCtxt};
+use crate::{owned_pcg::OwnedPcgLocal, utils::CompilerCtxt};
 
 /// The state of the Owned PCG.
 #[derive(Clone, Default)]

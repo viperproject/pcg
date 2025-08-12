@@ -2,7 +2,7 @@ use std::path::Path;
 use std::sync::Arc;
 use std::{fs, io};
 
-use crate::free_pcs::PcgAnalysis;
+use crate::owned_pcg::PcgAnalysis;
 #[rustversion::since(2025-05-24)]
 use crate::rustc_interface::driver::run_compiler;
 use crate::rustc_interface::driver::{self, Compilation};

@@ -4,9 +4,9 @@ use crate::{
         region_projection::{LifetimeProjection, MaybeRemoteRegionProjectionBase},
         state::BorrowStateRef,
     },
-    free_pcs::{CapabilityKind, OwnedPcgData, OwnedPcgLocal},
+    owned_pcg::{OwnedPcgData, OwnedPcgLocal},
     pcg::{
-        MaybeHasLocation, PcgNode, PcgRef,
+        CapabilityKind, MaybeHasLocation, PcgNode, PcgRef,
         place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface},
     },
     rustc_interface::{borrowck::BorrowIndex, middle::mir},

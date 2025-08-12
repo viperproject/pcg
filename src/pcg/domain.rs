@@ -19,13 +19,14 @@ use crate::{
     action::PcgActions,
     borrow_pcg::{
         edge::{borrow::BorrowEdge, kind::BorrowPcgEdgeKind},
-        graph::BorrowsGraph,
+        graph::{BorrowsGraph, join::JoinBorrowsArgs},
         state::{BorrowStateMutRef, BorrowStateRef, BorrowsState, BorrowsStateLike},
     },
     borrows_imgcat_debug,
-    free_pcs::{CapabilityKind, join::data::JoinOwnedData},
     r#loop::{LoopAnalysis, LoopPlaceUsageAnalysis, PlaceUsages},
+    owned_pcg::join::data::JoinOwnedData,
     pcg::{
+        CapabilityKind,
         ctxt::AnalysisCtxt,
         dot_graphs::{PcgDotGraphsForBlock, ToGraph, generate_dot_graph},
         place_capabilities::PlaceCapabilitiesInterface,
@@ -52,7 +53,7 @@ use crate::{
 };
 
 use super::{PcgEngine, place_capabilities::PlaceCapabilities};
-use crate::free_pcs::OwnedPcg;
+use crate::owned_pcg::OwnedPcg;
 
 #[derive(Copy, Clone)]
 pub struct DataflowIterationDebugInfo {
@@ -444,15 +445,14 @@ impl<'mir, 'tcx: 'mir> Pcg<'tcx> {
             .borrow
             .add_cfg_edge(other_block, self_block, ctxt.ctxt);
         res |= self.capabilities.join(&other_capabilities);
-        res |= self.borrow.join(
-            &other.borrow,
+        let borrow_args = JoinBorrowsArgs {
             self_block,
             other_block,
             body_analysis,
-            &mut self.capabilities,
-            &mut self.owned,
-            ctxt.ctxt,
-        )?;
+            capabilities: &mut self.capabilities,
+            owned: &mut self.owned,
+        };
+        res |= self.borrow.join(&other.borrow, borrow_args, ctxt.ctxt)?;
         Ok(res)
     }
 

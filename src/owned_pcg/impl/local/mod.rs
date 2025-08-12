@@ -10,7 +10,7 @@ use std::fmt::{Debug, Formatter, Result};
 
 use crate::{
     borrow_pcg::borrow_pcg_expansion::PlaceExpansion,
-    free_pcs::{RepackCollapse, RepackGuide},
+    owned_pcg::{RepackCollapse, RepackGuide},
     pcg::{
         PcgUnsupportedError,
         ctxt::AnalysisCtxt,
@@ -22,7 +22,8 @@ use crate::{
 use itertools::Itertools;
 
 use crate::{
-    free_pcs::{CapabilityKind, RepackOp},
+    owned_pcg::RepackOp,
+    pcg::CapabilityKind,
     pcg::PcgInternalError,
     utils::{CompilerCtxt, Place, display::DisplayWithCompilerCtxt},
 };

@@ -9,9 +9,7 @@ mod fpcs;
 pub(crate) mod join;
 pub(crate) mod join_semi_lattice;
 mod local;
-mod place;
 mod update;
 
 pub use fpcs::*;
 pub(crate) use local::*;
-pub use place::*;

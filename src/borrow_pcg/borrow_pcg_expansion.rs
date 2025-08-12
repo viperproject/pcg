@@ -20,8 +20,9 @@ use crate::{
             LabelPlaceWithContext, PlaceLabeller,
         },
     },
-    free_pcs::{CapabilityKind, RepackGuide},
     r#loop::PlaceUsageType,
+    owned_pcg::RepackGuide,
+    pcg::CapabilityKind,
     pcg::{
         MaybeHasLocation, PcgUnsupportedError,
         obtain::ObtainType,

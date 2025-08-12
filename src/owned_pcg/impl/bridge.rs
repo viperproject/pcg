@@ -5,8 +5,8 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 use crate::{
-    free_pcs::{CapabilityKind, LocalExpansions, OwnedPcgData, OwnedPcgLocal, RepackOp},
-    pcg::{PcgError, ctxt::AnalysisCtxt, place_capabilities::PlaceCapabilities},
+    owned_pcg::{LocalExpansions, OwnedPcgData, OwnedPcgLocal, RepackOp},
+    pcg::{CapabilityKind, PcgError, ctxt::AnalysisCtxt, place_capabilities::PlaceCapabilities},
     utils::CompilerCtxt,
 };
 

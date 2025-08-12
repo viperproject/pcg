@@ -4,7 +4,7 @@ use crate::borrow_pcg::borrow_pcg_edge::BorrowPcgEdge;
 use crate::borrow_pcg::edge::outlives::{BorrowFlowEdge, BorrowFlowEdgeKind};
 use crate::borrow_pcg::has_pcs_elem::LabelLifetimeProjectionPredicate;
 use crate::borrow_pcg::region_projection::{LifetimeProjection, MaybeRemoteRegionProjectionBase};
-use crate::free_pcs::CapabilityKind;
+use crate::pcg::CapabilityKind;
 use crate::pcg::EvalStmtPhase;
 use crate::pcg::obtain::{ActionApplier, HasSnapshotLocation, PlaceExpander};
 use crate::pcg::place_capabilities::PlaceCapabilitiesInterface;
@@ -123,7 +123,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                                     self.ctxt,
                                 )
                                 .into(),
-                                self.pcg.borrow.path_conditions.clone(),
+                                self.pcg.borrow.validity_conditions.clone(),
                             ),
                             "assign_post_main",
                             self.ctxt,
@@ -158,7 +158,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                                     self.ctxt,
                                 )
                                 .into(),
-                                self.pcg.borrow.path_conditions.clone(),
+                                self.pcg.borrow.validity_conditions.clone(),
                             ),
                             "assign_post_main",
                             self.ctxt,
@@ -251,7 +251,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                                     self.ctxt,
                                 )
                                 .into(),
-                                self.pcg.borrow.path_conditions.clone(),
+                                self.pcg.borrow.validity_conditions.clone(),
                             ),
                             "assign_post_main",
                             self.ctxt,

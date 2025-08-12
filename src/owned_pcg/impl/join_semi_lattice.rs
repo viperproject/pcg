@@ -6,11 +6,9 @@
 
 use crate::{
     borrow_pcg::borrow_pcg_expansion::PlaceExpansion,
-    free_pcs::{
-        CapabilityKind, ExpandedPlace, RepackCollapse, RepackExpand, join::data::JoinOwnedData,
-    },
+    owned_pcg::{ExpandedPlace, RepackCollapse, RepackExpand, join::data::JoinOwnedData},
     pcg::{
-        PcgError,
+        CapabilityKind, PcgError,
         ctxt::AnalysisCtxt,
         place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface},
     },
@@ -20,7 +18,7 @@ use crate::{
 use itertools::Itertools;
 
 use crate::{
-    free_pcs::{LocalExpansions, OwnedPcg, OwnedPcgLocal},
+    owned_pcg::{LocalExpansions, OwnedPcg, OwnedPcgLocal},
     rustc_interface::middle::mir,
     utils::CompilerCtxt,
 };
@@ -34,7 +32,7 @@ impl<'pcg, 'tcx> JoinOwnedData<'pcg, 'tcx, &'pcg mut OwnedPcgLocal<'tcx>> {
         match (&mut self.owned, &mut other.owned) {
             (OwnedPcgLocal::Unallocated, OwnedPcgLocal::Unallocated) => Ok(false),
             (OwnedPcgLocal::Allocated(to_places), OwnedPcgLocal::Allocated(from_places)) => {
-                let mut self_allocated = JoinOwnedData {
+                let self_allocated = JoinOwnedData {
                     owned: to_places,
                     borrows: self.borrows,
                     capabilities: self.capabilities,

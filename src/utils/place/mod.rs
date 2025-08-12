@@ -15,7 +15,7 @@ use derive_more::{Deref, DerefMut};
 
 use crate::{
     borrow_pcg::borrow_pcg_expansion::PlaceExpansion,
-    free_pcs::RepackGuide,
+    owned_pcg::RepackGuide,
     pcg::{PcgError, PcgUnsupportedError},
     rustc_interface::{
         VariantIdx,

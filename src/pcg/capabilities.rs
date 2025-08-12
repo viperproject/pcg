@@ -1,13 +1,60 @@
-// © 2023, ETH Zurich
-//
-// This Source Code Form is subject to the terms of the Mozilla Public
-// License, v. 2.0. If a copy of the MPL was not distributed with this
-// file, You can obtain one at http://mozilla.org/MPL/2.0/.
-
 use std::{
     cmp::Ordering,
     fmt::{Debug, Formatter, Result},
 };
+
+/// Macro for generating patterns that match a capability and all "greater" capabilities
+/// according to the partial ordering.
+///
+/// Usage:
+/// ```ignore
+/// match cap {
+///     capability_gte!(Read) => { /* matches Read or Exclusive */ }
+///     capability_gte!(Write) => { /* matches Write, ShallowExclusive, or Exclusive */ }
+///     capability_gte!(ShallowExclusive) => { /* matches ShallowExclusive or Exclusive */ }
+///     capability_gte!(Exclusive) => { /* matches only Exclusive */ }
+/// }
+/// ```
+///
+/// Also supports single-letter abbreviations:
+/// ```ignore
+/// match cap {
+///     capability_gte!(R) => { /* matches Read or Exclusive */ }
+///     capability_gte!(W) => { /* matches Write, ShallowExclusive, or Exclusive */ }
+///     capability_gte!(e) => { /* matches ShallowExclusive or Exclusive */ }
+///     capability_gte!(E) => { /* matches only Exclusive */ }
+/// }
+/// ```
+#[macro_export]
+macro_rules! capability_gte {
+    // Full names
+    (Read) => {
+        CapabilityKind::Read | CapabilityKind::Exclusive
+    };
+    (Write) => {
+        CapabilityKind::Write | CapabilityKind::ShallowExclusive | CapabilityKind::Exclusive
+    };
+    (ShallowExclusive) => {
+        CapabilityKind::ShallowExclusive | CapabilityKind::Exclusive
+    };
+    (Exclusive) => {
+        CapabilityKind::Exclusive
+    };
+
+    // Single-letter abbreviations
+    (R) => {
+        CapabilityKind::Read | CapabilityKind::Exclusive
+    };
+    (W) => {
+        CapabilityKind::Write | CapabilityKind::ShallowExclusive | CapabilityKind::Exclusive
+    };
+    (e) => {
+        CapabilityKind::ShallowExclusive | CapabilityKind::Exclusive
+    };
+    (E) => {
+        CapabilityKind::Exclusive
+    };
+}
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]
 pub enum CapabilityKind {
@@ -96,6 +143,48 @@ impl CapabilityKind {
 mod tests {
     use super::*;
     use std::collections::HashMap;
+
+    #[test]
+    fn test_capability_gte_macro() {
+        // Test that the macro generates correct patterns
+        let test_read = |cap: CapabilityKind| -> bool { matches!(cap, capability_gte!(R)) };
+        let test_write = |cap: CapabilityKind| -> bool { matches!(cap, capability_gte!(W)) };
+        let test_shallow = |cap: CapabilityKind| -> bool { matches!(cap, capability_gte!(e)) };
+        let test_exclusive = |cap: CapabilityKind| -> bool { matches!(cap, capability_gte!(E)) };
+
+        // Test Read pattern (should match Read and Exclusive)
+        assert!(test_read(CapabilityKind::Read));
+        assert!(!test_read(CapabilityKind::Write));
+        assert!(!test_read(CapabilityKind::ShallowExclusive));
+        assert!(test_read(CapabilityKind::Exclusive));
+
+        // Test Write pattern (should match Write, ShallowExclusive, and Exclusive)
+        assert!(!test_write(CapabilityKind::Read));
+        assert!(test_write(CapabilityKind::Write));
+        assert!(test_write(CapabilityKind::ShallowExclusive));
+        assert!(test_write(CapabilityKind::Exclusive));
+
+        // Test ShallowExclusive pattern (should match ShallowExclusive and Exclusive)
+        assert!(!test_shallow(CapabilityKind::Read));
+        assert!(!test_shallow(CapabilityKind::Write));
+        assert!(test_shallow(CapabilityKind::ShallowExclusive));
+        assert!(test_shallow(CapabilityKind::Exclusive));
+
+        // Test Exclusive pattern (should match only Exclusive)
+        assert!(!test_exclusive(CapabilityKind::Read));
+        assert!(!test_exclusive(CapabilityKind::Write));
+        assert!(!test_exclusive(CapabilityKind::ShallowExclusive));
+        assert!(test_exclusive(CapabilityKind::Exclusive));
+
+        // Also test with full names
+        assert!(matches!(CapabilityKind::Read, capability_gte!(Read)));
+        assert!(matches!(CapabilityKind::Exclusive, capability_gte!(Read)));
+        assert!(matches!(CapabilityKind::Write, capability_gte!(Write)));
+        assert!(matches!(
+            CapabilityKind::ShallowExclusive,
+            capability_gte!(ShallowExclusive)
+        ));
+    }
 
     #[test]
     fn test_capability_kind_dag_reachability() {

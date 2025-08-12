@@ -8,8 +8,7 @@ pub(crate) struct JoinOwnedData<'pcg, 'tcx, T> {
     pub(crate) block: mir::BasicBlock,
 }
 
-#[allow(clippy::extra_unused_lifetimes)]
-impl<'pcg: 'owned, 'tcx, 'owned, T: 'owned> JoinOwnedData<'pcg, 'tcx, T> {
+impl<'pcg, 'tcx, T> JoinOwnedData<'pcg, 'tcx, T> {
     pub(crate) fn map_owned<'slf: 'res, 'res, U: 'res>(
         &'slf mut self,
         f: impl Fn(&'slf mut T) -> U,
@@ -19,6 +18,17 @@ impl<'pcg: 'owned, 'tcx, 'owned, T: 'owned> JoinOwnedData<'pcg, 'tcx, T> {
     {
         JoinOwnedData {
             owned: f(&mut self.owned),
+            borrows: self.borrows,
+            capabilities: self.capabilities,
+            block: self.block,
+        }
+    }
+}
+
+impl<'pcg, 'tcx, T> JoinOwnedData<'pcg, 'tcx, &'pcg mut T> {
+    pub(crate) fn reborrow<'slf>(&'slf mut self) -> JoinOwnedData<'slf, 'tcx, &'slf mut T> {
+        JoinOwnedData {
+            owned: self.owned,
             borrows: self.borrows,
             capabilities: self.capabilities,
             block: self.block,

@@ -3,8 +3,8 @@ use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::borrow_pcg::graph::loop_abstraction::ConstructAbstractionGraphResult;
 use crate::borrow_pcg::has_pcs_elem::{LabelLifetimeProjection, LabelLifetimeProjectionPredicate};
 use crate::borrow_pcg::region_projection::LifetimeProjectionLabel;
-use crate::free_pcs::OwnedPcg;
 use crate::r#loop::PlaceUsages;
+use crate::owned_pcg::OwnedPcg;
 use crate::pcg::ctxt::AnalysisCtxt;
 use crate::pcg::place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface};
 use crate::pcg::{BodyAnalysis, PCGNodeLike, PcgError, PcgNode, PcgUnsupportedError};
@@ -23,6 +23,26 @@ use crate::{
 };
 
 use super::{BorrowsGraph, borrows_imgcat_debug};
+
+pub(crate) struct JoinBorrowsArgs<'pcg, 'a, 'tcx> {
+    pub(crate) self_block: BasicBlock,
+    pub(crate) other_block: BasicBlock,
+    pub(crate) body_analysis: &'pcg BodyAnalysis<'a, 'tcx>,
+    pub(crate) capabilities: &'pcg mut PlaceCapabilities<'tcx>,
+    pub(crate) owned: &'pcg mut OwnedPcg<'tcx>,
+}
+
+impl<'mir, 'tcx> JoinBorrowsArgs<'_, 'mir, 'tcx> {
+    pub(crate) fn reborrow<'slf>(&'slf mut self) -> JoinBorrowsArgs<'slf, 'mir, 'tcx> {
+        JoinBorrowsArgs {
+            self_block: self.self_block,
+            other_block: self.other_block,
+            body_analysis: self.body_analysis,
+            capabilities: self.capabilities,
+            owned: self.owned,
+        }
+    }
+}
 
 impl<'tcx> BorrowsGraph<'tcx> {
     pub(crate) fn render_debug_graph(
@@ -67,50 +87,42 @@ impl<'tcx> BorrowsGraph<'tcx> {
                     )
                     .to_filter_mut_result()
                 });
-                // }
             }
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
-    pub(crate) fn join<'mir>(
-        &mut self,
-        other: &Self,
-        self_block: BasicBlock,
-        other_block: BasicBlock,
-        body_analysis: &BodyAnalysis<'mir, 'tcx>,
-        capabilities: &mut PlaceCapabilities<'tcx>,
-        owned: &mut OwnedPcg<'tcx>,
-        path_conditions: ValidityConditions,
-        ctxt: CompilerCtxt<'mir, 'tcx>,
+    pub(crate) fn join<'slf, 'a>(
+        &'slf mut self,
+        other_graph: &'slf BorrowsGraph<'tcx>,
+        validity_conditions: &'slf ValidityConditions,
+        mut args: JoinBorrowsArgs<'slf, 'a, 'tcx>,
+        ctxt: CompilerCtxt<'a, 'tcx>,
     ) -> Result<bool, PcgError> {
-        // For performance reasons we don't check validity here.
-        // if validity_checks_enabled() {
-        //     pcg_validity_assert!(other.is_valid(repacker), "Other graph is invalid");
-        // }
-        if ctxt.is_back_edge(other_block, self_block) {
-            return Ok(false);
-        }
+        let other_block = args.other_block;
+        let self_block = args.self_block;
+        pcg_validity_assert!(other_graph.is_valid(ctxt), [ctxt], "Other graph is invalid");
+        pcg_validity_assert!(
+            !ctxt.is_back_edge(other_block, self_block),
+            [ctxt],
+            "Joining back edge from {other_block:?} to {self_block:?}"
+        );
         let old_self = self.clone();
 
-        if let Some(used_places) = body_analysis.get_places_used_in_loop(self_block) {
+        if let Some(used_places) = args.body_analysis.get_places_used_in_loop(self_block) {
             // self.render_debug_graph(ctxt, &format!("Self graph: {self_block:?}"));
             // other.render_debug_graph(ctxt, &format!("Other graph: {other_block:?}"));
 
             let analysis_ctxt = AnalysisCtxt::new(ctxt, self_block);
 
             self.join_loop(
-                self_block,
                 used_places,
-                capabilities,
-                owned,
-                path_conditions,
-                body_analysis,
+                validity_conditions,
+                args.reborrow(),
                 analysis_ctxt,
             )?;
             let result = *self != old_self;
             if borrows_imgcat_debug(self_block, Some(DebugImgcat::JoinLoop))
-                && let Ok(dot_graph) = generate_borrows_dot_graph(ctxt, capabilities, self)
+                && let Ok(dot_graph) = generate_borrows_dot_graph(ctxt, args.capabilities, self)
             {
                 DotGraph::render_with_imgcat(
                     &dot_graph,
@@ -123,16 +135,17 @@ impl<'tcx> BorrowsGraph<'tcx> {
                     eprintln!("{}", old_self.fmt_diff(self, ctxt))
                 }
             }
-            // For performance reasons we don't check validity here.
-            // if validity_checks_enabled() {
-            //     assert!(self.is_valid(repacker), "Graph became invalid after join");
-            // }
-            // self.apply_placeholder_labels(capabilities, ctxt);
+            pcg_validity_assert!(
+                self.is_valid(ctxt),
+                [ctxt],
+                "Graph became invalid after join"
+            );
             return Ok(result);
         }
-        for other_edge in other.edges() {
+        for other_edge in other_graph.edges() {
             self.insert(other_edge.to_owned_edge(), ctxt);
         }
+
         for edge in self
             .edges()
             .map(|edge| edge.to_owned_edge())
@@ -146,63 +159,46 @@ impl<'tcx> BorrowsGraph<'tcx> {
             }
         }
 
-        self.apply_placeholder_labels(capabilities, ctxt);
+        self.apply_placeholder_labels(args.capabilities, ctxt);
 
         let changed = old_self != *self;
 
-        // if borrows_imgcat_debug()
-        //     && let Ok(dot_graph) = generate_borrows_dot_graph(ctxt, self)
-        // {
-        //     DotGraph::render_with_imgcat(&dot_graph, &format!("After join: (changed={changed:?})"))
-        //         .unwrap_or_else(|e| {
-        //             eprintln!("Error rendering self graph: {e}");
-        //         });
-        //     if changed {
-        //         eprintln!("{}", old_self.fmt_diff(self, ctxt))
-        //     }
-        // }
-
-        // For performance reasons we only check validity here if we are also producing debug graphs
-        if validity_checks_enabled()
-            && borrows_imgcat_debug(self_block, Some(DebugImgcat::JoinBorrows))
-            && !self.is_valid(ctxt)
-        {
-            if let Ok(dot_graph) = generate_borrows_dot_graph(ctxt, capabilities, self) {
+        if validity_checks_enabled() && !self.is_valid(ctxt) {
+            pcg_validity_assert!(
+                false,
+                [ctxt],
+                "Graph became invalid after join. self: {self_block:?}, other: {other_block:?}"
+            );
+            if let Ok(dot_graph) = generate_borrows_dot_graph(ctxt, args.capabilities, self) {
                 DotGraph::render_with_imgcat(&dot_graph, "Invalid self graph").unwrap_or_else(
                     |e| {
                         eprintln!("Error rendering self graph: {e}");
                     },
                 );
             }
-            if let Ok(dot_graph) = generate_borrows_dot_graph(ctxt, capabilities, &old_self) {
+            if let Ok(dot_graph) = generate_borrows_dot_graph(ctxt, args.capabilities, &old_self) {
                 DotGraph::render_with_imgcat(&dot_graph, "Old self graph").unwrap_or_else(|e| {
                     eprintln!("Error rendering old self graph: {e}");
                 });
             }
-            if let Ok(dot_graph) = generate_borrows_dot_graph(ctxt, capabilities, other) {
+            if let Ok(dot_graph) = generate_borrows_dot_graph(ctxt, args.capabilities, other_graph)
+            {
                 DotGraph::render_with_imgcat(&dot_graph, "Other graph").unwrap_or_else(|e| {
                     eprintln!("Error rendering other graph: {e}");
                 });
             }
-            pcg_validity_assert!(
-                false,
-                "Graph became invalid after join. self: {self_block:?}, other: {other_block:?}"
-            );
         }
         Ok(changed)
     }
 
-    #[allow(clippy::too_many_arguments)]
     fn join_loop<'mir>(
         &mut self,
-        loop_head: BasicBlock,
         used_places: &PlaceUsages<'tcx>,
-        capabilities: &mut PlaceCapabilities<'tcx>,
-        owned: &mut OwnedPcg<'tcx>,
-        path_conditions: ValidityConditions,
-        body_analysis: &BodyAnalysis<'mir, 'tcx>,
+        validity_conditions: &ValidityConditions,
+        mut args: JoinBorrowsArgs<'_, 'mir, 'tcx>,
         ctxt: AnalysisCtxt<'mir, 'tcx>,
     ) -> Result<(), PcgError> {
+        let loop_head = args.self_block;
         logging::log!(
             LogPredicate::DebugBlock,
             ctxt,
@@ -211,9 +207,9 @@ impl<'tcx> BorrowsGraph<'tcx> {
         );
         // p_loop
         let live_loop_places = used_places.usages_where(|p| {
-            body_analysis.is_live_and_initialized_at(
+            args.body_analysis.is_live_and_initialized_at(
                 mir::Location {
-                    block: loop_head,
+                    block: args.self_block,
                     statement_index: 0,
                 },
                 p.place,
@@ -238,7 +234,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             ctxt.ctxt.bc.is_directly_blocked(
                 p.place,
                 mir::Location {
-                    block: loop_head,
+                    block: args.self_block,
                     statement_index: 0,
                 },
                 ctxt.ctxt,
@@ -265,14 +261,13 @@ impl<'tcx> BorrowsGraph<'tcx> {
         let expand_places = loop_blocker_places.joined_with(&loop_blocked_places);
 
         self.expand_places_for_abstraction(
-            loop_head,
             &loop_blocked_places,
             &expand_places,
-            capabilities,
-            owned,
-            path_conditions.clone(),
+            validity_conditions,
+            args.reborrow(),
             ctxt.ctxt,
         );
+        let capabilities = &mut args.capabilities;
         self.render_debug_graph(
             loop_head,
             Some(DebugImgcat::JoinLoop),
@@ -318,7 +313,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
             root_places,
             &loop_blocker_places,
             loop_head,
-            path_conditions.clone(),
+            validity_conditions,
             ctxt,
         );
 

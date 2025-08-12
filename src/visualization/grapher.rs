@@ -5,7 +5,7 @@ use crate::{
         edge_data::EdgeData,
         graph::materialize::{MaterializedEdge, SyntheticEdge},
     },
-    free_pcs::CapabilityKind,
+    pcg::CapabilityKind,
     pcg::{MaybeHasLocation, PCGNodeLike, PcgNode},
     rustc_interface::middle::mir,
     utils::{

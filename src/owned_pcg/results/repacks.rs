@@ -7,7 +7,7 @@
 use rustc_interface::middle::mir::{Local, PlaceElem};
 
 use crate::{
-    free_pcs::CapabilityKind,
+    pcg::CapabilityKind,
     rustc_interface::{self, VariantIdx, span::Symbol},
     utils::{CompilerCtxt, ConstantIndex, Place, display::DisplayWithCompilerCtxt},
 };

@@ -1,7 +1,7 @@
 use crate::{
     action::PcgAction,
     borrow_pcg::state::{BorrowStateMutRef, BorrowsStateLike},
-    free_pcs::{LocalExpansions, RepackOp, join::data::JoinOwnedData},
+    owned_pcg::{LocalExpansions, RepackOp, join::data::JoinOwnedData},
     pcg::{
         PcgError,
         ctxt::AnalysisCtxt,
@@ -75,6 +75,7 @@ impl<'mir, 'tcx> PlaceCollapser<'mir, 'tcx> for JoinObtainer<'_, '_, '_, 'mir, '
         self.data.capabilities
     }
 
+    /// Owned leaf places that are not borrowed.
     fn leaf_places(&self, ctxt: CompilerCtxt<'mir, 'tcx>) -> HashSet<Place<'tcx>> {
         let mut leaf_places = self.data.owned.leaf_places(ctxt);
         leaf_places.retain(|p| !self.data.borrows.graph().owned_places(ctxt).contains(p));

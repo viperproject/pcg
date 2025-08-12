@@ -35,7 +35,7 @@ use crate::{
 
 use crate::borrow_pcg::action::actions::BorrowPcgActions;
 use crate::utils::eval_stmt_data::EvalStmtData;
-use crate::{free_pcs::RepackOp, utils::CompilerCtxt};
+use crate::{owned_pcg::RepackOp, utils::CompilerCtxt};
 
 type Cursor<'mir, 'tcx, E> = ResultsCursor<'mir, 'tcx, E>;
 

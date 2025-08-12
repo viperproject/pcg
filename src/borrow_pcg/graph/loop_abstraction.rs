@@ -8,7 +8,7 @@ use crate::{
         borrow_pcg_edge::{BorrowPcgEdgeLike, BorrowPcgEdgeRef, LocalNode, ToBorrowsEdge},
         edge::abstraction::{AbstractionBlockEdge, r#loop::LoopAbstraction},
         edge_data::EdgeData,
-        graph::BorrowsGraph,
+        graph::{BorrowsGraph, join::JoinBorrowsArgs},
         has_pcs_elem::LabelLifetimeProjectionPredicate,
         path_condition::ValidityConditions,
         region_projection::{
@@ -16,8 +16,9 @@ use crate::{
         },
         state::BorrowStateMutRef,
     },
-    free_pcs::{CapabilityKind, OwnedPcg, RepackOp},
     r#loop::{PlaceUsage, PlaceUsageType, PlaceUsages},
+    owned_pcg::RepackOp,
+    pcg::CapabilityKind,
     pcg::{
         LocalNodeLike, PCGNodeLike, PcgMutRef, PcgNode,
         ctxt::AnalysisCtxt,
@@ -123,7 +124,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         root_places: HashSet<MaybeRemoteCurrentPlace<'tcx>>,
         candidate_blockers: &PlaceUsages<'tcx>,
         loop_head: mir::BasicBlock,
-        path_conditions: ValidityConditions,
+        validity_conditions: &ValidityConditions,
         analysis_ctxt: AnalysisCtxt<'mir, 'tcx>,
     ) -> ConstructAbstractionGraphResult<'tcx> {
         let ctxt = analysis_ctxt.ctxt;
@@ -139,7 +140,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         let mut expander = AbsExpander {
             loop_head_block: loop_head,
             graph: &mut graph,
-            path_conditions: path_conditions.clone(),
+            validity_conditions,
             ctxt,
         };
 
@@ -346,29 +347,26 @@ impl<'tcx> BorrowsGraph<'tcx> {
         result
     }
 
-    #[allow(clippy::too_many_arguments)]
     pub(crate) fn expand_places_for_abstraction<'mir>(
         &mut self,
-        loop_head_block: mir::BasicBlock,
         loop_blocked_places: &PlaceUsages<'tcx>,
         to_expand: &PlaceUsages<'tcx>,
-        capabilities: &mut PlaceCapabilities<'tcx>,
-        owned: &mut OwnedPcg<'tcx>,
-        path_conditions: ValidityConditions,
+        validity_conditions: &ValidityConditions,
+        args: JoinBorrowsArgs<'_, 'mir, 'tcx>,
         ctxt: CompilerCtxt<'mir, 'tcx>,
     ) {
         let borrow = BorrowStateMutRef {
             graph: self,
-            path_conditions: &path_conditions,
+            validity_conditions,
         };
-        let pcg = PcgMutRef::new(owned, borrow, capabilities);
-        let snapshot_location = SnapshotLocation::Loop(loop_head_block);
+        let pcg = PcgMutRef::new(args.owned, borrow, args.capabilities);
+        let snapshot_location = SnapshotLocation::Loop(args.self_block);
         let mut obtainer = PlaceObtainer::new(
             pcg,
             None,
             ctxt,
             mir::Location {
-                block: loop_head_block,
+                block: args.self_block,
                 statement_index: 0,
             },
             snapshot_location,
@@ -461,7 +459,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
 struct AbsExpander<'pcg, 'mir, 'tcx> {
     loop_head_block: mir::BasicBlock,
     graph: &'pcg mut BorrowsGraph<'tcx>,
-    path_conditions: ValidityConditions,
+    validity_conditions: &'pcg ValidityConditions,
     ctxt: CompilerCtxt<'mir, 'tcx>,
 }
 
@@ -544,7 +542,7 @@ impl<'mir, 'tcx> PlaceExpander<'mir, 'tcx> for AbsExpander<'_, 'mir, 'tcx> {
     }
 
     fn path_conditions(&self) -> ValidityConditions {
-        self.path_conditions.clone()
+        self.validity_conditions.clone()
     }
 
     fn contains_owned_expansion_to(&self, _target: Place<'tcx>) -> bool {
@@ -589,7 +587,7 @@ fn add_block_edge<'tcx, 'mir>(
     let long_edge = AbstractionBlockEdge::new(vec![long.into()], vec![short.into()], ctxt);
     let loop_edge = LoopAbstraction::new(long_edge, expander.loop_head_block);
     expander.graph.insert(
-        loop_edge.to_borrow_pcg_edge(expander.path_conditions.clone()),
+        loop_edge.to_borrow_pcg_edge(expander.validity_conditions.clone()),
         ctxt,
     );
 }

@@ -11,7 +11,7 @@ use crate::{
         has_pcs_elem::LabelLifetimeProjectionPredicate,
         region_projection::LifetimeProjection,
     },
-    free_pcs::CapabilityKind,
+    pcg::CapabilityKind,
     pcg::{
         PcgError, PcgNode,
         obtain::{HasSnapshotLocation, PlaceObtainer},
@@ -169,7 +169,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                                         self.ctxt,
                                     )
                                     .into(),
-                                    self.pcg.borrow.path_conditions.clone(),
+                                    self.pcg.borrow.validity_conditions.clone(),
                                 ),
                                 "remove_read_permission_upwards_and_label_rps",
                                 self.ctxt,
@@ -195,7 +195,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                                             self.ctxt,
                                         )
                                         .into(),
-                                        self.pcg.borrow.path_conditions.clone(),
+                                        self.pcg.borrow.validity_conditions.clone(),
                                     ),
                                     "remove_read_permission_upwards_and_label_rps",
                                     self.ctxt,

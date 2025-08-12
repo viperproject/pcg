@@ -1,5 +1,5 @@
 use crate::{
-    free_pcs::CapabilityKind,
+    pcg::CapabilityKind,
     visualization::{GraphNode, NodeId, NodeType},
 };
 
