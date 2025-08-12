@@ -15,7 +15,7 @@ use crate::{
         r#impl::{NllBorrowCheckerImpl, PoloniusBorrowChecker},
     },
     borrow_pcg::region_projection::{PcgRegion, RegionIdx},
-    free_pcs::PcgAnalysis,
+    owned_pcg::PcgAnalysis,
     pcg::{self, BodyWithBorrowckFacts},
     run_pcg,
     rustc_interface::{

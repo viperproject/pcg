@@ -8,7 +8,8 @@ use crate::{
         action::{BorrowPcgActionKind, actions::BorrowPcgActions},
         unblock_graph::BorrowPcgUnblockAction,
     },
-    free_pcs::{CapabilityKind, RepackOp},
+    owned_pcg::RepackOp,
+    pcg::capabilities::CapabilityKind,
     utils::{CompilerCtxt, Place, display::DisplayWithCompilerCtxt, json::ToJsonWithCompilerCtxt},
 };
 

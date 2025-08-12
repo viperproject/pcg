@@ -23,9 +23,10 @@ use crate::{
         state::{BorrowStateMutRef, BorrowStateRef, BorrowsState, BorrowsStateLike},
     },
     borrows_imgcat_debug,
-    free_pcs::{CapabilityKind, join::data::JoinOwnedData},
     r#loop::{LoopAnalysis, LoopPlaceUsageAnalysis, PlaceUsages},
+    owned_pcg::join::data::JoinOwnedData,
     pcg::{
+        CapabilityKind,
         ctxt::AnalysisCtxt,
         dot_graphs::{PcgDotGraphsForBlock, ToGraph, generate_dot_graph},
         place_capabilities::PlaceCapabilitiesInterface,
@@ -52,7 +53,7 @@ use crate::{
 };
 
 use super::{PcgEngine, place_capabilities::PlaceCapabilities};
-use crate::free_pcs::OwnedPcg;
+use crate::owned_pcg::OwnedPcg;
 
 #[derive(Copy, Clone)]
 pub struct DataflowIterationDebugInfo {

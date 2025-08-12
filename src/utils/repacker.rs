@@ -7,7 +7,7 @@
 use crate::{
     borrow_checker::BorrowCheckerInterface,
     borrow_pcg::borrow_pcg_expansion::PlaceExpansion,
-    free_pcs::RepackGuide,
+    owned_pcg::RepackGuide,
     pcg_validity_assert,
     rustc_interface::{
         FieldIdx, PlaceTy, RustBitSet,

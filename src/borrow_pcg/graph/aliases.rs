@@ -202,7 +202,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
 fn test_aliases() {
     use std::alloc::Allocator;
 
-    use crate::free_pcs::PcgLocation;
+    use crate::owned_pcg::PcgLocation;
     use crate::rustc_interface::middle::mir::{self, START_BLOCK};
     use crate::rustc_interface::span::Symbol;
 

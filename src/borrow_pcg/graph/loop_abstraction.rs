@@ -16,8 +16,9 @@ use crate::{
         },
         state::BorrowStateMutRef,
     },
-    free_pcs::{CapabilityKind, RepackOp},
     r#loop::{PlaceUsage, PlaceUsageType, PlaceUsages},
+    owned_pcg::RepackOp,
+    pcg::CapabilityKind,
     pcg::{
         LocalNodeLike, PCGNodeLike, PcgMutRef, PcgNode,
         ctxt::AnalysisCtxt,

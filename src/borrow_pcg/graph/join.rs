@@ -3,8 +3,8 @@ use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::borrow_pcg::graph::loop_abstraction::ConstructAbstractionGraphResult;
 use crate::borrow_pcg::has_pcs_elem::{LabelLifetimeProjection, LabelLifetimeProjectionPredicate};
 use crate::borrow_pcg::region_projection::LifetimeProjectionLabel;
-use crate::free_pcs::OwnedPcg;
 use crate::r#loop::PlaceUsages;
+use crate::owned_pcg::OwnedPcg;
 use crate::pcg::ctxt::AnalysisCtxt;
 use crate::pcg::place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface};
 use crate::pcg::{BodyAnalysis, PCGNodeLike, PcgError, PcgNode, PcgUnsupportedError};
@@ -197,10 +197,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         validity_conditions: &ValidityConditions,
         mut args: JoinBorrowsArgs<'_, 'mir, 'tcx>,
         ctxt: AnalysisCtxt<'mir, 'tcx>,
-    ) -> Result<(), PcgError>
-    where
-        'tcx: 'mir,
-    {
+    ) -> Result<(), PcgError> {
         let loop_head = args.self_block;
         logging::log!(
             LogPredicate::DebugBlock,

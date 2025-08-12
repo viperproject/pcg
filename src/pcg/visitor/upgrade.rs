@@ -11,7 +11,7 @@ use crate::{
         has_pcs_elem::LabelLifetimeProjectionPredicate,
         region_projection::LifetimeProjection,
     },
-    free_pcs::CapabilityKind,
+    pcg::CapabilityKind,
     pcg::{
         PcgError, PcgNode,
         obtain::{HasSnapshotLocation, PlaceObtainer},

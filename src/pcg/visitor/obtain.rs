@@ -8,7 +8,8 @@ use crate::borrow_pcg::edge_data::EdgeData;
 use crate::borrow_pcg::graph::Conditioned;
 use crate::borrow_pcg::has_pcs_elem::LabelLifetimeProjectionPredicate;
 use crate::borrow_pcg::state::{BorrowStateMutRef, BorrowsStateLike};
-use crate::free_pcs::{CapabilityKind, RepackOp};
+use crate::owned_pcg::RepackOp;
+use crate::pcg::CapabilityKind;
 use crate::pcg::dot_graphs::{ToGraph, generate_dot_graph};
 use crate::pcg::obtain::{
     ActionApplier, HasSnapshotLocation, ObtainType, PlaceCollapser, PlaceExpander, PlaceObtainer,
@@ -52,7 +53,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
 }
 
 impl<'state, 'mir: 'state, 'tcx> PlaceCollapser<'mir, 'tcx> for PlaceObtainer<'state, 'mir, 'tcx> {
-    fn get_local_expansions(&self, local: mir::Local) -> &crate::free_pcs::LocalExpansions<'tcx> {
+    fn get_local_expansions(&self, local: mir::Local) -> &crate::owned_pcg::LocalExpansions<'tcx> {
         self.pcg.owned.locals()[local].get_allocated()
     }
 

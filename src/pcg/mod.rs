@@ -12,12 +12,14 @@ mod engine;
 mod node;
 mod successor;
 
+pub(crate) mod capabilities;
 pub(crate) mod ctxt;
 pub(crate) mod obtain;
 pub mod place_capabilities;
 pub(crate) mod triple;
 pub(crate) mod visitor;
 
+pub use capabilities::*;
 pub use domain::*;
 pub use engine::*;
 pub use node::*;

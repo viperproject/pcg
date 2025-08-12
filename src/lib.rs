@@ -22,8 +22,8 @@ may already be stabilized */
 pub mod action;
 pub mod borrow_checker;
 pub mod borrow_pcg;
-pub mod free_pcs;
 pub mod r#loop;
+pub mod owned_pcg;
 pub mod pcg;
 pub mod rustc_interface;
 pub mod utils;
@@ -32,7 +32,7 @@ pub mod visualization;
 use action::PcgActions;
 use borrow_checker::BorrowCheckerInterface;
 use borrow_pcg::graph::borrows_imgcat_debug;
-use free_pcs::{CapabilityKind, PcgLocation};
+use pcg::CapabilityKind;
 use pcg::{PcgEngine, PcgSuccessor};
 use rustc_interface::{
     borrowck::{self, BorrowSet, LocationTable, PoloniusInput, RegionInferenceContext},
@@ -54,7 +54,7 @@ use visualization::mir_graph::generate_json_from_mir;
 use utils::json::ToJsonWithCompilerCtxt;
 
 /// The result of the PCG analysis.
-pub type PcgOutput<'mir, 'tcx, A> = free_pcs::PcgAnalysis<'mir, 'tcx, A>;
+pub type PcgOutput<'mir, 'tcx, A> = owned_pcg::PcgAnalysis<'mir, 'tcx, A>;
 /// Instructs that the current capability to the place (first [`CapabilityKind`]) should
 /// be weakened to the second given capability. We guarantee that `_.1 > _.2`.
 /// If `_.2` is `None`, the capability is removed.
@@ -335,7 +335,7 @@ pub fn run_pcg<'a, 'tcx, A: Allocator + Copy + std::fmt::Debug>(
                 .write_json_file(&block_iterations_json_file);
         }
     }
-    let mut fpcs_analysis = free_pcs::PcgAnalysis::new(analysis.into_results_cursor(body));
+    let mut fpcs_analysis = owned_pcg::PcgAnalysis::new(analysis.into_results_cursor(body));
 
     if validity_checks_enabled() {
         for (block, _data) in body.basic_blocks.iter_enumerated() {
@@ -568,6 +568,8 @@ macro_rules! pcg_validity_assert {
 pub(crate) use pcg_validity_assert;
 pub(crate) use pcg_validity_expect_ok;
 pub(crate) use pcg_validity_expect_some;
+
+use crate::owned_pcg::PcgLocation;
 
 pub(crate) fn validity_checks_enabled() -> bool {
     *VALIDITY_CHECKS

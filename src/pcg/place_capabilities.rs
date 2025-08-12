@@ -6,7 +6,7 @@ use crate::{
         has_pcs_elem::LabelLifetimeProjectionPredicate,
         state::{BorrowStateMutRef, BorrowsStateLike},
     },
-    free_pcs::CapabilityKind,
+    pcg::CapabilityKind,
     pcg::{PcgError, ctxt::AnalysisCtxt},
     pcg_validity_assert,
     rustc_interface::{data_structures::fx::FxHashMap, middle::mir},

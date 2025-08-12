@@ -20,10 +20,10 @@ use crate::{
         region_projection::{LifetimeProjection, LocalLifetimeProjection},
         state::BorrowStateMutRef,
     },
-    free_pcs::{CapabilityKind, ExpandedPlace, LocalExpansions, RepackCollapse, RepackOp},
     r#loop::PlaceUsageType,
+    owned_pcg::{ExpandedPlace, LocalExpansions, RepackCollapse, RepackOp},
     pcg::{
-        PCGNodeLike, PcgDebugData, PcgError, PcgMutRef, PcgRefLike,
+        CapabilityKind, PCGNodeLike, PcgDebugData, PcgError, PcgMutRef, PcgRefLike,
         ctxt::AnalysisCtxt,
         place_capabilities::{BlockType, PlaceCapabilities, PlaceCapabilitiesInterface},
     },

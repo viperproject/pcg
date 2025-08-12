@@ -48,7 +48,7 @@ use crate::{
     utils::remote::RemotePlace,
 };
 use crate::{
-    free_pcs::CapabilityKind,
+    pcg::CapabilityKind,
     utils::{CompilerCtxt, Place},
 };
 

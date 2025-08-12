@@ -11,7 +11,7 @@ use crate::{
         has_pcs_elem::{LabelLifetimeProjection, LabelLifetimeProjectionPredicate},
         region_projection::LifetimeProjectionLabel,
     },
-    free_pcs::ExpandedPlace,
+    owned_pcg::ExpandedPlace,
     pcg::{PCGNodeLike, PcgNode, PcgUnsupportedError},
     rustc_interface::{
         data_structures::fx::{FxHashMap, FxHashSet},

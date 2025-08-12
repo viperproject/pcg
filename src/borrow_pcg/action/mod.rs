@@ -6,7 +6,7 @@ use crate::borrow_checker::BorrowCheckerInterface;
 use crate::borrow_pcg::edge_data::{LabelEdgePlaces, LabelPlacePredicate};
 use crate::borrow_pcg::has_pcs_elem::{LabelLifetimeProjectionPredicate, PlaceLabeller};
 use crate::borrow_pcg::region_projection::{LifetimeProjection, LifetimeProjectionLabel};
-use crate::free_pcs::CapabilityKind;
+use crate::pcg::CapabilityKind;
 use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::maybe_old::MaybeLabelledPlace;
 use crate::utils::{CompilerCtxt, Place, SnapshotLocation};
@@ -104,9 +104,18 @@ pub type MakePlaceOldReason = LabelPlaceReason;
 pub enum LabelPlaceReason {
     StorageDead,
     MoveOut,
+    /// When joining an owned place where one place has capability Read and the
+    /// other has capability Write, all borrowed expansions of the place with
+    /// Read capability should be labelled.
+    ///
+    /// In particular, the Read capability place could be a shared reference that is dereferenced.
+    /// The place will not have any capability after the join, but reborrows derived from the dereference
+    /// may still have capability.
     JoinOwnedReadAndWriteCapabilities,
     ReAssign,
-    LabelDerefProjections { shared_refs_only: bool },
+    LabelDerefProjections {
+        shared_refs_only: bool,
+    },
     Collapse,
 }
 
