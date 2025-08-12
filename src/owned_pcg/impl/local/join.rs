@@ -9,7 +9,7 @@ use crate::{
     },
     pcg::{
         CapabilityKind, PcgError,
-        ctxt::AnalysisCtxt,
+        ctxt::{self, AnalysisCtxt},
         obtain::{ActionApplier, HasSnapshotLocation, PlaceCollapser},
         place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface},
     },
@@ -20,13 +20,56 @@ use crate::{
     },
 };
 
+enum JoinDifferentExpansionsResult<'tcx> {
+    ExpandedForRead(RepackExpand<'tcx>),
+    ExpandedForNoCapability,
+    Collapsed(Vec<RepackOp<'tcx>>),
+}
+
+impl<'tcx> JoinDifferentExpansionsResult<'tcx> {
+    fn actions(self) -> Vec<RepackOp<'tcx>> {
+        match self {
+            JoinDifferentExpansionsResult::ExpandedForRead(action) => {
+                vec![RepackOp::Expand(action)]
+            }
+            JoinDifferentExpansionsResult::ExpandedForNoCapability => vec![],
+            JoinDifferentExpansionsResult::Collapsed(actions) => actions,
+        }
+    }
+}
+
+enum JoinExpandedPlaceResult<'tcx> {
+    JoinedWithSameExpansionInSelf(Vec<RepackOp<'tcx>>),
+    CreatedExpansionFromSelf(Vec<RepackOp<'tcx>>),
+    JoinedWithOtherExpansionsInSelf(JoinDifferentExpansionsResult<'tcx>),
+}
+
+impl<'tcx> JoinExpandedPlaceResult<'tcx> {
+    fn actions(self) -> Vec<RepackOp<'tcx>> {
+        match self {
+            JoinExpandedPlaceResult::JoinedWithSameExpansionInSelf(actions) => actions,
+            JoinExpandedPlaceResult::CreatedExpansionFromSelf(actions) => actions,
+            JoinExpandedPlaceResult::JoinedWithOtherExpansionsInSelf(result) => result.actions(),
+        }
+    }
+
+    fn performed_collapse(&self) -> bool {
+        matches!(
+            self,
+            JoinExpandedPlaceResult::JoinedWithOtherExpansionsInSelf(
+                JoinDifferentExpansionsResult::Collapsed(_)
+            )
+        )
+    }
+}
+
 impl<'pcg, 'tcx> JoinOwnedData<'pcg, 'tcx, &'pcg mut LocalExpansions<'tcx>> {
-    fn join_expansions_from_place<'other>(
+    fn join_different_expansions_from_place<'other>(
         &mut self,
         other: &mut JoinOwnedData<'pcg, 'tcx, &'other mut LocalExpansions<'tcx>>,
-        other_expansion: ExpandedPlace<'tcx>,
+        other_expansion: &ExpandedPlace<'tcx>,
         ctxt: AnalysisCtxt<'_, 'tcx>,
-    ) -> Result<Vec<RepackOp<'tcx>>, PcgError>
+    ) -> Result<JoinDifferentExpansionsResult<'tcx>, PcgError>
     where
         'pcg: 'other,
     {
@@ -38,7 +81,7 @@ impl<'pcg, 'tcx> JoinOwnedData<'pcg, 'tcx, &'pcg mut LocalExpansions<'tcx>> {
                 RepackExpand::new(base_place, other_expansion.guide(), CapabilityKind::Read);
             self.owned
                 .perform_expand_action(action, self.capabilities, ctxt)?;
-            Ok(vec![RepackOp::Expand(action)])
+            Ok(JoinDifferentExpansionsResult::ExpandedForRead(action))
         } else if other
             .owned
             .contains_descendent_leaf_node_without_capability(
@@ -54,8 +97,8 @@ impl<'pcg, 'tcx> JoinOwnedData<'pcg, 'tcx, &'pcg mut LocalExpansions<'tcx>> {
                 base_place.to_short_string(ctxt.ctxt)
             );
             self.owned
-                .insert_expansion(other_expansion.place, other_expansion.expansion);
-            return Ok(vec![]);
+                .insert_expansion(other_expansion.place, other_expansion.expansion.clone());
+            return Ok(JoinDifferentExpansionsResult::ExpandedForNoCapability);
         } else {
             let mut self_obtainer = JoinObtainer {
                 ctxt,
@@ -98,14 +141,16 @@ impl<'pcg, 'tcx> JoinOwnedData<'pcg, 'tcx, &'pcg mut LocalExpansions<'tcx>> {
                 ctxt.ctxt,
             )?;
 
-            return Ok(self_obtainer.actions);
+            return Ok(JoinDifferentExpansionsResult::Collapsed(
+                self_obtainer.actions,
+            ));
         }
     }
 
     fn expand_from_place_with_caps(
         &mut self,
         other: &mut JoinOwnedData<'pcg, 'tcx, &'pcg mut LocalExpansions<'tcx>>,
-        expansion: ExpandedPlace<'tcx>,
+        expansion: &ExpandedPlace<'tcx>,
         self_cap: CapabilityKind,
         other_cap: CapabilityKind,
         ctxt: AnalysisCtxt<'_, 'tcx>,
@@ -123,7 +168,7 @@ impl<'pcg, 'tcx> JoinOwnedData<'pcg, 'tcx, &'pcg mut LocalExpansions<'tcx>> {
             self.owned
                 .perform_expand_action(expand_action, self.capabilities, ctxt)?;
             let mut actions = vec![RepackOp::Expand(expand_action)];
-            actions.extend(self.join_all_places_in_expansion(other, expansion, ctxt)?);
+            actions.extend(self.join_all_places_in_expansion(other, &expansion, ctxt)?);
             Ok(actions)
         } else if self_cap == CapabilityKind::Read {
             pcg_validity_assert!(other_cap == CapabilityKind::Write);
@@ -142,7 +187,7 @@ impl<'pcg, 'tcx> JoinOwnedData<'pcg, 'tcx, &'pcg mut LocalExpansions<'tcx>> {
     fn join_all_places_in_expansion(
         &mut self,
         other: &JoinOwnedData<'pcg, 'tcx, &'pcg mut LocalExpansions<'tcx>>,
-        expansion: ExpandedPlace<'tcx>,
+        expansion: &ExpandedPlace<'tcx>,
         ctxt: AnalysisCtxt<'_, 'tcx>,
     ) -> Result<Vec<RepackOp<'tcx>>, PcgError> {
         let mut actions = vec![];
@@ -150,6 +195,56 @@ impl<'pcg, 'tcx> JoinOwnedData<'pcg, 'tcx, &'pcg mut LocalExpansions<'tcx>> {
             actions.extend(self.join_owned_places(other, expansion_place, ctxt)?);
         }
         Ok(actions)
+    }
+
+    fn join_other_expanded_place(
+        &mut self,
+        other: &mut JoinOwnedData<'pcg, 'tcx, &'pcg mut LocalExpansions<'tcx>>,
+        other_expansion: &ExpandedPlace<'tcx>,
+        ctxt: AnalysisCtxt<'_, 'tcx>,
+    ) -> Result<JoinExpandedPlaceResult<'tcx>, PcgError> {
+        tracing::info!("Joining expansion: {:?}", other_expansion);
+        let place = other_expansion.place;
+        let self_expansions = self
+            .owned
+            .expansions_from(place)
+            .cloned()
+            .collect::<HashSet<_>>();
+        if self_expansions.contains(&other_expansion) {
+            // If some of our expansions have leafs, we want to merge with the other ones
+            // for example, to propagate read caps from the other borrowed places to our own
+            Ok(JoinExpandedPlaceResult::JoinedWithSameExpansionInSelf(
+                self.join_all_places_in_expansion(other, other_expansion, ctxt)?,
+            ))
+        } else if self_expansions.is_empty()
+            && let Some(self_cap) = self.capabilities.get(place, ctxt.ctxt)
+        {
+            let other_cap = other.capabilities.get(place, ctxt.ctxt);
+            tracing::info!("Self cap: {:?}, Other cap: {:?}", self_cap, other_cap);
+            if let Some(other_cap) = other_cap {
+                Ok(JoinExpandedPlaceResult::CreatedExpansionFromSelf(
+                    self.expand_from_place_with_caps(
+                        other,
+                        other_expansion,
+                        self_cap,
+                        other_cap,
+                        ctxt,
+                    )?,
+                ))
+            } else {
+                // We might as well just expand our place
+                let expand_action = RepackExpand::new(place, other_expansion.guide(), self_cap);
+                self.owned
+                    .perform_expand_action(expand_action, self.capabilities, ctxt)?;
+                Ok(JoinExpandedPlaceResult::CreatedExpansionFromSelf(vec![
+                    RepackOp::Expand(expand_action),
+                ]))
+            }
+        } else {
+            Ok(JoinExpandedPlaceResult::JoinedWithOtherExpansionsInSelf(
+                self.join_different_expansions_from_place(other, other_expansion, ctxt)?,
+            ))
+        }
     }
 
     fn join_expansions_iteration(
@@ -163,50 +258,22 @@ impl<'pcg, 'tcx> JoinOwnedData<'pcg, 'tcx, &'pcg mut LocalExpansions<'tcx>> {
             .cloned()
             .collect::<Vec<_>>();
         let mut actions: Vec<RepackOp<'tcx>> = vec![];
+        let mut collapsed_places: HashSet<Place<'tcx>> = HashSet::default();
         for other_expansion in expansions_shortest_first {
-            tracing::info!("Joining expansion: {:?}", other_expansion);
-            let place = other_expansion.place;
-            let self_expansions = self
-                .owned
-                .expansions_from(place)
-                .cloned()
-                .collect::<HashSet<_>>();
-            if self_expansions.contains(&other_expansion) {
-                // If some of our expansions have leafs, we want to merge with the other ones
-                // for example, to propagate read caps from the other borrowed places to our own
-                actions.extend(self.join_all_places_in_expansion(other, other_expansion, ctxt)?);
-                continue;
-            } else if self_expansions.is_empty()
-                && let Some(self_cap) = self.capabilities.get(place, ctxt.ctxt)
+            if collapsed_places
+                .iter()
+                .any(|p| p.is_prefix_of(other_expansion.place))
             {
-                let other_cap = other.capabilities.get(place, ctxt.ctxt);
-                tracing::info!("Self cap: {:?}, Other cap: {:?}", self_cap, other_cap);
-                if let Some(other_cap) = other_cap {
-                    actions.extend(self.expand_from_place_with_caps(
-                        other,
-                        other_expansion,
-                        self_cap,
-                        other_cap,
-                        ctxt,
-                    )?);
-                } else {
-                    // We might as well just expand our place
-                    let expand_action = RepackExpand::new(place, other_expansion.guide(), self_cap);
-                    self.owned
-                        .perform_expand_action(expand_action, self.capabilities, ctxt)?;
-                    actions.push(RepackOp::Expand(expand_action));
-                }
-                pcg_validity_assert!(!actions.is_empty());
-                // Short circuit here... we took an action in either branch
-                return Ok(actions);
-            } else {
-                actions.extend(self.join_expansions_from_place(other, other_expansion, ctxt)?);
-                pcg_validity_assert!(!actions.is_empty());
-                // Short circuit here, we've looked at other expansions and should start over
-                return Ok(actions);
+                continue;
             }
+            let result = self.join_other_expanded_place(other, &other_expansion, ctxt)?;
+            let performed_collapse = result.performed_collapse();
+            if performed_collapse {
+                collapsed_places.insert(other_expansion.place);
+            }
+            actions.extend(result.actions());
         }
-        Ok(vec![])
+        Ok(actions)
     }
 
     fn join_expansions(
