@@ -4,12 +4,12 @@ use crate::{
     borrow_pcg::action::LabelPlaceReason,
     capability_gte,
     owned_pcg::{
-        ExpandedPlace, LocalExpansions, RepackExpand, RepackGuide, RepackOp,
+        ExpandedPlace, LocalExpansions, RepackExpand, RepackOp,
         join::{data::JoinOwnedData, obtain::JoinObtainer},
     },
     pcg::{
         CapabilityKind, PcgError,
-        ctxt::{self, AnalysisCtxt},
+        ctxt::AnalysisCtxt,
         obtain::{ActionApplier, HasSnapshotLocation, PlaceCollapser},
         place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface},
     },
@@ -39,24 +39,24 @@ impl<'tcx> JoinDifferentExpansionsResult<'tcx> {
 }
 
 enum JoinExpandedPlaceResult<'tcx> {
-    JoinedWithSameExpansionInSelf(Vec<RepackOp<'tcx>>),
-    CreatedExpansionFromSelf(Vec<RepackOp<'tcx>>),
-    JoinedWithOtherExpansionsInSelf(JoinDifferentExpansionsResult<'tcx>),
+    JoinedWithSameExpansion(Vec<RepackOp<'tcx>>),
+    CreatedExpansion(Vec<RepackOp<'tcx>>),
+    JoinedWithOtherExpansions(JoinDifferentExpansionsResult<'tcx>),
 }
 
 impl<'tcx> JoinExpandedPlaceResult<'tcx> {
     fn actions(self) -> Vec<RepackOp<'tcx>> {
         match self {
-            JoinExpandedPlaceResult::JoinedWithSameExpansionInSelf(actions) => actions,
-            JoinExpandedPlaceResult::CreatedExpansionFromSelf(actions) => actions,
-            JoinExpandedPlaceResult::JoinedWithOtherExpansionsInSelf(result) => result.actions(),
+            JoinExpandedPlaceResult::JoinedWithSameExpansion(actions) => actions,
+            JoinExpandedPlaceResult::CreatedExpansion(actions) => actions,
+            JoinExpandedPlaceResult::JoinedWithOtherExpansions(result) => result.actions(),
         }
     }
 
     fn performed_collapse(&self) -> bool {
         matches!(
             self,
-            JoinExpandedPlaceResult::JoinedWithOtherExpansionsInSelf(
+            JoinExpandedPlaceResult::JoinedWithOtherExpansions(
                 JoinDifferentExpansionsResult::Collapsed(_)
             )
         )
@@ -168,7 +168,7 @@ impl<'pcg, 'tcx> JoinOwnedData<'pcg, 'tcx, &'pcg mut LocalExpansions<'tcx>> {
             self.owned
                 .perform_expand_action(expand_action, self.capabilities, ctxt)?;
             let mut actions = vec![RepackOp::Expand(expand_action)];
-            actions.extend(self.join_all_places_in_expansion(other, &expansion, ctxt)?);
+            actions.extend(self.join_all_places_in_expansion(other, expansion, ctxt)?);
             Ok(actions)
         } else if self_cap == CapabilityKind::Read {
             pcg_validity_assert!(other_cap == CapabilityKind::Write);
@@ -210,10 +210,10 @@ impl<'pcg, 'tcx> JoinOwnedData<'pcg, 'tcx, &'pcg mut LocalExpansions<'tcx>> {
             .expansions_from(place)
             .cloned()
             .collect::<HashSet<_>>();
-        if self_expansions.contains(&other_expansion) {
+        if self_expansions.contains(other_expansion) {
             // If some of our expansions have leafs, we want to merge with the other ones
             // for example, to propagate read caps from the other borrowed places to our own
-            Ok(JoinExpandedPlaceResult::JoinedWithSameExpansionInSelf(
+            Ok(JoinExpandedPlaceResult::JoinedWithSameExpansion(
                 self.join_all_places_in_expansion(other, other_expansion, ctxt)?,
             ))
         } else if self_expansions.is_empty()
@@ -222,7 +222,7 @@ impl<'pcg, 'tcx> JoinOwnedData<'pcg, 'tcx, &'pcg mut LocalExpansions<'tcx>> {
             let other_cap = other.capabilities.get(place, ctxt.ctxt);
             tracing::info!("Self cap: {:?}, Other cap: {:?}", self_cap, other_cap);
             if let Some(other_cap) = other_cap {
-                Ok(JoinExpandedPlaceResult::CreatedExpansionFromSelf(
+                Ok(JoinExpandedPlaceResult::CreatedExpansion(
                     self.expand_from_place_with_caps(
                         other,
                         other_expansion,
@@ -236,12 +236,12 @@ impl<'pcg, 'tcx> JoinOwnedData<'pcg, 'tcx, &'pcg mut LocalExpansions<'tcx>> {
                 let expand_action = RepackExpand::new(place, other_expansion.guide(), self_cap);
                 self.owned
                     .perform_expand_action(expand_action, self.capabilities, ctxt)?;
-                Ok(JoinExpandedPlaceResult::CreatedExpansionFromSelf(vec![
+                Ok(JoinExpandedPlaceResult::CreatedExpansion(vec![
                     RepackOp::Expand(expand_action),
                 ]))
             }
         } else {
-            Ok(JoinExpandedPlaceResult::JoinedWithOtherExpansionsInSelf(
+            Ok(JoinExpandedPlaceResult::JoinedWithOtherExpansions(
                 self.join_different_expansions_from_place(other, other_expansion, ctxt)?,
             ))
         }

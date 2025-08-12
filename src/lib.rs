@@ -24,6 +24,8 @@ pub mod borrow_checker;
 pub mod borrow_pcg;
 pub mod r#loop;
 pub mod owned_pcg;
+#[deprecated(note = "Use `owned_pcg` instead")]
+pub use owned_pcg as free_pcs;
 pub mod pcg;
 pub mod rustc_interface;
 pub mod utils;

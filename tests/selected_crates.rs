@@ -1,6 +1,7 @@
 #![feature(let_chains)]
 #![allow(dead_code)]
 use itertools::Itertools;
+use rayon::prelude::*;
 
 mod common;
 
@@ -183,7 +184,7 @@ impl SelectedCrateTestCase {
             &self.crate_version,
             self.crate_download_date.as_deref(),
             common::RunOnCrateOptions::RunPCG {
-                target: common::Target::Debug,
+                target: common::Target::Release,
                 validity_checks: true,
                 function: self.function_name().map(|s| s.to_string()),
                 extra_env_vars: vec![],
@@ -207,6 +208,18 @@ impl SelectedCrateTestCase {
 fn test_selected_crates() {
     // Create tmp directory if it doesn't exist
     std::fs::create_dir_all("tmp").unwrap();
+
+    // Read parallelism setting from environment variable
+    let parallelism = std::env::var("PCG_TEST_CRATE_PARALLELISM")
+        .unwrap_or("1".to_string())
+        .parse::<usize>()
+        .unwrap_or(1);
+
+    // Set up rayon thread pool with specified parallelism
+    rayon::ThreadPoolBuilder::new()
+        .num_threads(parallelism)
+        .build_global()
+        .unwrap();
 
     let warn_only_vars = [(
         "PCG_VALIDITY_CHECKS_WARN_ONLY".to_string(),
@@ -946,19 +959,29 @@ fn test_selected_crates() {
     .collect();
     test_cases.extend(custom_test_cases);
 
-    for test_case in test_cases.into_iter().sorted_by_key(|tc| {
-        if let TestCrateType::Function(f) = &tc.test_type {
-            if f.debug_failure {
-                0 // Try these first
+    // Sort test cases before parallel execution
+    let sorted_test_cases: Vec<_> = test_cases
+        .into_iter()
+        .sorted_by_key(|tc| {
+            if let TestCrateType::Function(f) = &tc.test_type {
+                if f.debug_failure {
+                    0 // Try these first
+                } else {
+                    f.metadata.num_bbs.unwrap_or(usize::MAX)
+                }
             } else {
-                f.metadata.num_bbs.unwrap_or(usize::MAX)
+                usize::MAX
             }
-        } else {
-            usize::MAX
-        }
-    }) {
-        test_case.run();
-    }
+        })
+        .collect();
+
+    // Execute test cases in parallel
+    sorted_test_cases
+        .into_par_iter()
+        .panic_fuse()
+        .for_each(|test_case| {
+            test_case.run();
+        });
 }
 
 #[cfg(test)]
