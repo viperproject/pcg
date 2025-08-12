@@ -7,7 +7,7 @@ use std::{
 /// according to the partial ordering.
 ///
 /// Usage:
-/// ```
+/// ```ignore
 /// match cap {
 ///     capability_gte!(Read) => { /* matches Read or Exclusive */ }
 ///     capability_gte!(Write) => { /* matches Write, ShallowExclusive, or Exclusive */ }
@@ -17,7 +17,7 @@ use std::{
 /// ```
 ///
 /// Also supports single-letter abbreviations:
-/// ```
+/// ```ignore
 /// match cap {
 ///     capability_gte!(R) => { /* matches Read or Exclusive */ }
 ///     capability_gte!(W) => { /* matches Write, ShallowExclusive, or Exclusive */ }
