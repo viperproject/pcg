@@ -1,3 +1,5 @@
 use std::rc::Rc;
 
-pub type ArenaRef<T, A> = Rc<T, A>;
+use crate::pcg::PcgArena;
+
+pub type PcgArenaRef<'a, T> = Rc<T, PcgArena<'a>>;

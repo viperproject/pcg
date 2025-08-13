@@ -5,7 +5,7 @@ use serde_derive::Serialize;
 use crate::RECORD_PCG;
 use crate::pcg::{DataflowStmtPhase, EvalStmtPhase, PcgDebugData, PcgRef};
 use crate::rustc_interface::middle::mir::{self, BasicBlock};
-use crate::utils::CompilerCtxt;
+use crate::utils::HasBorrowCheckerCtxt;
 use crate::visualization::write_pcg_dot_graph_to_file;
 
 #[derive(Clone, Serialize, Default)]
@@ -127,13 +127,13 @@ pub(crate) enum ToGraph {
     Action(EvalStmtPhase, usize),
 }
 
-pub(crate) fn generate_dot_graph<'tcx>(
+pub(crate) fn generate_dot_graph<'pcg, 'a, 'tcx: 'a>(
     block: BasicBlock,
     statement_index: usize,
     to_graph: ToGraph,
-    pcg: PcgRef<'_, 'tcx>,
+    pcg: PcgRef<'pcg, 'a, 'tcx>,
     debug_data: Option<&PcgDebugData>,
-    ctxt: CompilerCtxt<'_, 'tcx>,
+    ctxt: impl HasBorrowCheckerCtxt<'a, 'tcx>,
 ) {
     if !*RECORD_PCG.lock().unwrap() {
         return;

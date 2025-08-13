@@ -347,13 +347,13 @@ impl<'tcx> BorrowsGraph<'tcx> {
         result
     }
 
-    pub(crate) fn expand_places_for_abstraction<'mir>(
+    pub(crate) fn expand_places_for_abstraction<'a>(
         &mut self,
         loop_blocked_places: &PlaceUsages<'tcx>,
         to_expand: &PlaceUsages<'tcx>,
         validity_conditions: &ValidityConditions,
-        args: JoinBorrowsArgs<'_, 'mir, 'tcx>,
-        ctxt: CompilerCtxt<'mir, 'tcx>,
+        args: JoinBorrowsArgs<'_, 'a, 'tcx>,
+        ctxt: AnalysisCtxt<'a, 'tcx>,
     ) {
         let borrow = BorrowStateMutRef {
             graph: self,
@@ -394,7 +394,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 Some(DebugImgcat::JoinLoop),
                 &format!(
                     "After obtaining (self) {}",
-                    place_usage.to_short_string(ctxt)
+                    place_usage.to_short_string(ctxt.ctxt)
                 ),
             );
         }

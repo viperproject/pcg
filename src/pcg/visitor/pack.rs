@@ -9,11 +9,11 @@ use crate::borrow_pcg::graph::Conditioned;
 use crate::borrow_pcg::graph::frozen::FrozenGraphRef;
 use crate::pcg::PcgNode;
 use crate::pcg::obtain::{PlaceCollapser, PlaceObtainer};
-use crate::utils::HasPlace;
 use crate::utils::Place;
 use crate::utils::data_structures::{HashMap, HashSet};
 use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::maybe_old::MaybeLabelledPlace;
+use crate::utils::{HasBorrowCheckerCtxt, HasPlace};
 
 type Reason = Cow<'static, str>;
 
@@ -214,7 +214,7 @@ impl<'pcg, 'mir: 'pcg, 'tcx> PlaceObtainer<'pcg, 'mir, 'tcx> {
                 };
             }
 
-            if ctxt.bc.is_dead(p.into(), location) {
+            if ctxt.bc().is_dead(p.into(), location) {
                 return ShouldKillNode::Yes {
                     reason: "Borrow-checker reports node as dead".into(),
                 };
@@ -237,7 +237,7 @@ impl<'pcg, 'mir: 'pcg, 'tcx> PlaceObtainer<'pcg, 'mir, 'tcx> {
                     return ShouldPackEdge::No;
                 }
                 if expansion.expansion().iter().all(|node| {
-                    node.is_old() || self.ctxt.bc.is_dead(node.place().into(), location)
+                    node.is_old() || self.ctxt.bc().is_dead(node.place().into(), location)
                 }) {
                     ShouldPackEdge::Yes {
                         reason: "Expansion is old or dead".into(),
@@ -246,7 +246,7 @@ impl<'pcg, 'mir: 'pcg, 'tcx> PlaceObtainer<'pcg, 'mir, 'tcx> {
                     ShouldPackEdge::Yes {
                         reason: format!(
                             "Expansion {} is packable",
-                            expansion.to_short_string(self.ctxt)
+                            expansion.to_short_string(self.ctxt.ctxt)
                         )
                         .into(),
                     }
@@ -256,17 +256,17 @@ impl<'pcg, 'mir: 'pcg, 'tcx> PlaceObtainer<'pcg, 'mir, 'tcx> {
             }
             _ => {
                 let mut why_killed_reasons = Vec::new();
-                for node in edge.blocked_by_nodes(self.ctxt) {
+                for node in edge.blocked_by_nodes(self.ctxt.bc_ctxt()) {
                     if let ShouldKillNode::Yes { reason } = should_kill_node(node, &fg) {
                         why_killed_reasons.push(format!(
                             "{}: {}",
-                            node.to_short_string(self.ctxt),
+                            node.to_short_string(self.ctxt.ctxt),
                             reason
                         ));
                     } else {
                         tracing::debug!(
                             "Node {} will not be killed",
-                            node.to_short_string(self.ctxt)
+                            node.to_short_string(self.ctxt.ctxt)
                         );
                         return ShouldPackEdge::No;
                     }
@@ -285,7 +285,7 @@ impl<'pcg, 'mir: 'pcg, 'tcx> PlaceObtainer<'pcg, 'mir, 'tcx> {
         for edge in leaf_edges.into_iter().map(|e| e.to_owned_edge()) {
             tracing::debug!(
                 "Checking leaf edge: {}",
-                edge.kind.to_short_string(self.ctxt)
+                edge.kind.to_short_string(self.ctxt.ctxt)
             );
             if let ShouldPackEdge::Yes { reason } = should_pack_edge(edge.kind()) {
                 edges_to_remove.push(edge, reason);

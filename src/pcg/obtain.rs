@@ -25,35 +25,36 @@ use crate::{
     pcg::{
         CapabilityKind, PCGNodeLike, PcgDebugData, PcgError, PcgMutRef, PcgRefLike,
         ctxt::AnalysisCtxt,
-        place_capabilities::{BlockType, PlaceCapabilities, PlaceCapabilitiesInterface},
+        place_capabilities::{
+            BlockType, PlaceCapabilitiesInterface, PlaceCapabilitiesReader,
+            SymbolicPlaceCapabilities,
+        },
     },
     rustc_interface::middle::mir,
     utils::{
-        CompilerCtxt, DebugImgcat, HasPlace, Place, ProjectionKind, ShallowExpansion,
-        SnapshotLocation, data_structures::HashSet, display::DisplayWithCompilerCtxt,
+        CompilerCtxt, DebugImgcat, HasBorrowCheckerCtxt, HasCompilerCtxt, HasPlace, Place,
+        ProjectionKind, ShallowExpansion, SnapshotLocation, data_structures::HashSet,
+        display::DisplayWithCompilerCtxt,
     },
 };
 
-pub(crate) struct PlaceObtainer<'state, 'mir, 'tcx> {
-    pub(crate) pcg: PcgMutRef<'state, 'tcx>,
-    pub(crate) ctxt: CompilerCtxt<'mir, 'tcx>,
+pub(crate) struct PlaceObtainer<'state, 'a, 'tcx> {
+    pub(crate) pcg: PcgMutRef<'state, 'a, 'tcx>,
+    pub(crate) ctxt: AnalysisCtxt<'a, 'tcx>,
     pub(crate) actions: Option<&'state mut Vec<PcgAction<'tcx>>>,
     pub(crate) location: mir::Location,
     pub(crate) prev_snapshot_location: SnapshotLocation,
     pub(crate) debug_data: Option<&'state mut PcgDebugData>,
 }
 
-impl<'mir, 'tcx> PlaceObtainer<'_, 'mir, 'tcx> {
-    pub(crate) fn analysis_ctxt(&self) -> AnalysisCtxt<'mir, 'tcx> {
-        AnalysisCtxt::new(self.ctxt, self.location.block)
-    }
-}
-
 impl RenderDebugGraph for PlaceObtainer<'_, '_, '_> {
     fn render_debug_graph(&self, debug_imgcat: Option<DebugImgcat>, comment: &str) {
-        self.pcg
-            .as_ref()
-            .render_debug_graph(self.location(), debug_imgcat, comment, self.ctxt);
+        self.pcg.as_ref().render_debug_graph(
+            self.location(),
+            debug_imgcat,
+            comment,
+            self.ctxt.ctxt,
+        );
     }
 }
 
@@ -85,21 +86,27 @@ impl ObtainType {
     /// If we are intend to write to the place, an expansion must come
     /// from a place with exclusive permission, so we expand for that capability.
     /// A weaken will come later.
-    pub(crate) fn capability_for_expand<'tcx>(
+    pub(crate) fn capability_for_expand<'a, 'tcx>(
         &self,
         place: Place<'tcx>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> CapabilityKind {
+        ctxt: impl HasCompilerCtxt<'a, 'tcx>,
+    ) -> CapabilityKind
+    where
+        'tcx: 'a,
+    {
         match self {
             ObtainType::Capability(CapabilityKind::Write) => CapabilityKind::Exclusive,
             _ => self.capability(place, ctxt),
         }
     }
-    pub(crate) fn capability<'tcx>(
+    pub(crate) fn capability<'a, 'tcx>(
         self,
         place: Place<'tcx>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> CapabilityKind {
+        ctxt: impl HasCompilerCtxt<'a, 'tcx>,
+    ) -> CapabilityKind
+    where
+        'tcx: 'a,
+    {
         match self {
             ObtainType::Capability(cap) => cap,
             ObtainType::TwoPhaseExpand => CapabilityKind::Read,
@@ -119,11 +126,14 @@ impl ObtainType {
         }
     }
 
-    pub(crate) fn should_label_rp<'tcx>(
+    pub(crate) fn should_label_rp<'a, 'tcx>(
         &self,
         rp: LifetimeProjection<'tcx>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> bool {
+        ctxt: impl HasCompilerCtxt<'a, 'tcx>,
+    ) -> bool
+    where
+        'tcx: 'a,
+    {
         match self {
             ObtainType::Capability(cap) => !cap.is_read(),
             ObtainType::TwoPhaseExpand => true,
@@ -152,33 +162,36 @@ impl LabelForLifetimeProjection {
 }
 
 // TODO: The edges that are added here could just be part of the collapse "action" probably
-pub(crate) trait PlaceCollapser<'mir, 'tcx>:
+pub(crate) trait PlaceCollapser<'a, 'tcx: 'a>:
     HasSnapshotLocation + ActionApplier<'tcx>
 {
     fn get_local_expansions(&self, local: mir::Local) -> &LocalExpansions<'tcx>;
 
     fn borrows_state(&mut self) -> BorrowStateMutRef<'_, 'tcx>;
 
-    fn capabilities(&mut self) -> &mut PlaceCapabilities<'tcx>;
+    fn capabilities(&mut self) -> &mut SymbolicPlaceCapabilities<'a, 'tcx>;
 
-    fn leaf_places(&self, ctxt: CompilerCtxt<'mir, 'tcx>) -> HashSet<Place<'tcx>>;
+    fn leaf_places(&self, ctxt: CompilerCtxt<'a, 'tcx>) -> HashSet<Place<'tcx>>;
 
     fn restore_capability_to_leaf_places(
         &mut self,
         parent_place: Option<Place<'tcx>>,
-        ctxt: CompilerCtxt<'mir, 'tcx>,
+        ctxt: impl HasBorrowCheckerCtxt<'a, 'tcx>,
     ) -> Result<(), PcgError> {
-        let mut leaf_places = self.leaf_places(ctxt);
-        tracing::debug!("Leaf places: {}", leaf_places.to_short_string(ctxt));
+        let mut leaf_places = self.leaf_places(ctxt.bc_ctxt());
+        tracing::debug!(
+            "Leaf places: {}",
+            leaf_places.to_short_string(ctxt.bc_ctxt())
+        );
         leaf_places.retain(|p| {
-            self.capabilities().get(*p, ctxt) == Some(CapabilityKind::Read)
+            self.capabilities().get(*p, ctxt) == Some(CapabilityKind::Read.into())
                 && !p.projects_shared_ref(ctxt)
                 && p.parent_place()
                     .is_none_or(|parent| self.capabilities().get(parent, ctxt).is_none())
         });
         tracing::debug!(
             "Restoring capability to leaf places: {}",
-            leaf_places.to_short_string(ctxt)
+            leaf_places.to_short_string(ctxt.bc_ctxt())
         );
         for place in leaf_places {
             if let Some(parent_place) = parent_place {
@@ -202,7 +215,7 @@ pub(crate) trait PlaceCollapser<'mir, 'tcx>:
         &mut self,
         place: Place<'tcx>,
         shared_refs_only: bool,
-        ctxt: CompilerCtxt<'mir, 'tcx>,
+        ctxt: impl HasBorrowCheckerCtxt<'a, 'tcx>,
     ) -> Result<bool, PcgError> {
         let place_predicate = |p| {
             if !place.is_strict_prefix_of(p) {
@@ -232,7 +245,7 @@ pub(crate) trait PlaceCollapser<'mir, 'tcx>:
         for mut rp in derefs_to_disconnect.iter().copied() {
             tracing::info!(
                 "Disconnecting deref projection {}",
-                rp.to_short_string(ctxt)
+                rp.to_short_string(ctxt.bc_ctxt())
             );
             let conditions = self.borrows_state().graph.remove(&rp.into()).unwrap();
             let label = self.prev_snapshot_location();
@@ -240,7 +253,7 @@ pub(crate) trait PlaceCollapser<'mir, 'tcx>:
                 &LabelPlacePredicate::Exact(rp.blocked_place.place()),
                 &SetLabel(label),
                 LabelNodeContext::Other,
-                ctxt,
+                ctxt.bc_ctxt(),
             );
             self.capabilities()
                 .remove_all_postfixes(rp.deref_place.as_current_place().unwrap(), ctxt);
@@ -248,7 +261,7 @@ pub(crate) trait PlaceCollapser<'mir, 'tcx>:
                 &LabelPlacePredicate::Exact(rp.deref_place.place()),
                 &SetLabel(self.prev_snapshot_location()),
                 LabelNodeContext::TargetOfExpansion,
-                ctxt,
+                ctxt.bc_ctxt(),
             );
             self.apply_action(
                 BorrowPcgAction::add_edge(
@@ -266,7 +279,7 @@ pub(crate) trait PlaceCollapser<'mir, 'tcx>:
         if !derefs_to_disconnect.is_empty() {
             tracing::info!(
                 "Labeling deref projections for place {}",
-                place.to_short_string(ctxt)
+                place.to_short_string(ctxt.ctxt())
             );
             self.apply_action(
                 BorrowPcgAction::label_place_and_update_related_capabilities(
@@ -286,15 +299,15 @@ pub(crate) trait PlaceCollapser<'mir, 'tcx>:
         place: Place<'tcx>,
         capability: CapabilityKind,
         context: String,
-        ctxt: CompilerCtxt<'mir, 'tcx>,
+        ctxt: impl HasBorrowCheckerCtxt<'a, 'tcx>,
     ) -> Result<(), PcgError> {
         let to_collapse = self
             .get_local_expansions(place.local)
             .places_to_collapse_for_obtain_of(place, ctxt);
         tracing::debug!(
             "To obtain {}, will collapse {}",
-            place.to_short_string(ctxt),
-            to_collapse.to_short_string(ctxt)
+            place.to_short_string(ctxt.ctxt()),
+            to_collapse.to_short_string(ctxt.ctxt())
         );
         for place in to_collapse {
             let expansions = self
@@ -335,7 +348,7 @@ pub(crate) trait PlaceCollapser<'mir, 'tcx>:
         &mut self,
         base: LocalLifetimeProjection<'tcx>,
         expansion: &[LocalLifetimeProjection<'tcx>],
-        ctxt: CompilerCtxt<'mir, 'tcx>,
+        ctxt: impl HasBorrowCheckerCtxt<'a, 'tcx>,
     ) -> Result<(), PcgError> {
         for (idx, node) in expansion.iter().enumerate() {
             if let Some(place) = node.base.as_current_place() {
@@ -351,7 +364,7 @@ pub(crate) trait PlaceCollapser<'mir, 'tcx>:
                     &LabelPlacePredicate::Exact((*place).into()),
                     &labeller,
                     LabelNodeContext::Other,
-                    ctxt,
+                    ctxt.bc_ctxt(),
                 );
                 let edge = BorrowPcgEdge::new(
                     BorrowFlowEdge::new(
@@ -393,7 +406,7 @@ pub(crate) trait RenderDebugGraph {
     fn render_debug_graph(&self, debug_imgcat: Option<DebugImgcat>, comment: &str);
 }
 
-pub(crate) trait PlaceExpander<'mir, 'tcx>:
+pub(crate) trait PlaceExpander<'a, 'tcx: 'a>:
     HasSnapshotLocation + ActionApplier<'tcx> + RenderDebugGraph
 {
     fn contains_owned_expansion_to(&self, target: Place<'tcx>) -> bool;
@@ -417,15 +430,15 @@ pub(crate) trait PlaceExpander<'mir, 'tcx>:
         &mut self,
         place: Place<'tcx>,
         obtain_type: ObtainType,
-        ctxt: CompilerCtxt<'mir, 'tcx>,
+        ctxt: impl HasBorrowCheckerCtxt<'a, 'tcx>,
     ) -> Result<(), PcgError> {
-        for (base, _) in place.iter_projections(ctxt) {
+        for (base, _) in place.iter_projections(ctxt.ctxt()) {
             let base = base.with_inherent_region(ctxt);
             let expansion = base.expand_one_level(place, ctxt)?;
             if self.expand_place_one_level(base, &expansion, obtain_type, ctxt)? {
                 tracing::debug!(
                     "expand region projections for {} one level",
-                    base.to_short_string(ctxt)
+                    base.to_short_string(ctxt.ctxt())
                 );
                 self.expand_lifetime_projections_one_level(base, &expansion, obtain_type, ctxt)?;
             }
@@ -437,7 +450,7 @@ pub(crate) trait PlaceExpander<'mir, 'tcx>:
         &self,
         rp: LifetimeProjection<'tcx, Place<'tcx>>,
         obtain_type: ObtainType,
-        ctxt: CompilerCtxt<'mir, 'tcx>,
+        ctxt: impl HasBorrowCheckerCtxt<'a, 'tcx>,
     ) -> LabelForLifetimeProjection {
         use LabelForLifetimeProjection::*;
         if obtain_type.should_label_rp(rp.rebase(), ctxt) {
@@ -455,10 +468,10 @@ pub(crate) trait PlaceExpander<'mir, 'tcx>:
     fn label_for_shared_expansion_of_rp(
         &self,
         rp: LifetimeProjection<'tcx, Place<'tcx>>,
-        ctxt: CompilerCtxt<'mir, 'tcx>,
+        ctxt: impl HasBorrowCheckerCtxt<'a, 'tcx>,
     ) -> Option<SnapshotLocation> {
-        ctxt.bc
-            .borrows_blocking(rp.base, self.location(), ctxt)
+        ctxt.bc()
+            .borrows_blocking(rp.base, self.location(), ctxt.bc_ctxt())
             .first()
             .map(|borrow| {
                 let borrow_reserve_location = get_reserve_location(borrow);
@@ -471,16 +484,19 @@ pub(crate) trait PlaceExpander<'mir, 'tcx>:
         base: Place<'tcx>,
         expansion: &ShallowExpansion<'tcx>,
         obtain_type: ObtainType,
-        ctxt: crate::utils::CompilerCtxt<'mir, 'tcx>,
+        ctxt: impl HasCompilerCtxt<'a, 'tcx>,
     ) -> Result<bool, PcgError> {
         if self.contains_owned_expansion_to(expansion.target_place) {
             tracing::debug!(
                 "Already contains owned expansion from {}",
-                base.to_short_string(ctxt)
+                base.to_short_string(ctxt.ctxt())
             );
             return Ok(false);
         }
-        tracing::debug!("New owned expansion from {}", base.to_short_string(ctxt));
+        tracing::debug!(
+            "New owned expansion from {}",
+            base.to_short_string(ctxt.ctxt())
+        );
         if expansion.kind.is_deref_box()
             && obtain_type.capability(base, ctxt).is_shallow_exclusive()
         {
@@ -513,7 +529,7 @@ pub(crate) trait PlaceExpander<'mir, 'tcx>:
         base: Place<'tcx>,
         expansion: &ShallowExpansion<'tcx>,
         obtain_type: ObtainType,
-        ctxt: CompilerCtxt<'mir, 'tcx>,
+        ctxt: impl HasBorrowCheckerCtxt<'a, 'tcx>,
     ) -> Result<bool, PcgError> {
         let place_expansion = PlaceExpansion::from_places(expansion.expansion(), ctxt);
         if matches!(expansion.kind, ProjectionKind::DerefRef(_)) {
@@ -540,7 +556,11 @@ pub(crate) trait PlaceExpander<'mir, 'tcx>:
             );
             self.apply_action(action.into())?;
             self.render_debug_graph(None, "expand_place_one_level: after apply action");
-            self.update_capabilities_for_deref(base, obtain_type.capability(base, ctxt), ctxt)?;
+            self.update_capabilities_for_deref(
+                base,
+                obtain_type.capability(base, ctxt),
+                ctxt.bc_ctxt(),
+            )?;
             self.render_debug_graph(
                 None,
                 "expand_place_one_level: after update_capabilities_for_deref",
@@ -576,8 +596,11 @@ pub(crate) trait PlaceExpander<'mir, 'tcx>:
         base: Place<'tcx>,
         place_expansion: PlaceExpansion<'tcx>,
         obtain_type: ObtainType,
-        ctxt: CompilerCtxt<'mir, 'tcx>,
-    ) -> Result<bool, PcgError> {
+        ctxt: impl HasBorrowCheckerCtxt<'a, 'tcx>,
+    ) -> Result<bool, PcgError>
+    where
+        'tcx: 'a,
+    {
         let expanded_place = ExpandedPlace {
             place: base,
             expansion: place_expansion,
@@ -588,11 +611,14 @@ pub(crate) trait PlaceExpander<'mir, 'tcx>:
         {
             return Ok(false);
         }
-        tracing::debug!("Create expansion from {}", base.to_short_string(ctxt));
+        tracing::debug!(
+            "Create expansion from {}",
+            base.to_short_string(ctxt.bc_ctxt())
+        );
         let block_type = expanded_place.expansion.block_type(base, obtain_type, ctxt);
         tracing::debug!(
             "Block type for {} is {:?}",
-            base.to_short_string(ctxt),
+            base.to_short_string(ctxt.bc_ctxt()),
             block_type
         );
         let expansion: BorrowPcgExpansion<'tcx, LocalNode<'tcx>> =
@@ -602,10 +628,10 @@ pub(crate) trait PlaceExpander<'mir, 'tcx>:
             None,
             &format!(
                 "add_borrow_pcg_expansion: before update_capabilities_for_borrow_expansion {}",
-                expansion.to_short_string(ctxt)
+                expansion.to_short_string(ctxt.bc_ctxt())
             ),
         );
-        self.update_capabilities_for_borrow_expansion(&expansion, block_type, ctxt)?;
+        self.update_capabilities_for_borrow_expansion(&expansion, block_type, ctxt.bc_ctxt())?;
         self.render_debug_graph(
             None,
             "add_borrow_pcg_expansion: after update_capabilities_for_borrow_expansion",
@@ -628,20 +654,20 @@ pub(crate) trait PlaceExpander<'mir, 'tcx>:
         base: Place<'tcx>,
         expansion: &ShallowExpansion<'tcx>,
         obtain_type: ObtainType,
-        ctxt: CompilerCtxt<'mir, 'tcx>,
+        ctxt: impl HasBorrowCheckerCtxt<'a, 'tcx>,
     ) -> Result<(), PcgError> {
         for base_rp in base.lifetime_projections(ctxt) {
             if let Some(place_expansion) =
                 expansion.place_expansion_for_region(base_rp.region(ctxt), ctxt)
             {
-                tracing::debug!("Expand {}", base_rp.to_short_string(ctxt));
+                tracing::debug!("Expand {}", base_rp.to_short_string(ctxt.bc_ctxt()));
                 let mut expansion = BorrowPcgExpansion::new(base_rp.into(), place_expansion, ctxt)?;
                 let expansion_label = self.label_for_rp(base_rp, obtain_type, ctxt);
                 if let Some(label) = expansion_label.label() {
                     expansion.label_lifetime_projection(
                         &LabelLifetimeProjectionPredicate::Equals(base_rp.into()),
                         Some(label.into()),
-                        ctxt,
+                        ctxt.bc_ctxt(),
                     );
                 }
                 self.apply_action(
@@ -672,7 +698,9 @@ pub(crate) trait PlaceExpander<'mir, 'tcx>:
                             .expansion()
                             .iter()
                             .map(|node| {
-                                node.to_pcg_node(ctxt).try_into_region_projection().unwrap()
+                                node.to_pcg_node(ctxt.bc_ctxt())
+                                    .try_into_region_projection()
+                                    .unwrap()
                             })
                             .collect::<Vec<_>>();
                         self.add_and_update_placeholder_edges(
@@ -712,7 +740,7 @@ pub(crate) trait PlaceExpander<'mir, 'tcx>:
         origin_rp: LocalLifetimeProjection<'tcx>,
         expansion_rps: &[LifetimeProjection<'tcx>],
         context: &str,
-        ctxt: CompilerCtxt<'mir, 'tcx>,
+        ctxt: impl HasBorrowCheckerCtxt<'a, 'tcx>,
     ) -> Result<(), PcgError> {
         if expansion_rps.is_empty() {
             return Ok(());
@@ -766,7 +794,7 @@ pub(crate) trait PlaceExpander<'mir, 'tcx>:
         &mut self,
         old_source: LocalLifetimeProjection<'tcx>,
         new_source: LocalLifetimeProjection<'tcx>,
-        ctxt: CompilerCtxt<'mir, 'tcx>,
+        ctxt: impl HasBorrowCheckerCtxt<'a, 'tcx>,
     ) -> Result<(), PcgError> {
         let to_replace = self
             .borrows_graph()

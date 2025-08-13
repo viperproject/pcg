@@ -12,7 +12,10 @@ use rustc_interface::{
     },
 };
 
-use crate::rustc_interface::{self, FieldIdx};
+use crate::{
+    HasCompilerCtxt,
+    rustc_interface::{self, FieldIdx},
+};
 
 use super::{CompilerCtxt, Place, root_place::RootPlace};
 
@@ -28,7 +31,7 @@ pub enum LocalMutationIsAllowed {
     No,
 }
 
-impl<'a, 'tcx: 'a> CompilerCtxt<'a, 'tcx> {
+impl<'a, 'tcx: 'a, BC: Copy> CompilerCtxt<'a, 'tcx, BC> {
     #[allow(unreachable_patterns)]
     fn upvars(self) -> Vec<Upvar<'tcx>> {
         let def = self.body().source.def_id().expect_local();
@@ -52,23 +55,29 @@ impl<'a, 'tcx: 'a> CompilerCtxt<'a, 'tcx> {
 }
 
 impl<'tcx> Place<'tcx> {
-    pub fn is_mutable(
+    pub fn is_mutable<'a>(
         self,
         is_local_mutation_allowed: LocalMutationIsAllowed,
-        repacker: CompilerCtxt<'_, 'tcx>,
-    ) -> Result<RootPlace<'tcx>, Self> {
-        let upvars = repacker.upvars();
+        repacker: impl HasCompilerCtxt<'a, 'tcx>,
+    ) -> Result<RootPlace<'tcx>, Self>
+    where
+        'tcx: 'a,
+    {
+        let upvars = repacker.ctxt().upvars();
         self.is_mutable_helper(is_local_mutation_allowed, &upvars, repacker)
     }
 
     /// Whether this value can be written or borrowed mutably.
     /// Returns the root place if the place passed in is a projection.
-    fn is_mutable_helper(
+    fn is_mutable_helper<'a>(
         self,
         is_local_mutation_allowed: LocalMutationIsAllowed,
         upvars: &[Upvar<'tcx>],
-        repacker: CompilerCtxt<'_, 'tcx>,
-    ) -> Result<RootPlace<'tcx>, Self> {
+        repacker: impl HasCompilerCtxt<'a, 'tcx>,
+    ) -> Result<RootPlace<'tcx>, Self>
+    where
+        'tcx: 'a,
+    {
         match self.last_projection() {
             None => {
                 let local = &repacker.body().local_decls[self.local];
@@ -214,11 +223,14 @@ impl<'tcx> Place<'tcx> {
     /// then returns the index of the field being projected. Note that this closure will always
     /// be `self` in the current MIR, because that is the only time we directly access the fields
     /// of a closure type.
-    fn is_upvar_field_projection(
+    fn is_upvar_field_projection<'a>(
         self,
         upvars: &[Upvar<'tcx>],
-        repacker: CompilerCtxt<'_, 'tcx>,
-    ) -> Option<FieldIdx> {
+        repacker: impl HasCompilerCtxt<'a, 'tcx>,
+    ) -> Option<FieldIdx>
+    where
+        'tcx: 'a,
+    {
         let mut place_ref = *self;
         let mut by_ref = false;
 
@@ -229,7 +241,7 @@ impl<'tcx> Place<'tcx> {
 
         match place_ref.last_projection() {
             Some((place_base, ProjectionElem::Field(field, _ty))) => {
-                let base_ty = place_base.ty(repacker.body(), repacker.tcx).ty;
+                let base_ty = place_base.ty(repacker.body(), repacker.tcx()).ty;
                 if (base_ty.is_closure()) && (!by_ref || upvars[field.index()].by_ref) {
                     Some(field)
                 } else {

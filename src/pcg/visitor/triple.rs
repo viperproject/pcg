@@ -31,11 +31,9 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             PlaceCondition::AllocateOrDeallocate(local) => {
                 self.pcg.owned.locals_mut()[local] =
                     OwnedPcgLocal::Allocated(LocalExpansions::new(local));
-                self.pcg.capabilities.insert(
-                    local.into(),
-                    CapabilityKind::Write,
-                    self.analysis_ctxt(),
-                );
+                self.pcg
+                    .capabilities
+                    .insert(local.into(), CapabilityKind::Write, self.ctxt);
             }
             PlaceCondition::Unalloc(_) | PlaceCondition::Return => {}
             PlaceCondition::RemoveCapability(_) => unreachable!(),
@@ -45,7 +43,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
 
     #[tracing::instrument(skip(self, triple))]
     pub(crate) fn ensure_triple(&mut self, triple: Triple<'tcx>) -> Result<(), PcgError> {
-        self.pcg.ensure_triple(triple, self.analysis_ctxt());
+        self.pcg.ensure_triple(triple, self.ctxt);
         Ok(())
     }
 }

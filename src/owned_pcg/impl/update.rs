@@ -6,10 +6,12 @@
 
 use crate::{
     owned_pcg::{LocalExpansions, OwnedPcgLocal},
-    pcg::CapabilityKind,
     pcg::{
+        CapabilityKind,
         ctxt::AnalysisCtxt,
-        place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface},
+        place_capabilities::{
+            PlaceCapabilitiesInterface, PlaceCapabilitiesReader, SymbolicPlaceCapabilities,
+        },
         triple::{PlaceCondition, Triple},
     },
     pcg_validity_assert,
@@ -21,11 +23,11 @@ use crate::rustc_interface::middle::mir::RETURN_PLACE;
 use super::OwnedPcgData;
 
 impl<'tcx> OwnedPcgData<'tcx> {
-    fn check_pre_satisfied(
+    fn check_pre_satisfied<'a>(
         &self,
         pre: PlaceCondition<'tcx>,
-        capabilities: &PlaceCapabilities<'tcx>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
+        capabilities: &SymbolicPlaceCapabilities<'a, 'tcx>,
+        ctxt: CompilerCtxt<'a, 'tcx>,
     ) {
         match pre {
             PlaceCondition::ExpandTwoPhase(_place) => {}
@@ -79,18 +81,18 @@ impl<'tcx> OwnedPcgData<'tcx> {
             PlaceCondition::Return => {
                 pcg_validity_assert!(
                     capabilities.get(RETURN_PLACE.into(), ctxt).unwrap()
-                        == CapabilityKind::Exclusive,
+                        == CapabilityKind::Exclusive.into(),
                     [ctxt]
                 );
             }
             PlaceCondition::RemoveCapability(_) => unreachable!(),
         }
     }
-    pub(crate) fn ensures(
+    pub(crate) fn ensures<'a>(
         &mut self,
         t: Triple<'tcx>,
-        place_capabilities: &mut PlaceCapabilities<'tcx>,
-        ctxt: AnalysisCtxt<'_, 'tcx>,
+        place_capabilities: &mut SymbolicPlaceCapabilities<'a, 'tcx>,
+        ctxt: AnalysisCtxt<'a, 'tcx>,
     ) {
         self.check_pre_satisfied(t.pre(), place_capabilities, ctxt.ctxt);
         let Some(post) = t.post() else {

@@ -1,6 +1,14 @@
 use std::{
+    cell::{Cell, RefCell},
     cmp::Ordering,
     fmt::{Debug, Formatter, Result},
+};
+
+use derive_more::From;
+
+use crate::{
+    pcg::{PcgArena, ctxt::AnalysisCtxt},
+    utils::data_structures::HashSet,
 };
 
 /// Macro for generating patterns that match a capability and all "greater" capabilities
@@ -54,6 +62,142 @@ macro_rules! capability_gte {
     (E) => {
         CapabilityKind::Exclusive
     };
+}
+
+pub(crate) enum ConstraintResult<'arena> {
+    Unsat,
+    Sat(Option<SymbolicCapabilityConstraint<'arena>>),
+}
+
+impl ConstraintResult<'_> {
+    pub(crate) fn is_sat(&self) -> bool {
+        matches!(self, ConstraintResult::Sat(_))
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Hash)]
+pub(crate) enum SymbolicCapabilityConstraint<'arena> {
+    Lt(SymbolicCapability<'arena>, SymbolicCapability<'arena>),
+    Lte(SymbolicCapability<'arena>, SymbolicCapability<'arena>),
+    Eq(SymbolicCapability<'arena>, SymbolicCapability<'arena>),
+}
+
+impl<'arena> SymbolicCapabilityConstraint<'arena> {
+    pub(crate) fn lt(
+        lhs: impl Into<SymbolicCapability<'arena>>,
+        rhs: impl Into<SymbolicCapability<'arena>>,
+    ) -> Self {
+        SymbolicCapabilityConstraint::Lt(lhs.into(), rhs.into())
+    }
+
+    pub(crate) fn eq(
+        lhs: impl Into<SymbolicCapability<'arena>>,
+        rhs: impl Into<SymbolicCapability<'arena>>,
+    ) -> Self {
+        SymbolicCapabilityConstraint::Eq(lhs.into(), rhs.into())
+    }
+
+    pub(crate) fn lte(
+        lhs: impl Into<SymbolicCapability<'arena>>,
+        rhs: impl Into<SymbolicCapability<'arena>>,
+    ) -> Self {
+        SymbolicCapabilityConstraint::Lte(lhs.into(), rhs.into())
+    }
+
+    pub(crate) fn gte(
+        lhs: impl Into<SymbolicCapability<'arena>>,
+        rhs: impl Into<SymbolicCapability<'arena>>,
+    ) -> Self {
+        SymbolicCapabilityConstraint::Lte(rhs.into(), lhs.into())
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct SymbolicCapabilityConstraints<'tcx>(HashSet<SymbolicCapabilityConstraint<'tcx>>);
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, From)]
+pub struct CapabilityVar(usize);
+
+#[derive(Clone, Copy)]
+pub(crate) struct SymbolicCapabilityCtxt<'a> {
+    counter: &'a Cell<usize>,
+    constraints: &'a RefCell<SymbolicCapabilityConstraints<'a>>,
+}
+
+impl<'a> SymbolicCapabilityCtxt<'a> {
+    pub fn new(arena: PcgArena<'a>) -> Self {
+        Self {
+            counter: arena.alloc(Cell::new(0)),
+            constraints: arena.alloc(RefCell::new(SymbolicCapabilityConstraints(
+                HashSet::default(),
+            ))),
+        }
+    }
+    fn fresh_variable(&self) -> CapabilityVar {
+        let var = CapabilityVar(self.counter.get());
+        self.counter.set(var.0 + 1);
+        var
+    }
+
+    pub(crate) fn require(&self, _cap: SymbolicCapabilityConstraint) -> ConstraintResult<'a> {
+        todo!()
+    }
+}
+
+pub type SymbolicCapabilityRef<'arena> = &'arena SymbolicCapability<'arena>;
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, From)]
+pub enum SymbolicCapability<'arena> {
+    Concrete(CapabilityKind),
+    Variable(CapabilityVar),
+    Minimum(SymbolicCapabilityRef<'arena>, SymbolicCapabilityRef<'arena>),
+    None,
+}
+
+mod private {
+    use crate::pcg::CapabilityKind;
+
+    pub trait CapabilityOps<Ctxt>: Clone + Copy + From<CapabilityKind> + PartialEq + Sized {
+        fn expect_concrete(self) -> CapabilityKind;
+        fn minimum(self, other: impl Into<Self>, ctxt: Ctxt) -> Option<Self>;
+    }
+}
+
+pub(crate) use private::*;
+
+impl<'a, 'tcx> CapabilityOps<AnalysisCtxt<'a, 'tcx>> for SymbolicCapability<'a> {
+    fn expect_concrete(self) -> CapabilityKind {
+        match self {
+            SymbolicCapability::Concrete(c) => c,
+            SymbolicCapability::Variable(_) => panic!("Expected concrete capability"),
+            SymbolicCapability::Minimum(_, _) => panic!("Expected concrete capability"),
+            SymbolicCapability::None => panic!("Expected concrete capability"),
+        }
+    }
+
+    fn minimum(self, _other: impl Into<Self>, _ctxt: AnalysisCtxt<'a, 'tcx>) -> Option<Self> {
+        todo!()
+    }
+}
+
+impl<T> CapabilityOps<T> for CapabilityKind {
+    fn minimum(self, other: impl Into<Self>, _ctxt: T) -> Option<Self> {
+        self.minimum(other.into())
+    }
+    fn expect_concrete(self) -> CapabilityKind {
+        self
+    }
+}
+
+impl SymbolicCapability<'_> {
+    pub(crate) fn expect_concrete(self) -> CapabilityKind {
+        match self {
+            SymbolicCapability::Concrete(c) => c,
+            SymbolicCapability::Variable(_) => panic!("Expected concrete capability"),
+            SymbolicCapability::Minimum(_, _) => panic!("Expected concrete capability"),
+            SymbolicCapability::None => panic!("Expected concrete capability"),
+        }
+    }
 }
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash)]

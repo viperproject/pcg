@@ -5,13 +5,13 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 use std::{
-    alloc::Allocator,
     cell::RefCell,
     fmt::{Debug, Formatter},
+    marker::PhantomData,
     rc::Rc,
 };
 
-use derive_more::TryInto;
+use derive_more::{From, TryInto};
 use serde::{Serialize, Serializer};
 
 use crate::{
@@ -26,19 +26,19 @@ use crate::{
     r#loop::{LoopAnalysis, LoopPlaceUsageAnalysis, PlaceUsages},
     owned_pcg::join::data::JoinOwnedData,
     pcg::{
-        CapabilityKind,
+        CapabilityKind, PcgArena,
         ctxt::AnalysisCtxt,
         dot_graphs::{PcgDotGraphsForBlock, ToGraph, generate_dot_graph},
-        place_capabilities::PlaceCapabilitiesInterface,
+        place_capabilities::{PlaceCapabilitiesReader, SymbolicPlaceCapabilities},
         triple::Triple,
     },
     rustc_interface::{
-        middle::mir::{self, BasicBlock, START_BLOCK},
+        middle::mir::{self, BasicBlock},
         mir_dataflow::{JoinSemiLattice, fmt::DebugWithContext, move_paths::MoveData},
     },
     utils::{
-        CHECK_CYCLES, CompilerCtxt, DebugImgcat, PANIC_ON_ERROR, Place,
-        arena::ArenaRef,
+        CHECK_CYCLES, CompilerCtxt, DebugImgcat, HasBorrowCheckerCtxt, PANIC_ON_ERROR, Place,
+        arena::PcgArenaRef,
         data_structures::HashSet,
         display::DisplayWithCompilerCtxt,
         domain_data::{DomainData, DomainDataIndex},
@@ -52,7 +52,7 @@ use crate::{
     visualization::{dot_graph::DotGraph, generate_pcg_dot_graph},
 };
 
-use super::{PcgEngine, place_capabilities::PlaceCapabilities};
+use super::PcgEngine;
 use crate::owned_pcg::OwnedPcg;
 
 #[derive(Copy, Clone)]
@@ -169,32 +169,33 @@ pub(crate) struct PcgDebugData {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
-pub struct Pcg<'tcx> {
+pub struct Pcg<'a, 'tcx, Capabilities = SymbolicPlaceCapabilities<'a, 'tcx>> {
     pub(crate) owned: OwnedPcg<'tcx>,
     pub(crate) borrow: BorrowsState<'tcx>,
-    pub(crate) capabilities: PlaceCapabilities<'tcx>,
+    pub(crate) capabilities: Capabilities,
+    pub(crate) _marker: PhantomData<&'a ()>,
 }
 
-impl<'tcx> HasValidityCheck<'tcx> for Pcg<'tcx> {
+impl<'tcx> HasValidityCheck<'tcx> for Pcg<'_, 'tcx> {
     fn check_validity(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> std::result::Result<(), String> {
         self.as_ref().check_validity(ctxt)
     }
 }
 
 #[derive(Clone, Copy)]
-pub(crate) struct PcgRef<'pcg, 'tcx> {
+pub(crate) struct PcgRef<'pcg, 'a, 'tcx> {
     pub(crate) owned: &'pcg OwnedPcg<'tcx>,
     pub(crate) borrow: BorrowStateRef<'pcg, 'tcx>,
-    pub(crate) capabilities: &'pcg PlaceCapabilities<'tcx>,
+    pub(crate) capabilities: &'pcg SymbolicPlaceCapabilities<'a, 'tcx>,
 }
 
-impl<'tcx> PcgRef<'_, 'tcx> {
-    pub(crate) fn render_debug_graph(
-        &self,
+impl<'a, 'tcx: 'a> PcgRef<'_, 'a, 'tcx> {
+    pub(crate) fn render_debug_graph<'slf>(
+        &'slf self,
         location: mir::Location,
         debug_imgcat: Option<DebugImgcat>,
         comment: &str,
-        ctxt: CompilerCtxt<'_, 'tcx>,
+        ctxt: CompilerCtxt<'a, 'tcx>,
     ) {
         if borrows_imgcat_debug(location.block, debug_imgcat) {
             let dot_graph = generate_pcg_dot_graph(self.as_ref(), ctxt, location).unwrap();
@@ -205,8 +206,8 @@ impl<'tcx> PcgRef<'_, 'tcx> {
     }
 }
 
-impl<'pcg, 'tcx> From<&'pcg Pcg<'tcx>> for PcgRef<'pcg, 'tcx> {
-    fn from(pcg: &'pcg Pcg<'tcx>) -> Self {
+impl<'pcg, 'a, 'tcx> From<&'pcg Pcg<'a, 'tcx>> for PcgRef<'pcg, 'a, 'tcx> {
+    fn from(pcg: &'pcg Pcg<'a, 'tcx>) -> Self {
         Self {
             owned: &pcg.owned,
             borrow: pcg.borrow.as_ref(),
@@ -215,8 +216,8 @@ impl<'pcg, 'tcx> From<&'pcg Pcg<'tcx>> for PcgRef<'pcg, 'tcx> {
     }
 }
 
-impl<'pcg, 'tcx> From<&'pcg PcgMutRef<'pcg, 'tcx>> for PcgRef<'pcg, 'tcx> {
-    fn from(pcg: &'pcg PcgMutRef<'pcg, 'tcx>) -> Self {
+impl<'pcg, 'a, 'tcx> From<&'pcg PcgMutRef<'pcg, 'a, 'tcx>> for PcgRef<'pcg, 'a, 'tcx> {
+    fn from(pcg: &'pcg PcgMutRef<'pcg, 'a, 'tcx>) -> Self {
         let borrow = pcg.borrow.as_ref();
         Self {
             owned: &*pcg.owned,
@@ -226,17 +227,17 @@ impl<'pcg, 'tcx> From<&'pcg PcgMutRef<'pcg, 'tcx>> for PcgRef<'pcg, 'tcx> {
     }
 }
 
-pub(crate) struct PcgMutRef<'pcg, 'tcx> {
+pub(crate) struct PcgMutRef<'pcg, 'a, 'tcx> {
     pub(crate) owned: &'pcg mut OwnedPcg<'tcx>,
     pub(crate) borrow: BorrowStateMutRef<'pcg, 'tcx>,
-    pub(crate) capabilities: &'pcg mut PlaceCapabilities<'tcx>,
+    pub(crate) capabilities: &'pcg mut SymbolicPlaceCapabilities<'a, 'tcx>,
 }
 
-impl<'pcg, 'tcx> PcgMutRef<'pcg, 'tcx> {
+impl<'pcg, 'a, 'tcx> PcgMutRef<'pcg, 'a, 'tcx> {
     pub(crate) fn new(
         owned: &'pcg mut OwnedPcg<'tcx>,
         borrow: BorrowStateMutRef<'pcg, 'tcx>,
-        capabilities: &'pcg mut PlaceCapabilities<'tcx>,
+        capabilities: &'pcg mut SymbolicPlaceCapabilities<'a, 'tcx>,
     ) -> Self {
         Self {
             owned,
@@ -246,8 +247,8 @@ impl<'pcg, 'tcx> PcgMutRef<'pcg, 'tcx> {
     }
 }
 
-impl<'pcg, 'tcx> From<&'pcg mut Pcg<'tcx>> for PcgMutRef<'pcg, 'tcx> {
-    fn from(pcg: &'pcg mut Pcg<'tcx>) -> Self {
+impl<'pcg, 'a, 'tcx> From<&'pcg mut Pcg<'a, 'tcx>> for PcgMutRef<'pcg, 'a, 'tcx> {
+    fn from(pcg: &'pcg mut Pcg<'a, 'tcx>) -> Self {
         Self::new(
             &mut pcg.owned,
             (&mut pcg.borrow).into(),
@@ -257,7 +258,7 @@ impl<'pcg, 'tcx> From<&'pcg mut Pcg<'tcx>> for PcgMutRef<'pcg, 'tcx> {
 }
 
 pub(crate) trait PcgRefLike<'tcx> {
-    fn as_ref(&self) -> PcgRef<'_, 'tcx>;
+    fn as_ref(&self) -> PcgRef<'_, '_, 'tcx>;
 
     fn borrows_graph(&self) -> &BorrowsGraph<'tcx> {
         self.as_ref().borrow.graph
@@ -271,46 +272,57 @@ pub(crate) trait PcgRefLike<'tcx> {
         self.as_ref().owned
     }
 
-    fn leaf_places(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> HashSet<Place<'tcx>> {
+    fn leaf_places<'a>(&self, ctxt: impl HasBorrowCheckerCtxt<'a, 'tcx>) -> HashSet<Place<'tcx>>
+    where
+        'tcx: 'a,
+    {
         let mut leaf_places = self.owned_pcg().leaf_places(ctxt);
         leaf_places.retain(|p| !self.borrows_graph().places(ctxt).contains(p));
         leaf_places.extend(self.borrows_graph().leaf_places(ctxt));
         leaf_places
     }
 
-    fn is_leaf_place(&self, place: Place<'tcx>, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
+    fn is_leaf_place<'a>(
+        &self,
+        place: Place<'tcx>,
+        ctxt: impl HasBorrowCheckerCtxt<'a, 'tcx>,
+    ) -> bool
+    where
+        'tcx: 'a,
+    {
         self.leaf_places(ctxt).contains(&place)
     }
 }
 
-impl<'tcx> PcgRefLike<'tcx> for PcgMutRef<'_, 'tcx> {
-    fn as_ref(&self) -> PcgRef<'_, 'tcx> {
+impl<'a, 'tcx> PcgRefLike<'tcx> for PcgMutRef<'_, 'a, 'tcx> {
+    fn as_ref(&self) -> PcgRef<'_, 'a, 'tcx> {
         PcgRef::from(self)
     }
 }
 
-impl<'tcx> PcgRefLike<'tcx> for Pcg<'tcx> {
-    fn as_ref(&self) -> PcgRef<'_, 'tcx> {
+impl<'a, 'tcx> PcgRefLike<'tcx> for Pcg<'a, 'tcx> {
+    fn as_ref(&self) -> PcgRef<'_, 'a, 'tcx> {
         PcgRef::from(self)
     }
 }
 
-impl<'tcx> PcgRefLike<'tcx> for PcgRef<'_, 'tcx> {
-    fn as_ref(&self) -> PcgRef<'_, 'tcx> {
+impl<'a, 'tcx> PcgRefLike<'tcx> for PcgRef<'_, 'a, 'tcx> {
+    fn as_ref(&self) -> PcgRef<'_, 'a, 'tcx> {
         *self
     }
 }
 
-impl<'tcx> HasValidityCheck<'tcx> for PcgRef<'_, 'tcx> {
+impl<'tcx> HasValidityCheck<'tcx> for PcgRef<'_, '_, 'tcx> {
     fn check_validity(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> std::result::Result<(), String> {
-        self.capabilities.check_validity(ctxt)?;
+        self.capabilities.to_concrete(ctxt).check_validity(ctxt)?;
         self.borrow.check_validity(ctxt)?;
-        self.owned.check_validity(self.capabilities, ctxt)?;
+        self.owned
+            .check_validity(&self.capabilities.to_concrete(ctxt), ctxt)?;
         if *CHECK_CYCLES && !self.is_acyclic(ctxt) {
             return Err("PCG is not acyclic".to_string());
         }
 
-        for (place, cap) in self.capabilities.iter() {
+        for (place, cap) in self.capabilities.to_concrete(ctxt).iter() {
             if !self.owned.contains_place(place, ctxt)
                 && !self.borrow.graph.places(ctxt).contains(&place)
             {
@@ -346,8 +358,10 @@ impl<'tcx> HasValidityCheck<'tcx> for PcgRef<'_, 'tcx> {
                 BorrowPcgEdgeKind::Deref(deref_edge) => {
                     if let MaybeLabelledPlace::Current(blocked_place) = deref_edge.blocked_place
                         && let MaybeLabelledPlace::Current(deref_place) = deref_edge.deref_place
-                        && let Some(c @ (CapabilityKind::Read | CapabilityKind::Exclusive)) =
-                            self.capabilities.get(blocked_place, ctxt)
+                        && let Some(c @ (CapabilityKind::Read | CapabilityKind::Exclusive)) = self
+                            .capabilities
+                            .get(blocked_place, ctxt)
+                            .map(|c| c.expect_concrete())
                         && self.capabilities.get(deref_place, ctxt).is_none()
                     {
                         return Err(format!(
@@ -378,11 +392,11 @@ impl<'tcx> HasValidityCheck<'tcx> for PcgRef<'_, 'tcx> {
     }
 }
 
-impl<'mir, 'tcx: 'mir> Pcg<'tcx> {
+impl<'a, 'tcx: 'a> Pcg<'a, 'tcx> {
     pub(crate) fn is_expansion_leaf(
         &self,
         place: Place<'tcx>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
+        ctxt: impl HasBorrowCheckerCtxt<'a, 'tcx>,
     ) -> bool {
         if self
             .borrow
@@ -396,7 +410,7 @@ impl<'mir, 'tcx: 'mir> Pcg<'tcx> {
         return !place.is_owned(ctxt) || self.owned.leaf_places(ctxt).contains(&place);
     }
 
-    pub fn capabilities(&self) -> &PlaceCapabilities<'tcx> {
+    pub fn capabilities(&self) -> &SymbolicPlaceCapabilities<'a, 'tcx> {
         &self.capabilities
     }
 
@@ -408,7 +422,7 @@ impl<'mir, 'tcx: 'mir> Pcg<'tcx> {
         &self.borrow
     }
 
-    pub(crate) fn ensure_triple(&mut self, t: Triple<'tcx>, ctxt: AnalysisCtxt<'_, 'tcx>) {
+    pub(crate) fn ensure_triple(&mut self, t: Triple<'tcx>, ctxt: AnalysisCtxt<'a, 'tcx>) {
         self.owned
             .locals_mut()
             .ensures(t, &mut self.capabilities, ctxt);
@@ -420,8 +434,8 @@ impl<'mir, 'tcx: 'mir> Pcg<'tcx> {
         other: &Self,
         self_block: BasicBlock,
         other_block: BasicBlock,
-        body_analysis: &BodyAnalysis<'mir, 'tcx>,
-        ctxt: AnalysisCtxt<'mir, 'tcx>,
+        body_analysis: &BodyAnalysis<'a, 'tcx>,
+        ctxt: AnalysisCtxt<'a, 'tcx>,
     ) -> std::result::Result<bool, PcgError> {
         let mut other_capabilities = other.capabilities.clone();
         let mut other_borrows = other.borrow.clone();
@@ -444,7 +458,7 @@ impl<'mir, 'tcx: 'mir> Pcg<'tcx> {
         other
             .borrow
             .add_cfg_edge(other_block, self_block, ctxt.ctxt);
-        res |= self.capabilities.join(&other_capabilities);
+        res |= self.capabilities.join(&other_capabilities, ctxt);
         let borrow_args = JoinBorrowsArgs {
             self_block,
             other_block,
@@ -452,11 +466,11 @@ impl<'mir, 'tcx: 'mir> Pcg<'tcx> {
             capabilities: &mut self.capabilities,
             owned: &mut self.owned,
         };
-        res |= self.borrow.join(&other.borrow, borrow_args, ctxt.ctxt)?;
+        res |= self.borrow.join(&other.borrow, borrow_args, ctxt)?;
         Ok(res)
     }
 
-    pub(crate) fn debug_lines(&self, repacker: CompilerCtxt<'mir, 'tcx>) -> Vec<String> {
+    pub(crate) fn debug_lines(&self, repacker: CompilerCtxt<'a, 'tcx>) -> Vec<String> {
         let mut result = self.borrow.debug_lines(repacker);
         result.sort();
         let mut capabilities = self.capabilities.debug_lines(repacker);
@@ -464,30 +478,29 @@ impl<'mir, 'tcx: 'mir> Pcg<'tcx> {
         result.extend(capabilities);
         result
     }
-    pub(crate) fn initialize_as_start_block(&mut self, repacker: CompilerCtxt<'_, 'tcx>) {
-        let analysis_ctxt = AnalysisCtxt::new(repacker, START_BLOCK);
+    pub(crate) fn initialize_as_start_block(&mut self, analysis_ctxt: AnalysisCtxt<'a, 'tcx>) {
         self.owned
             .initialize_as_start_block(&mut self.capabilities, analysis_ctxt);
         self.borrow
-            .initialize_as_start_block(&mut self.capabilities, repacker);
+            .initialize_as_start_block(&mut self.capabilities, analysis_ctxt);
     }
 }
 
 #[derive(Clone, Eq, Debug)]
-pub struct PcgDomainData<'tcx, A: Allocator> {
-    pub(crate) pcg: DomainData<ArenaRef<Pcg<'tcx>, A>>,
+pub struct PcgDomainData<'a, 'tcx, Capabilities = SymbolicPlaceCapabilities<'a, 'tcx>> {
+    pub(crate) pcg: DomainData<PcgArenaRef<'a, Pcg<'a, 'tcx, Capabilities>>>,
     pub(crate) actions: EvalStmtData<PcgActions<'tcx>>,
 }
 
-impl<A: Allocator> PartialEq for PcgDomainData<'_, A> {
+impl<Capabilities: PartialEq> PartialEq for PcgDomainData<'_, '_, Capabilities> {
     fn eq(&self, other: &Self) -> bool {
         self.pcg == other.pcg
     }
 }
 
-impl<A: Allocator + Clone> PcgDomainData<'_, A> {
-    pub(crate) fn new(arena: A) -> Self {
-        let pcg = ArenaRef::new_in(Pcg::default(), arena);
+impl<'a> PcgDomainData<'a, '_> {
+    pub(crate) fn new(arena: PcgArena<'a>) -> Self {
+        let pcg = Rc::new_in(Pcg::default(), arena);
         Self {
             pcg: DomainData::new(pcg),
             actions: EvalStmtData::default(),
@@ -546,21 +559,168 @@ impl<'a, 'tcx> BodyAnalysis<'a, 'tcx> {
     }
 }
 
-#[derive(Clone)]
-pub struct PcgDomain<'a, 'tcx, A: Allocator> {
-    ctxt: CompilerCtxt<'a, 'tcx>,
-    pub(crate) block: Option<BasicBlock>,
-    pub(crate) body_analysis: Rc<BodyAnalysis<'a, 'tcx>>,
-    pub(crate) data: std::result::Result<PcgDomainData<'tcx, A>, PcgError>,
-    pub(crate) debug_data: Option<PcgDebugData>,
-    pub(crate) reachable: bool,
-}
-
-impl<A: Allocator + Debug> Debug for PcgDomain<'_, '_, A> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self.data)
+impl std::fmt::Debug for PcgDomain<'_, '_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PcgDomain::InProgress(d) => write!(f, "InProgressDomain({:?})", d.ctxt.block),
+            PcgDomain::Complete(_d) => write!(f, "CompleteDomain"),
+        }
     }
 }
+
+#[derive(From, Clone)]
+pub enum PcgDomain<'a, 'tcx> {
+    InProgress(InProgressDomain<'a, 'tcx>),
+    Complete(CompleteDomain<'a, 'tcx>),
+}
+
+impl<'a, 'tcx> PcgDomain<'a, 'tcx> {
+    pub(crate) fn expect_complete(&self) -> &CompleteDomain<'a, 'tcx> {
+        match self {
+            PcgDomain::Complete(d) => d,
+            PcgDomain::InProgress(_d) => panic!("Expected complete domain, got in progress"),
+        }
+    }
+}
+
+mod private {
+    use std::rc::Rc;
+
+    use crate::{
+        pcg::{
+            BodyAnalysis, PcgDebugData, PcgDomainData, PcgError, ctxt::AnalysisCtxt,
+            place_capabilities::SymbolicPlaceCapabilities,
+        },
+        utils::CompilerCtxt,
+    };
+
+    #[derive(Clone)]
+    pub struct InProgressDomain<'a, 'tcx> {
+        pub(crate) ctxt: AnalysisCtxt<'a, 'tcx>,
+        pub(crate) body_analysis: Rc<BodyAnalysis<'a, 'tcx>>,
+        pub(crate) data: std::result::Result<PcgDomainData<'a, 'tcx>, PcgError>,
+        pub(crate) debug_data: Option<PcgDebugData>,
+        pub(crate) reachable: bool,
+    }
+
+    #[derive(Clone)]
+    pub struct CompleteDomain<'a, 'tcx> {
+        pub(crate) ctxt: CompilerCtxt<'a, 'tcx>,
+        pub(crate) data: std::result::Result<
+            PcgDomainData<'a, 'tcx, SymbolicPlaceCapabilities<'a, 'tcx>>,
+            PcgError,
+        >,
+    }
+}
+
+pub(crate) use private::*;
+
+impl<'a, 'tcx> InProgressDomain<'a, 'tcx> {
+    pub(crate) fn block(&self) -> BasicBlock {
+        self.ctxt.block.unwrap()
+    }
+
+    pub(crate) fn set_block(&mut self, block: BasicBlock) {
+        self.ctxt.block = Some(block);
+    }
+
+    pub(crate) fn set_debug_data(
+        &mut self,
+        debug_output_dir: String,
+        dot_graphs: Rc<RefCell<PcgDotGraphsForBlock>>,
+    ) {
+        self.debug_data = Some(PcgDebugData {
+            dot_output_dir: debug_output_dir,
+            dot_graphs,
+        });
+    }
+
+    pub(crate) fn record_error(&mut self, error: PcgError) {
+        self.data = Err(error);
+    }
+
+    pub(crate) fn has_error(&self) -> bool {
+        self.data.is_err()
+    }
+
+    pub(crate) fn register_new_debug_iteration(&mut self, location: mir::Location) {
+        if let Some(debug_data) = &mut self.debug_data {
+            debug_data
+                .dot_graphs
+                .borrow_mut()
+                .register_new_iteration(location.statement_index);
+        }
+    }
+
+    pub fn pcg(&self, phase: impl Into<DomainDataIndex>) -> &Pcg<'a, 'tcx> {
+        match &self.data {
+            Ok(data) => &data.pcg[phase.into()],
+            Err(e) => panic!("PCG error: {e:?}"),
+        }
+    }
+
+    pub(crate) fn error(&self) -> Option<&PcgError> {
+        self.data.as_ref().err()
+    }
+
+    pub(crate) fn data(&self) -> std::result::Result<&PcgDomainData<'_, 'tcx>, PcgError> {
+        self.data.as_ref().map_err(|e| e.clone())
+    }
+
+    pub(crate) fn pcg_mut(&mut self, phase: DomainDataIndex) -> &mut Pcg<'a, 'tcx> {
+        match &mut self.data {
+            Ok(data) => PcgArenaRef::make_mut(&mut data.pcg[phase]),
+            Err(e) => panic!("PCG error: {e:?}"),
+        }
+    }
+
+    pub(crate) fn dot_graphs(&self) -> Option<Rc<RefCell<PcgDotGraphsForBlock>>> {
+        self.debug_data.as_ref().map(|data| data.dot_graphs.clone())
+    }
+
+    pub(crate) fn new(
+        body_analysis: Rc<BodyAnalysis<'a, 'tcx>>,
+        debug_data: Option<PcgDebugData>,
+        arena: PcgArena<'a>,
+        ctxt: AnalysisCtxt<'a, 'tcx>,
+    ) -> Self {
+        Self {
+            ctxt,
+            body_analysis,
+            data: Ok(PcgDomainData::new(arena)),
+            debug_data,
+            reachable: false,
+        }
+    }
+
+    pub(crate) fn generate_dot_graph(&self, phase: DataflowStmtPhase, statement_index: usize) {
+        let pcg: &Pcg<'a, 'tcx> = match phase {
+            DataflowStmtPhase::EvalStmt(phase) => self.pcg(DomainDataIndex::Eval(phase)),
+            _ => self.pcg(DomainDataIndex::Initial),
+        };
+        generate_dot_graph(
+            self.block(),
+            statement_index,
+            ToGraph::Phase(phase),
+            pcg.into(),
+            self.debug_data.as_ref(),
+            self.ctxt,
+        );
+    }
+}
+
+impl<'a, 'tcx> CompleteDomain<'a, 'tcx> {
+    pub(crate) fn new(
+        ctxt: CompilerCtxt<'a, 'tcx>,
+        data: PcgDomainData<'a, 'tcx, SymbolicPlaceCapabilities<'a, 'tcx>>,
+    ) -> Self {
+        Self {
+            ctxt,
+            data: Ok(data),
+        }
+    }
+}
+
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub(crate) struct ErrorState {
     error: Option<PcgError>,
@@ -653,139 +813,70 @@ pub enum PcgUnsupportedError {
     MaxNodesExceeded,
 }
 
-impl<'tcx, A: Allocator> PcgDomain<'_, 'tcx, A> {
+impl<'a, 'tcx> PcgDomain<'a, 'tcx> {
     pub(crate) fn has_error(&self) -> bool {
-        self.data.is_err()
-    }
-    pub(crate) fn block(&self) -> BasicBlock {
-        self.block.unwrap()
-    }
-    pub(crate) fn is_initialized(&self) -> bool {
-        self.block.is_some()
-    }
-    pub(crate) fn record_error(&mut self, error: PcgError) {
-        self.data = Err(error);
-    }
-    pub(crate) fn register_new_debug_iteration(&mut self, location: mir::Location) {
-        if let Some(debug_data) = &mut self.debug_data {
-            debug_data
-                .dot_graphs
-                .borrow_mut()
-                .register_new_iteration(location.statement_index);
+        match self {
+            PcgDomain::Complete(d) => d.data.is_err(),
+            PcgDomain::InProgress(d) => d.data.is_err(),
         }
     }
-
-    pub(crate) fn generate_dot_graph(&self, phase: DataflowStmtPhase, statement_index: usize) {
-        let pcg: &Pcg<'tcx> = match phase {
-            DataflowStmtPhase::EvalStmt(phase) => self.pcg(DomainDataIndex::Eval(phase)),
-            _ => self.pcg(DomainDataIndex::Initial),
-        };
-        generate_dot_graph(
-            self.block(),
-            statement_index,
-            ToGraph::Phase(phase),
-            pcg.into(),
-            self.debug_data.as_ref(),
-            self.ctxt,
-        );
-    }
-
-    pub(crate) fn set_debug_data(
-        &mut self,
-        output_dir: String,
-        dot_graphs: Rc<RefCell<PcgDotGraphsForBlock>>,
-    ) {
-        self.debug_data = Some(PcgDebugData {
-            dot_output_dir: output_dir,
-            dot_graphs,
-        });
-    }
-
-    pub fn pcg(&self, phase: impl Into<DomainDataIndex>) -> &Pcg<'tcx> {
-        match &self.data {
-            Ok(data) => &data.pcg[phase.into()],
-            Err(e) => panic!("PCG error: {e:?}"),
+    pub(crate) fn expect_in_progress(&self) -> &InProgressDomain<'a, 'tcx> {
+        match self {
+            PcgDomain::InProgress(d) => d,
+            PcgDomain::Complete(_d) => panic!("Expected in progress domain, got complete"),
         }
     }
-
-    pub(crate) fn set_block(&mut self, block: BasicBlock) {
-        self.block = Some(block);
-    }
-}
-
-impl<'a, 'tcx, A: Allocator + Clone> PcgDomain<'a, 'tcx, A> {
-    pub(crate) fn error(&self) -> Option<&PcgError> {
-        self.data.as_ref().err()
-    }
-
-    pub(crate) fn data(&self) -> std::result::Result<&PcgDomainData<'tcx, A>, PcgError> {
-        self.data.as_ref().map_err(|e| e.clone())
-    }
-
-    pub(crate) fn pcg_mut(&mut self, phase: DomainDataIndex) -> &mut Pcg<'tcx> {
-        match &mut self.data {
-            Ok(data) => ArenaRef::make_mut(&mut data.pcg[phase]),
-            Err(e) => panic!("PCG error: {e:?}"),
-        }
-    }
-
-    pub(crate) fn dot_graphs(&self) -> Option<Rc<RefCell<PcgDotGraphsForBlock>>> {
-        self.debug_data.as_ref().map(|data| data.dot_graphs.clone())
-    }
-
-    pub(crate) fn new(
-        body_analysis: Rc<BodyAnalysis<'a, 'tcx>>,
-        repacker: CompilerCtxt<'a, 'tcx>,
-        block: Option<BasicBlock>,
-        debug_data: Option<PcgDebugData>,
-        arena: A,
-    ) -> Self {
-        Self {
-            ctxt: repacker,
-            block,
-            body_analysis,
-            data: Ok(PcgDomainData::new(arena)),
-            debug_data,
-            reachable: false,
+    pub(crate) fn expect_in_progress_mut(&mut self) -> &mut InProgressDomain<'a, 'tcx> {
+        match self {
+            PcgDomain::InProgress(d) => d,
+            PcgDomain::Complete(_d) => panic!("Expected in progress domain, got complete"),
         }
     }
 }
 
-impl<A: Allocator + Clone> Eq for PcgDomain<'_, '_, A> {}
+impl PcgDomain<'_, '_> {}
 
-impl<A: Allocator + Clone> PartialEq for PcgDomain<'_, '_, A> {
+impl Eq for PcgDomain<'_, '_> {}
+
+impl PartialEq for PcgDomain<'_, '_> {
     fn eq(&self, other: &Self) -> bool {
-        self.data == other.data
+        match (self, other) {
+            (PcgDomain::Complete(d1), PcgDomain::Complete(d2)) => d1.data == d2.data,
+            (PcgDomain::InProgress(d1), PcgDomain::InProgress(d2)) => d1.data == d2.data,
+            _ => false,
+        }
     }
 }
 
-impl<A: Allocator + Clone> JoinSemiLattice for PcgDomain<'_, '_, A> {
+impl JoinSemiLattice for PcgDomain<'_, '_> {
     // TODO: It should be possible to simplify this logic considerably because
     // each block should only be visited once.
     fn join(&mut self, other: &Self) -> bool {
-        if !self.reachable && !other.reachable {
+        let slf = self.expect_in_progress_mut();
+        let other = other.expect_in_progress();
+        if !slf.reachable && !other.reachable {
             return false;
         }
-        if other.has_error() && !self.has_error() {
-            self.data = other.data.clone();
+        if other.has_error() && !slf.has_error() {
+            slf.data = other.data.clone();
             return true;
         }
 
-        let self_block = self.block();
+        let self_block = slf.block();
         let other_block = other.block();
 
-        let data = match &mut self.data {
+        let data = match &mut slf.data {
             Ok(data) => data,
             Err(_) => return false,
         };
 
         let seen = data.pcg.incoming_states.contains(other_block);
 
-        if seen || self.ctxt.is_back_edge(other_block, self_block) {
+        if seen || slf.ctxt.ctxt.is_back_edge(other_block, self_block) {
             return false;
         }
 
-        let is_loop_head = self.body_analysis.is_loop_head(self_block);
+        let is_loop_head = slf.body_analysis.is_loop_head(self_block);
 
         let first_join = data.pcg.incoming_states.is_empty();
 
@@ -798,10 +889,10 @@ impl<A: Allocator + Clone> JoinSemiLattice for PcgDomain<'_, '_, A> {
 
             let other_state = &other.data.as_ref().unwrap().pcg.states[EvalStmtPhase::PostMain];
             data.pcg.entry_state = other_state.clone();
-            let entry_state_mut = ArenaRef::make_mut(&mut data.pcg.entry_state);
+            let entry_state_mut = PcgArenaRef::make_mut(&mut data.pcg.entry_state);
             entry_state_mut
                 .borrow
-                .add_cfg_edge(other_block, self_block, self.ctxt);
+                .add_cfg_edge(other_block, self_block, slf.ctxt.ctxt);
 
             if !is_loop_head {
                 return true;
@@ -810,40 +901,37 @@ impl<A: Allocator + Clone> JoinSemiLattice for PcgDomain<'_, '_, A> {
             data.pcg.incoming_states.insert(other_block);
         }
 
-        assert!(self.is_initialized() && other.is_initialized());
         let pcg =
-            ArenaRef::make_mut(&mut self.data.as_mut().unwrap().pcg[DomainDataIndex::Initial]);
+            PcgArenaRef::make_mut(&mut slf.data.as_mut().unwrap().pcg[DomainDataIndex::Initial]);
         let result = match pcg.join(
             other.pcg(DomainDataIndex::Eval(EvalStmtPhase::PostMain)),
             self_block,
             other_block,
-            &self.body_analysis,
-            AnalysisCtxt::new(self.ctxt, self_block),
+            &slf.body_analysis,
+            slf.ctxt,
         ) {
             Ok(changed) => changed,
             Err(e) => {
-                self.record_error(e);
+                slf.record_error(e);
                 false
             }
         };
-        if self.debug_data.is_some() {
-            self.register_new_debug_iteration(mir::Location {
+        if slf.debug_data.is_some() {
+            slf.register_new_debug_iteration(mir::Location {
                 block: self_block,
                 statement_index: 0,
             });
-            self.generate_dot_graph(DataflowStmtPhase::Join(other.block()), 0);
+            slf.generate_dot_graph(DataflowStmtPhase::Join(other.block()), 0);
         }
         result
     }
 }
 
-impl<'a, 'tcx, A: Allocator + Clone + Debug>
-    DebugWithContext<AnalysisEngine<PcgEngine<'a, 'tcx, A>>> for PcgDomain<'a, 'tcx, A>
-{
+impl<'a, 'tcx> DebugWithContext<AnalysisEngine<PcgEngine<'a, 'tcx>>> for PcgDomain<'a, 'tcx> {
     fn fmt_diff_with(
         &self,
         _old: &Self,
-        _ctxt: &AnalysisEngine<PcgEngine<'a, 'tcx, A>>,
+        _ctxt: &AnalysisEngine<PcgEngine<'a, 'tcx>>,
         _f: &mut Formatter<'_>,
     ) -> std::fmt::Result {
         Ok(())

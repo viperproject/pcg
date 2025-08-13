@@ -1,10 +1,12 @@
-use crate::rustc_interface::{
-    index::IndexVec,
-    middle::ty::{self, TypeSuperVisitable, TypeVisitable, TypeVisitor},
+use crate::{
+    rustc_interface::{
+        index::IndexVec,
+        middle::ty::{self, TypeSuperVisitable, TypeVisitable, TypeVisitor},
+    },
+    utils::HasCompilerCtxt,
 };
 
 use super::region_projection::{PcgRegion, RegionIdx};
-use crate::utils::CompilerCtxt;
 
 struct LifetimeExtractor<'tcx> {
     lifetimes: Vec<ty::Region<'tcx>>,
@@ -49,9 +51,9 @@ impl<'tcx> TypeVisitor<ty::TyCtxt<'tcx>> for LifetimeExtractor<'tcx> {
 /// `['c, 'd]` respectively. This enables substitution of regions to handle
 /// moves in the PCG e.g for the statement `let x: T<'a, 'b> = move c: T<'c,
 /// 'd>`.
-pub(crate) fn extract_regions<'tcx, C: Copy>(
+pub(crate) fn extract_regions<'tcx>(
     ty: ty::Ty<'tcx>,
-    _ctxt: CompilerCtxt<'_, 'tcx, C>,
+    _ctxt: impl HasCompilerCtxt<'_, 'tcx>,
 ) -> IndexVec<RegionIdx, PcgRegion> {
     let mut visitor = LifetimeExtractor { lifetimes: vec![] };
     ty.visit_with(&mut visitor);

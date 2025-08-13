@@ -6,15 +6,15 @@ use crate::{
         PcgError,
         ctxt::AnalysisCtxt,
         obtain::{ActionApplier, HasSnapshotLocation, PlaceCollapser},
-        place_capabilities::PlaceCapabilities,
+        place_capabilities::SymbolicPlaceCapabilities,
     },
     rustc_interface::middle::mir,
     utils::{CompilerCtxt, Place, SnapshotLocation, data_structures::HashSet},
 };
 
-pub(crate) struct JoinObtainer<'pcg: 'exp, 'exp, 'slf, 'mir, 'tcx> {
-    pub(crate) ctxt: AnalysisCtxt<'mir, 'tcx>,
-    pub(crate) data: &'slf mut JoinOwnedData<'pcg, 'tcx, &'exp mut LocalExpansions<'tcx>>,
+pub(crate) struct JoinObtainer<'pcg: 'exp, 'exp, 'slf, 'a, 'tcx> {
+    pub(crate) ctxt: AnalysisCtxt<'a, 'tcx>,
+    pub(crate) data: &'slf mut JoinOwnedData<'pcg, 'a, 'tcx, &'exp mut LocalExpansions<'tcx>>,
     pub(crate) actions: Vec<RepackOp<'tcx>>,
 }
 
@@ -50,7 +50,7 @@ impl<'tcx> ActionApplier<'tcx> for JoinObtainer<'_, '_, '_, '_, 'tcx> {
                 RepackOp::RegainLoanedCapability(place, capability_kind) => {
                     self.data.capabilities.regain_loaned_capability(
                         place,
-                        capability_kind,
+                        capability_kind.into(),
                         self.data.borrows.as_mut_ref(),
                         self.ctxt,
                     )?;
@@ -62,7 +62,7 @@ impl<'tcx> ActionApplier<'tcx> for JoinObtainer<'_, '_, '_, '_, 'tcx> {
     }
 }
 
-impl<'mir, 'tcx> PlaceCollapser<'mir, 'tcx> for JoinObtainer<'_, '_, '_, 'mir, 'tcx> {
+impl<'a, 'tcx> PlaceCollapser<'a, 'tcx> for JoinObtainer<'_, '_, '_, 'a, 'tcx> {
     fn get_local_expansions(&self, _local: mir::Local) -> &LocalExpansions<'tcx> {
         self.data.owned
     }
@@ -71,12 +71,12 @@ impl<'mir, 'tcx> PlaceCollapser<'mir, 'tcx> for JoinObtainer<'_, '_, '_, 'mir, '
         self.data.borrows.into()
     }
 
-    fn capabilities(&mut self) -> &mut PlaceCapabilities<'tcx> {
+    fn capabilities(&mut self) -> &mut SymbolicPlaceCapabilities<'a, 'tcx> {
         self.data.capabilities
     }
 
     /// Owned leaf places that are not borrowed.
-    fn leaf_places(&self, ctxt: CompilerCtxt<'mir, 'tcx>) -> HashSet<Place<'tcx>> {
+    fn leaf_places(&self, ctxt: CompilerCtxt<'a, 'tcx>) -> HashSet<Place<'tcx>> {
         let mut leaf_places = self.data.owned.leaf_places(ctxt);
         leaf_places.retain(|p| !self.data.borrows.graph().owned_places(ctxt).contains(p));
         leaf_places

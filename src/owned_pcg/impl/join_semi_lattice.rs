@@ -8,26 +8,24 @@ use crate::{
     borrow_pcg::borrow_pcg_expansion::PlaceExpansion,
     owned_pcg::{ExpandedPlace, RepackCollapse, RepackExpand, join::data::JoinOwnedData},
     pcg::{
-        CapabilityKind, PcgError,
-        ctxt::AnalysisCtxt,
-        place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface},
+        CapabilityKind, CapabilityOps, PcgError, ctxt::AnalysisCtxt,
+        place_capabilities::PlaceCapabilitiesInterface,
     },
     pcg_validity_assert, pcg_validity_expect_some,
-    utils::{Place, data_structures::HashSet, display::DisplayWithCompilerCtxt},
+    utils::{HasCompilerCtxt, Place, data_structures::HashSet, display::DisplayWithCompilerCtxt},
 };
 use itertools::Itertools;
 
 use crate::{
     owned_pcg::{LocalExpansions, OwnedPcg, OwnedPcgLocal},
     rustc_interface::middle::mir,
-    utils::CompilerCtxt,
 };
 
-impl<'pcg, 'tcx> JoinOwnedData<'pcg, 'tcx, &'pcg mut OwnedPcgLocal<'tcx>> {
+impl<'pcg, 'a, 'tcx> JoinOwnedData<'pcg, 'a, 'tcx, &'pcg mut OwnedPcgLocal<'tcx>> {
     pub(crate) fn join(
         &mut self,
-        mut other: JoinOwnedData<'pcg, 'tcx, &'pcg OwnedPcgLocal<'tcx>>,
-        ctxt: AnalysisCtxt<'_, 'tcx>,
+        mut other: JoinOwnedData<'pcg, 'a, 'tcx, &'pcg OwnedPcgLocal<'tcx>>,
+        ctxt: AnalysisCtxt<'a, 'tcx>,
     ) -> Result<bool, PcgError> {
         match (&mut self.owned, &mut other.owned) {
             (OwnedPcgLocal::Unallocated, OwnedPcgLocal::Unallocated) => Ok(false),
@@ -58,11 +56,11 @@ impl<'pcg, 'tcx> JoinOwnedData<'pcg, 'tcx, &'pcg mut OwnedPcgLocal<'tcx>> {
     }
 }
 
-impl<'pcg, 'tcx> JoinOwnedData<'pcg, 'tcx, &'pcg mut OwnedPcg<'tcx>> {
+impl<'pcg, 'a, 'tcx> JoinOwnedData<'pcg, 'a, 'tcx, &'pcg mut OwnedPcg<'tcx>> {
     pub(crate) fn join(
         &mut self,
-        mut other: JoinOwnedData<'pcg, 'tcx, &'pcg OwnedPcg<'tcx>>,
-        ctxt: AnalysisCtxt<'_, 'tcx>,
+        mut other: JoinOwnedData<'pcg, 'a, 'tcx, &'pcg OwnedPcg<'tcx>>,
+        ctxt: AnalysisCtxt<'a, 'tcx>,
     ) -> Result<bool, PcgError> {
         let mut owned_pcg_data = self.map_owned(|owned| owned.locals_mut());
         let mut other_owned_pcg_data = other.map_owned(|owned| owned.locals());
@@ -87,29 +85,36 @@ impl<'tcx> LocalExpansions<'tcx> {
             .sorted_by_key(|ep| ep.place.projection().len())
     }
 
-    pub(crate) fn perform_expand_action(
+    pub(crate) fn perform_expand_action<
+        'a,
+        Ctxt: HasCompilerCtxt<'a, 'tcx>,
+        C: CapabilityOps<Ctxt>,
+    >(
         &mut self,
         expand: RepackExpand<'tcx>,
-        capabilities: &mut PlaceCapabilities<'tcx>,
-        ctxt: AnalysisCtxt<'_, 'tcx>,
-    ) -> Result<(), PcgError> {
-        let target_places = expand.target_places(ctxt.ctxt);
+        capabilities: &mut impl PlaceCapabilitiesInterface<'tcx, C>,
+        ctxt: Ctxt,
+    ) -> Result<(), PcgError>
+    where
+        'tcx: 'a,
+    {
+        let target_places = expand.target_places(ctxt);
         self.insert_expansion(
             expand.from,
-            PlaceExpansion::from_places(target_places.clone(), ctxt.ctxt),
+            PlaceExpansion::from_places(target_places.clone(), ctxt),
         );
         let source_cap = if expand.capability.is_read() {
-            expand.capability
+            expand.capability.into()
         } else {
-            capabilities.get(expand.from, ctxt.ctxt).unwrap_or_else(|| {
+            capabilities.get(expand.from, ctxt).unwrap_or_else(|| {
                 pcg_validity_assert!(
                     false,
                     "no cap for {}",
-                    expand.from.to_short_string(ctxt.ctxt)
+                    expand.from.to_short_string(ctxt.ctxt())
                 );
                 // panic!("no cap for {}", expand.from.to_short_string(ctxt));
                 // For debugging, assume exclusive, we can visualize the graph to see what's going on
-                CapabilityKind::Exclusive
+                CapabilityKind::Exclusive.into()
             })
         };
         for target_place in target_places {
@@ -123,11 +128,14 @@ impl<'tcx> LocalExpansions<'tcx> {
         Ok(())
     }
 
-    pub(crate) fn all_descendants_of(
+    pub(crate) fn all_descendants_of<'a>(
         &self,
         place: Place<'tcx>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> HashSet<Place<'tcx>> {
+        ctxt: impl HasCompilerCtxt<'a, 'tcx>,
+    ) -> HashSet<Place<'tcx>>
+    where
+        'tcx: 'a,
+    {
         self.expansions
             .iter()
             .filter(|ep| place.is_prefix_of(ep.place))
@@ -135,11 +143,14 @@ impl<'tcx> LocalExpansions<'tcx> {
             .collect()
     }
 
-    pub(crate) fn all_children_of(
+    pub(crate) fn all_children_of<'a>(
         &self,
         place: Place<'tcx>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> HashSet<Place<'tcx>> {
+        ctxt: impl HasCompilerCtxt<'a, 'tcx>,
+    ) -> HashSet<Place<'tcx>>
+    where
+        'tcx: 'a,
+    {
         self.expansions
             .iter()
             .filter(|ep| ep.place == place)
@@ -147,64 +158,58 @@ impl<'tcx> LocalExpansions<'tcx> {
             .collect()
     }
 
-    pub(crate) fn get_retained_capability_of_children(
+    pub(crate) fn get_retained_capability_of_children<
+        'a,
+        Ctxt: HasCompilerCtxt<'a, 'tcx>,
+        C: CapabilityOps<Ctxt>,
+    >(
         &self,
         place: Place<'tcx>,
-        capabilities: &PlaceCapabilities<'tcx>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> Option<CapabilityKind> {
+        capabilities: &impl PlaceCapabilitiesInterface<'tcx, C>,
+        ctxt: Ctxt,
+    ) -> Option<C>
+    where
+        'tcx: 'a,
+    {
         let children = self.all_children_of(place, ctxt);
-        let mut current_cap = CapabilityKind::Exclusive;
+        let mut current_cap: C = CapabilityKind::Exclusive.into();
         for child in children {
             let child_cap = capabilities.get(child, ctxt)?;
-            current_cap = current_cap.minimum(child_cap)?;
+            current_cap = current_cap.minimum(child_cap, ctxt)?;
         }
         Some(current_cap)
     }
 
-    pub(crate) fn perform_collapse_action(
+    pub(crate) fn perform_collapse_action<
+        'a,
+        Ctxt: HasCompilerCtxt<'a, 'tcx>,
+        C: CapabilityOps<Ctxt>,
+    >(
         &mut self,
         collapse: RepackCollapse<'tcx>,
-        place_capabilities: &mut PlaceCapabilities<'tcx>,
-        ctxt: AnalysisCtxt<'_, 'tcx>,
-    ) -> Result<(), PcgError> {
-        let expansion_places = self.all_children_of(collapse.to, ctxt.ctxt);
-        let retained_cap = expansion_places
-            .iter()
-            .fold(CapabilityKind::Exclusive, |acc, place| {
-                let removed_cap = place_capabilities.remove(*place, ctxt);
-                let removed_cap = pcg_validity_expect_some!(
-                    removed_cap,
-                    fallback: CapabilityKind::Exclusive,
-                    [ctxt],
-                    "Expected capability for {}",
-                    place.to_short_string(ctxt.ctxt)
-                );
-                pcg_validity_assert!(
-                    removed_cap >= collapse.capability,
-                    [ctxt],
-                    "Expected removed cap {:?} for {} to be at least {:?}",
-                    removed_cap,
-                    place.to_short_string(ctxt.ctxt),
-                    collapse.capability
-                );
-                let joined_cap = removed_cap.minimum(acc);
-                pcg_validity_expect_some!(
-                    joined_cap,
-                    fallback: CapabilityKind::Exclusive,
-                    [ctxt],
-                    "Cannot join capability {:?} and {:?}",
-                    removed_cap,
-                    acc,
-                )
-            });
-        pcg_validity_assert!(
-            retained_cap >= collapse.capability,
-            "Expected retained cap {:?} to be at least {:?}",
-            retained_cap,
-            collapse.capability
-        );
-        self.remove_all_expansions_from(collapse.to, ctxt.ctxt);
+        place_capabilities: &mut impl PlaceCapabilitiesInterface<'tcx, C>,
+        ctxt: Ctxt,
+    ) -> Result<(), PcgError>
+    where
+        'tcx: 'a,
+    {
+        let expansion_places = self.all_children_of(collapse.to, ctxt);
+        let retained_cap: C =
+            expansion_places
+                .iter()
+                .fold(CapabilityKind::Exclusive.into(), |acc, place| {
+                    let removed_cap = place_capabilities.remove(*place, ctxt);
+                    let removed_cap = pcg_validity_expect_some!(
+                        removed_cap,
+                        fallback: CapabilityKind::Exclusive.into(),
+                        [ctxt],
+                        "Expected capability for {}",
+                        place.to_short_string(ctxt.ctxt())
+                    );
+                    let joined_cap = removed_cap.minimum(acc, ctxt);
+                    joined_cap.unwrap()
+                });
+        self.remove_all_expansions_from(collapse.to, ctxt);
         place_capabilities.insert(collapse.to, retained_cap, ctxt);
         Ok(())
     }

@@ -11,7 +11,7 @@ use crate::utils::json::ToJsonWithCompilerCtxt;
 use crate::utils::maybe_old::MaybeLabelledPlace;
 use crate::utils::place::maybe_remote::MaybeRemotePlace;
 use crate::utils::remote::RemotePlace;
-use crate::utils::{Place, SnapshotLocation};
+use crate::utils::{HasCompilerCtxt, Place, SnapshotLocation};
 use crate::{
     borrow_pcg::{
         borrow_pcg_edge::LocalNode,
@@ -210,14 +210,14 @@ pub trait PCGNodeLike<'tcx>:
 {
     fn to_pcg_node<C: Copy>(self, ctxt: CompilerCtxt<'_, 'tcx, C>) -> PcgNode<'tcx>;
 
-    fn try_to_local_node<C: Copy>(
-        self,
-        ctxt: CompilerCtxt<'_, 'tcx, C>,
-    ) -> Option<LocalNode<'tcx>> {
-        match self.to_pcg_node(ctxt) {
+    fn try_to_local_node<'a>(self, ctxt: impl HasCompilerCtxt<'a, 'tcx>) -> Option<LocalNode<'tcx>>
+    where
+        'tcx: 'a,
+    {
+        match self.to_pcg_node(ctxt.ctxt()) {
             PcgNode::Place(p) => match p {
                 MaybeRemotePlace::Local(maybe_old_place) => {
-                    Some(maybe_old_place.to_local_node(ctxt))
+                    Some(maybe_old_place.to_local_node(ctxt.ctxt()))
                 }
                 MaybeRemotePlace::Remote(_) => None,
             },
@@ -225,7 +225,7 @@ pub trait PCGNodeLike<'tcx>:
                 MaybeRemoteRegionProjectionBase::Place(maybe_remote_place) => {
                     match maybe_remote_place {
                         MaybeRemotePlace::Local(maybe_old_place) => {
-                            Some(rp.with_base(maybe_old_place).to_local_node(ctxt))
+                            Some(rp.with_base(maybe_old_place).to_local_node(ctxt.ctxt()))
                         }
                         MaybeRemotePlace::Remote(_) => None,
                     }

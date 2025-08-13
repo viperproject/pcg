@@ -54,12 +54,15 @@ pub struct ShallowExpansion<'tcx> {
 }
 
 impl<'tcx> ShallowExpansion<'tcx> {
-    pub(crate) fn new(
+    pub(crate) fn new<'a>(
         target_place: Place<'tcx>,
         other_places: Vec<Place<'tcx>>,
         kind: ProjectionKind,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> Self {
+        ctxt: impl HasCompilerCtxt<'a, 'tcx>,
+    ) -> Self
+    where
+        'tcx: 'a,
+    {
         if validity_checks_enabled() && matches!(kind, ProjectionKind::DerefRef(_)) {
             pcg_validity_assert!(!target_place.is_owned(ctxt));
         }
@@ -90,11 +93,14 @@ impl<'tcx> ShallowExpansion<'tcx> {
         expansion
     }
 
-    fn dest_places_for_region(
+    fn dest_places_for_region<'a>(
         &self,
         region: PcgRegion,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> Vec<Place<'tcx>> {
+        ctxt: impl HasCompilerCtxt<'a, 'tcx>,
+    ) -> Vec<Place<'tcx>>
+    where
+        'tcx: 'a,
+    {
         self.expansion()
             .iter()
             .filter(|e| {
@@ -106,11 +112,14 @@ impl<'tcx> ShallowExpansion<'tcx> {
             .collect::<Vec<_>>()
     }
 
-    pub(crate) fn place_expansion_for_region(
+    pub(crate) fn place_expansion_for_region<'a>(
         &self,
         region: PcgRegion,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> Option<PlaceExpansion<'tcx>> {
+        ctxt: impl HasCompilerCtxt<'a, 'tcx>,
+    ) -> Option<PlaceExpansion<'tcx>>
+    where
+        'tcx: 'a,
+    {
         let dest_places = self.dest_places_for_region(region, ctxt);
         if dest_places.is_empty() {
             None
@@ -141,8 +150,40 @@ impl ProjectionKind {
     }
 }
 
-pub(crate) trait HasCompilerCtxt<'a, 'tcx> {
-    fn ctxt(&self) -> CompilerCtxt<'a, 'tcx>;
+pub trait HasCompilerCtxt<'a, 'tcx>: Copy {
+    fn ctxt(&self) -> CompilerCtxt<'a, 'tcx, ()>;
+    fn body(&self) -> &'a Body<'tcx> {
+        self.ctxt().body()
+    }
+    fn tcx(&self) -> TyCtxt<'tcx>
+    where
+        'tcx: 'a,
+    {
+        self.ctxt().tcx()
+    }
+}
+
+pub trait HasBorrowCheckerCtxt<'a, 'tcx, BC = &'a dyn BorrowCheckerInterface<'tcx>>:
+    HasCompilerCtxt<'a, 'tcx>
+{
+    fn bc(&self) -> BC;
+    fn bc_ctxt(&self) -> CompilerCtxt<'a, 'tcx, BC>;
+}
+
+impl<'a, 'tcx, T: Copy> HasCompilerCtxt<'a, 'tcx> for CompilerCtxt<'a, 'tcx, T> {
+    fn ctxt(&self) -> CompilerCtxt<'a, 'tcx, ()> {
+        CompilerCtxt::new(self.body(), self.tcx(), ())
+    }
+}
+
+impl<'a, 'tcx, T: Copy> HasBorrowCheckerCtxt<'a, 'tcx, T> for CompilerCtxt<'a, 'tcx, T> {
+    fn bc(&self) -> T {
+        self.bc
+    }
+
+    fn bc_ctxt(&self) -> CompilerCtxt<'a, 'tcx, T> {
+        *self
+    }
 }
 
 #[derive(Copy, Clone)]
@@ -156,7 +197,7 @@ impl<'a, 'tcx, T: BorrowCheckerInterface<'tcx> + ?Sized> CompilerCtxt<'a, 'tcx, 
     pub fn as_dyn(self) -> CompilerCtxt<'a, 'tcx, &'a dyn BorrowCheckerInterface<'tcx>> {
         CompilerCtxt {
             mir: self.mir,
-            tcx: self.tcx,
+            tcx: self.tcx(),
             bc: self.bc.as_dyn(),
         }
     }
@@ -241,11 +282,14 @@ impl From<ConstantIndex> for PlaceElem<'_> {
 }
 
 impl ConstantIndex {
-    pub(crate) fn other_places<'tcx>(
+    pub(crate) fn other_places<'a, 'tcx>(
         self,
         from: Place<'tcx>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> Vec<Place<'tcx>> {
+        ctxt: impl HasCompilerCtxt<'a, 'tcx>,
+    ) -> Vec<Place<'tcx>>
+    where
+        'tcx: 'a,
+    {
         self.other_elems()
             .into_iter()
             .map(|e| from.project_deeper(e, ctxt).unwrap())
@@ -271,27 +315,33 @@ impl ConstantIndex {
 }
 
 impl<'tcx> Place<'tcx> {
-    pub fn to_rust_place<C: Copy>(self, ctxt: CompilerCtxt<'_, 'tcx, C>) -> MirPlace<'tcx> {
+    pub fn to_rust_place<'a>(self, ctxt: impl HasCompilerCtxt<'a, 'tcx>) -> MirPlace<'tcx>
+    where
+        'tcx: 'a,
+    {
         MirPlace {
             local: self.local,
-            projection: ctxt.tcx.mk_place_elems(self.projection),
+            projection: ctxt.tcx().mk_place_elems(self.projection),
         }
     }
 
     /// Expand `self` one level down by following the `guide_place`.
     /// Returns the new `self` and a vector containing other places that
     /// could have resulted from the expansion.
-    pub fn expand_one_level(
+    pub fn expand_one_level<'a>(
         self,
         guide_place: Self,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> Result<ShallowExpansion<'tcx>, PcgError> {
+        ctxt: impl HasCompilerCtxt<'a, 'tcx>,
+    ) -> Result<ShallowExpansion<'tcx>, PcgError>
+    where
+        'tcx: 'a,
+    {
         let index = self.projection.len();
         assert!(
             index < guide_place.projection.len(),
             "self place {self:?} is not a prefix of guide place {guide_place:?}"
         );
-        let new_projection = ctxt.tcx.mk_place_elems_from_iter(
+        let new_projection = ctxt.tcx().mk_place_elems_from_iter(
             self.projection
                 .iter()
                 .copied()
@@ -363,11 +413,14 @@ impl<'tcx> Place<'tcx> {
     /// each of the struct's fields `{x.f.g.f, x.f.g.g, x.f.g.h}`. If
     /// `without_field` is not `None`, then omits that field from the final
     /// vector.
-    pub fn expand_field(
+    pub fn expand_field<'a>(
         self,
         without_field: Option<usize>,
-        repacker: CompilerCtxt<'_, 'tcx>,
-    ) -> Result<Vec<Self>, PcgError> {
+        repacker: impl HasCompilerCtxt<'a, 'tcx>,
+    ) -> Result<Vec<Self>, PcgError>
+    where
+        'tcx: 'a,
+    {
         let mut places = Vec::new();
         let typ = self.ty(repacker);
         if !matches!(typ.ty.kind(), TyKind::Adt(..)) {
@@ -388,10 +441,10 @@ impl<'tcx> Place<'tcx> {
                 for (index, field_def) in variant.fields.iter().enumerate() {
                     if Some(index) != without_field {
                         let field = FieldIdx::from_usize(index);
-                        let field_place = repacker.tcx.mk_place_field(
+                        let field_place = repacker.tcx().mk_place_field(
                             self.to_rust_place(repacker),
                             field,
-                            field_def.ty(repacker.tcx, substs),
+                            field_def.ty(repacker.tcx(), substs),
                         );
                         places.push(field_place.into());
                     }
@@ -411,7 +464,7 @@ impl<'tcx> Place<'tcx> {
                         let field = FieldIdx::from_usize(index);
                         let field_place =
                             repacker
-                                .tcx
+                                .tcx()
                                 .mk_place_field(self.to_rust_place(repacker), field, arg);
                         places.push(field_place.into());
                     }
@@ -426,7 +479,7 @@ impl<'tcx> Place<'tcx> {
                 for (index, subst_ty) in substs.as_closure().upvar_tys().iter().enumerate() {
                     if Some(index) != without_field {
                         let field = FieldIdx::from_usize(index);
-                        let field_place = repacker.tcx.mk_place_field(
+                        let field_place = repacker.tcx().mk_place_field(
                             self.to_rust_place(repacker),
                             field,
                             subst_ty,
@@ -438,7 +491,7 @@ impl<'tcx> Place<'tcx> {
             TyKind::Ref(..) => {
                 places.push(
                     repacker
-                        .tcx
+                        .tcx()
                         .mk_place_deref(self.to_rust_place(repacker))
                         .into(),
                 );
@@ -455,16 +508,19 @@ impl<'tcx> Place<'tcx> {
 }
 
 impl<'tcx> Place<'tcx> {
-    pub fn ty<C: Copy>(self, ctxt: CompilerCtxt<'_, 'tcx, C>) -> PlaceTy<'tcx> {
+    pub fn ty<'a>(self, ctxt: impl HasCompilerCtxt<'a, 'tcx>) -> PlaceTy<'tcx>
+    where
+        'tcx: 'a,
+    {
         debug_assert!(
-            ctxt.mir.local_decls().len() > self.local.as_usize(),
+            ctxt.body().local_decls().len() > self.local.as_usize(),
             "Place {:?} has local {:?}, but the provided MIR at {:?} only has {} local declarations",
             self,
             self.local,
-            ctxt.mir.span,
-            ctxt.mir.local_decls().len()
+            ctxt.body().span,
+            ctxt.body().local_decls().len()
         );
-        (*self).ty(ctxt.mir, ctxt.tcx)
+        (*self).ty(ctxt.body(), ctxt.tcx())
     }
 
     #[allow(unused)]
@@ -475,7 +531,10 @@ impl<'tcx> Place<'tcx> {
         }
     }
 
-    pub(crate) fn projects_shared_ref(self, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
+    pub(crate) fn projects_shared_ref<'a>(self, ctxt: impl HasCompilerCtxt<'a, 'tcx>) -> bool
+    where
+        'tcx: 'a,
+    {
         self.projects_ty(
             |typ| {
                 typ.ty
@@ -488,27 +547,33 @@ impl<'tcx> Place<'tcx> {
         .is_some()
     }
 
-    pub(crate) fn projects_ty(
+    pub(crate) fn projects_ty<'a>(
         self,
         mut predicate: impl FnMut(PlaceTy<'tcx>) -> bool,
-        repacker: CompilerCtxt<'_, 'tcx>,
-    ) -> Option<Place<'tcx>> {
-        self.projection_tys(repacker)
+        repacker: impl HasCompilerCtxt<'a, 'tcx>,
+    ) -> Option<Place<'tcx>>
+    where
+        'tcx: 'a,
+    {
+        self.projection_tys(repacker.ctxt())
             .find(|(typ, _)| predicate(*typ))
             .map(|(_, proj)| {
-                let projection = repacker.tcx.mk_place_elems(proj);
+                let projection = repacker.tcx().mk_place_elems(proj);
                 Self::new(self.local, projection)
             })
     }
 
-    pub(crate) fn projection_tys(
+    pub(crate) fn projection_tys<'a>(
         self,
-        repacker: CompilerCtxt<'_, 'tcx>,
-    ) -> impl Iterator<Item = (PlaceTy<'tcx>, &'tcx [PlaceElem<'tcx>])> {
-        let mut typ = PlaceTy::from_ty(repacker.mir.local_decls()[self.local].ty);
+        repacker: impl HasCompilerCtxt<'a, 'tcx>,
+    ) -> impl Iterator<Item = (PlaceTy<'tcx>, &'tcx [PlaceElem<'tcx>])>
+    where
+        'tcx: 'a,
+    {
+        let mut typ = PlaceTy::from_ty(repacker.body().local_decls()[self.local].ty);
         self.projection.iter().enumerate().map(move |(idx, elem)| {
             let ret = (typ, &self.projection[0..idx]);
-            typ = typ.projection_ty(repacker.tcx, *elem);
+            typ = typ.projection_ty(repacker.tcx(), *elem);
             ret
         })
     }

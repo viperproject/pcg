@@ -9,7 +9,7 @@ use crate::borrow_pcg::region_projection::{LifetimeProjection, LifetimeProjectio
 use crate::pcg::CapabilityKind;
 use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::maybe_old::MaybeLabelledPlace;
-use crate::utils::{CompilerCtxt, Place, SnapshotLocation};
+use crate::utils::{CompilerCtxt, HasBorrowCheckerCtxt, HasCompilerCtxt, Place, SnapshotLocation};
 use crate::{RestoreCapability, Weaken};
 
 pub mod actions;
@@ -26,13 +26,16 @@ impl<'tcx> BorrowPcgAction<'tcx> {
         }
     }
 
-    pub(crate) fn weaken(
+    pub(crate) fn weaken<'a>(
         place: Place<'tcx>,
         from: CapabilityKind,
         to: Option<CapabilityKind>,
         context: impl Into<String>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> Self {
+        ctxt: impl HasBorrowCheckerCtxt<'a, 'tcx>,
+    ) -> Self
+    where
+        'tcx: 'a,
+    {
         BorrowPcgAction {
             kind: BorrowPcgActionKind::Weaken(Weaken::new(place, from, to, ctxt)),
             debug_context: Some(context.into()),
@@ -49,7 +52,7 @@ impl<'tcx> BorrowPcgAction<'tcx> {
     pub(crate) fn add_edge(
         edge: BorrowPcgEdge<'tcx>,
         context: impl Into<String>,
-        _ctxt: CompilerCtxt<'_, 'tcx>,
+        _ctxt: impl HasCompilerCtxt<'_, 'tcx>,
     ) -> Self {
         BorrowPcgAction {
             kind: BorrowPcgActionKind::AddEdge { edge },
@@ -120,12 +123,12 @@ pub enum LabelPlaceReason {
 }
 
 impl LabelPlaceReason {
-    pub(crate) fn apply_to_edge<'tcx>(
+    pub(crate) fn apply_to_edge<'a, 'tcx: 'a>(
         self,
         place: Place<'tcx>,
         edge: &mut BorrowPcgEdge<'tcx>,
         labeller: &impl PlaceLabeller<'tcx>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
+        ctxt: impl HasBorrowCheckerCtxt<'a, 'tcx>,
     ) -> bool {
         let predicate = match self {
             LabelPlaceReason::StorageDead
@@ -146,8 +149,8 @@ impl LabelPlaceReason {
                 }
             }
         };
-        let mut changed = edge.label_blocked_by_places(&predicate, labeller, ctxt);
-        changed |= edge.label_blocked_places(&predicate, labeller, ctxt);
+        let mut changed = edge.label_blocked_by_places(&predicate, labeller, ctxt.bc_ctxt());
+        changed |= edge.label_blocked_places(&predicate, labeller, ctxt.bc_ctxt());
         changed
     }
 }

@@ -1,0 +1,7 @@
+{
+  "agentCanUpdateSnapshot": true,
+  "build": {
+    "dockerfile": "../Dockerfile.dev",
+    "context": "../"
+  }
+}

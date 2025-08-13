@@ -1,9 +1,12 @@
 use crate::rustc_interface::middle::mir;
-use crate::utils::{CompilerCtxt, Place};
+use crate::utils::{HasCompilerCtxt, Place};
 use derive_more::{Deref, DerefMut};
 
 impl<'tcx> CorrectedPlace<'tcx> {
-    pub fn new(place: Place<'tcx>, repacker: CompilerCtxt<'_, 'tcx>) -> Self {
+    pub fn new<'a>(place: Place<'tcx>, repacker: impl HasCompilerCtxt<'a, 'tcx>) -> Self
+    where
+        'tcx: 'a,
+    {
         Self(place.with_inherent_region(repacker))
     }
 

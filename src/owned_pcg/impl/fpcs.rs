@@ -9,15 +9,17 @@ use std::fmt::{Debug, Formatter, Result};
 use crate::{
     owned_pcg::RepackOp,
     pcg::{
-        CapabilityKind, PcgError,
+        CapabilityKind, CapabilityOps, PcgError,
         ctxt::AnalysisCtxt,
-        place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface},
+        place_capabilities::{
+            PlaceCapabilities, PlaceCapabilitiesInterface, SymbolicPlaceCapabilities,
+        },
     },
     rustc_interface::{
         index::{Idx, IndexVec},
         middle::mir::{self, Local, RETURN_PLACE},
     },
-    utils::{Place, data_structures::HashSet},
+    utils::{HasCompilerCtxt, Place, data_structures::HashSet},
 };
 use derive_more::{Deref, DerefMut};
 
@@ -49,7 +51,13 @@ impl<'tcx> OwnedPcg<'tcx> {
         self.data.as_ref().unwrap().contains_place(place, ctxt)
     }
 
-    pub(crate) fn leaf_places(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> HashSet<Place<'tcx>> {
+    pub(crate) fn leaf_places<'a>(
+        &self,
+        ctxt: impl HasCompilerCtxt<'a, 'tcx>,
+    ) -> HashSet<Place<'tcx>>
+    where
+        'tcx: 'a,
+    {
         self.data.as_ref().unwrap().leaf_places(ctxt)
     }
 
@@ -61,22 +69,26 @@ impl<'tcx> OwnedPcg<'tcx> {
         self.data.as_mut().unwrap()
     }
 
-    pub(crate) fn bridge(
+    pub(crate) fn bridge<'a, C, Ctxt: HasCompilerCtxt<'a, 'tcx>>(
         &self,
         other: &Self,
-        place_capabilities: &PlaceCapabilities<'tcx>,
-        ctxt: AnalysisCtxt<'_, 'tcx>,
-    ) -> std::result::Result<Vec<RepackOp<'tcx>>, PcgError> {
+        place_capabilities: &(impl PlaceCapabilitiesInterface<'tcx, C> + Clone),
+        ctxt: Ctxt,
+    ) -> std::result::Result<Vec<RepackOp<'tcx>>, PcgError>
+    where
+        'tcx: 'a,
+        C: CapabilityOps<Ctxt>,
+    {
         self.data
             .as_ref()
             .unwrap()
             .bridge(other.data.as_ref().unwrap(), place_capabilities, ctxt)
     }
 
-    pub(crate) fn initialize_as_start_block(
+    pub(crate) fn initialize_as_start_block<'a>(
         &mut self,
-        capabilities: &mut PlaceCapabilities<'tcx>,
-        ctxt: AnalysisCtxt<'_, 'tcx>,
+        capabilities: &mut SymbolicPlaceCapabilities<'a, 'tcx>,
+        ctxt: AnalysisCtxt<'a, 'tcx>,
     ) {
         let always_live = ctxt.ctxt.always_live_locals();
         let return_local = RETURN_PLACE;
@@ -141,7 +153,13 @@ impl<'tcx> OwnedPcgData<'tcx> {
         self.0.len()
     }
 
-    pub(crate) fn leaf_places(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> HashSet<Place<'tcx>> {
+    pub(crate) fn leaf_places<'a>(
+        &self,
+        ctxt: impl HasCompilerCtxt<'a, 'tcx>,
+    ) -> HashSet<Place<'tcx>>
+    where
+        'tcx: 'a,
+    {
         self.0
             .iter()
             .filter(|c| !c.is_unallocated())

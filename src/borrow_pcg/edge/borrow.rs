@@ -18,7 +18,7 @@ use crate::{
             ty::{self},
         },
     },
-    utils::{HasPlace, remote::RemotePlace},
+    utils::{HasBorrowCheckerCtxt, HasCompilerCtxt, HasPlace, remote::RemotePlace},
 };
 
 use crate::borrow_pcg::borrow_pcg_edge::{BlockedNode, LocalNode};
@@ -173,10 +173,13 @@ impl<'tcx> RemoteBorrow<'tcx> {
         self.assigned_ref
     }
 
-    pub(crate) fn assigned_lifetime_projection<BC: Copy>(
+    pub(crate) fn assigned_lifetime_projection<'a>(
         &self,
-        ctxt: CompilerCtxt<'_, 'tcx, BC>,
-    ) -> LifetimeProjection<'tcx, MaybeLabelledPlace<'tcx>> {
+        ctxt: impl HasCompilerCtxt<'a, 'tcx>,
+    ) -> LifetimeProjection<'tcx, MaybeLabelledPlace<'tcx>>
+    where
+        'tcx: 'a,
+    {
         let rp = self.assigned_ref.base_lifetime_projection(ctxt).unwrap();
         if let Some(location) = self.rp_snapshot_location {
             rp.with_label(Some(location), ctxt)
@@ -306,10 +309,13 @@ impl<'tcx> BorrowEdge<'tcx> {
         }
     }
 
-    pub(crate) fn assigned_lifetime_projection(
+    pub(crate) fn assigned_lifetime_projection<'a>(
         &self,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> LifetimeProjection<'tcx, MaybeLabelledPlace<'tcx>> {
+        ctxt: impl HasCompilerCtxt<'a, 'tcx>,
+    ) -> LifetimeProjection<'tcx, MaybeLabelledPlace<'tcx>>
+    where
+        'tcx: 'a,
+    {
         match self {
             BorrowEdge::Local(borrow) => borrow.assigned_lifetime_projection(ctxt),
             BorrowEdge::Remote(borrow) => borrow.assigned_lifetime_projection(ctxt),
@@ -410,14 +416,17 @@ impl<'tcx> EdgeData<'tcx> for LocalBorrow<'tcx> {
 }
 
 impl<'tcx> LocalBorrow<'tcx> {
-    pub(crate) fn new(
+    pub(crate) fn new<'a>(
         blocked_place: MaybeLabelledPlace<'tcx>,
         assigned_place: MaybeLabelledPlace<'tcx>,
         kind: mir::BorrowKind,
         reservation_location: Location,
         region: ty::Region<'tcx>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> Self {
+        ctxt: impl HasBorrowCheckerCtxt<'a, 'tcx>,
+    ) -> Self
+    where
+        'tcx: 'a,
+    {
         assert!(assigned_place.ty(ctxt).ty.ref_mutability().is_some());
         Self {
             blocked_place,
@@ -426,7 +435,7 @@ impl<'tcx> LocalBorrow<'tcx> {
             reserve_location: reservation_location,
             region,
             assigned_lifetime_projection_label: None,
-            borrow_index: ctxt.bc.region_to_borrow_index(region.into()),
+            borrow_index: ctxt.bc().region_to_borrow_index(region.into()),
         }
     }
 
@@ -447,10 +456,13 @@ impl<'tcx> LocalBorrow<'tcx> {
     /// The region projection associated with the *type* of the assigned place
     /// of the borrow. For example in `let x: &'x mut i32 = ???`, the assigned
     /// region projection is `x↓'x`.
-    pub(crate) fn assigned_lifetime_projection<C: Copy>(
+    pub(crate) fn assigned_lifetime_projection<'a>(
         &self,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
-    ) -> LifetimeProjection<'tcx, MaybeLabelledPlace<'tcx>> {
+        repacker: impl HasCompilerCtxt<'a, 'tcx>,
+    ) -> LifetimeProjection<'tcx, MaybeLabelledPlace<'tcx>>
+    where
+        'tcx: 'a,
+    {
         match self.assigned_ref.ty(repacker).ty.kind() {
             ty::TyKind::Ref(region, _, _) => LifetimeProjection::new(
                 (*region).into(),

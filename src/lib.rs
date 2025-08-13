@@ -56,7 +56,7 @@ use visualization::mir_graph::generate_json_from_mir;
 use utils::json::ToJsonWithCompilerCtxt;
 
 /// The result of the PCG analysis.
-pub type PcgOutput<'mir, 'tcx, A> = owned_pcg::PcgAnalysis<'mir, 'tcx, A>;
+pub type PcgOutput<'a, 'tcx> = owned_pcg::PcgAnalysis<'a, 'tcx>;
 /// Instructs that the current capability to the place (first [`CapabilityKind`]) should
 /// be weakened to the second given capability. We guarantee that `_.1 > _.2`.
 /// If `_.2` is `None`, the capability is removed.
@@ -81,12 +81,15 @@ impl<'tcx> Weaken<'tcx> {
         )
     }
 
-    pub(crate) fn new(
+    pub(crate) fn new<'a>(
         place: Place<'tcx>,
         from: CapabilityKind,
         to: Option<CapabilityKind>,
-        _ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> Self {
+        _ctxt: impl HasCompilerCtxt<'a, 'tcx>,
+    ) -> Self
+    where
+        'tcx: 'a,
+    {
         // TODO: Sometimes R can be downgraded to W
         // if let Some(to) = to {
         //     pcg_validity_assert!(
@@ -173,7 +176,7 @@ impl<'tcx> DebugLines<CompilerCtxt<'_, 'tcx>> for BorrowPcgActions<'tcx> {
 }
 
 use borrow_pcg::action::actions::BorrowPcgActions;
-use std::{alloc::Allocator, sync::Mutex};
+use std::sync::Mutex;
 use utils::eval_stmt_data::EvalStmtData;
 
 lazy_static::lazy_static! {
@@ -227,7 +230,7 @@ impl<'tcx, 'a> ToJsonWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>
 }
 
 impl<'a, 'tcx> PCGStmtVisualizationData<'a, 'tcx> {
-    fn new<'mir>(location: &'a PcgLocation<'tcx>) -> Self
+    fn new<'mir>(location: &'a PcgLocation<'a, 'tcx>) -> Self
     where
         'tcx: 'mir,
     {
@@ -272,6 +275,7 @@ impl<'tcx> BodyAndBorrows<'tcx> for borrowck::BodyWithBorrowckFacts<'tcx> {
 pub struct PcgCtxt<'mir, 'tcx> {
     compiler_ctxt: CompilerCtxt<'mir, 'tcx>,
     move_data: MoveData<'tcx>,
+    pub(crate) arena: bumpalo::Bump,
 }
 
 fn gather_moves<'tcx>(body: &Body<'tcx>, tcx: ty::TyCtxt<'tcx>) -> MoveData<'tcx> {
@@ -288,6 +292,7 @@ impl<'mir, 'tcx> PcgCtxt<'mir, 'tcx> {
         Self {
             compiler_ctxt: ctxt,
             move_data: gather_moves(ctxt.body(), ctxt.tcx()),
+            arena: bumpalo::Bump::new(),
         }
     }
 }
@@ -302,15 +307,14 @@ impl<'mir, 'tcx> PcgCtxt<'mir, 'tcx> {
 /// - `arena`: The arena to use for allocation. You can use [`std::alloc::Global`] if you don't
 ///   care to use a custom allocator.
 /// - `visualization_output_path`: The path to output debug visualization to.
-pub fn run_pcg<'a, 'tcx, A: Allocator + Copy + std::fmt::Debug>(
+pub fn run_pcg<'a, 'tcx>(
     pcg_ctxt: &'a PcgCtxt<'_, 'tcx>,
-    arena: A,
     visualization_output_path: Option<&str>,
-) -> PcgOutput<'a, 'tcx, A> {
+) -> PcgOutput<'a, 'tcx> {
     let engine = PcgEngine::new(
         pcg_ctxt.compiler_ctxt,
         &pcg_ctxt.move_data,
-        arena,
+        &pcg_ctxt.arena,
         visualization_output_path,
     );
     {
@@ -326,7 +330,7 @@ pub fn run_pcg<'a, 'tcx, A: Allocator + Copy + std::fmt::Debug>(
     }
     if let Some(dir_path) = &visualization_output_path {
         for block in body.basic_blocks.indices() {
-            let state = analysis.entry_set_for_block(block);
+            let state = analysis.entry_set_for_block(block).expect_in_progress();
             assert!(state.block() == block);
             let block_iterations_json_file =
                 format!("{}/block_{}_iterations.json", dir_path, block.index());
@@ -572,6 +576,7 @@ pub(crate) use pcg_validity_expect_ok;
 pub(crate) use pcg_validity_expect_some;
 
 use crate::owned_pcg::PcgLocation;
+use crate::utils::HasCompilerCtxt;
 
 pub(crate) fn validity_checks_enabled() -> bool {
     *VALIDITY_CHECKS

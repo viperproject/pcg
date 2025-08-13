@@ -4,12 +4,12 @@ use crate::borrow_pcg::borrow_pcg_edge::BorrowPcgEdge;
 use crate::borrow_pcg::edge::outlives::{BorrowFlowEdge, BorrowFlowEdgeKind};
 use crate::borrow_pcg::region_projection::{LifetimeProjection, PcgRegion};
 use crate::owned_pcg::{OwnedPcg, RepackExpand};
-use crate::pcg::CapabilityKind;
 use crate::pcg::PcgDebugData;
 use crate::pcg::ctxt::AnalysisCtxt;
 use crate::pcg::obtain::{PlaceCollapser, PlaceObtainer};
-use crate::pcg::place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface};
+use crate::pcg::place_capabilities::{PlaceCapabilitiesInterface, PlaceCapabilitiesReader};
 use crate::pcg::triple::TripleWalker;
+use crate::pcg::{CapabilityKind, CapabilityOps};
 use crate::rustc_interface::middle::mir::{self, Location, Operand, Rvalue, Statement, Terminator};
 use crate::utils::data_structures::HashSet;
 use crate::utils::display::DisplayWithCompilerCtxt;
@@ -17,11 +17,12 @@ use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::action::PcgActions;
 use crate::utils::maybe_old::MaybeLabelledPlace;
 use crate::utils::visitor::FallableVisitor;
-use crate::utils::{self, AnalysisLocation, CompilerCtxt, HasPlace, Place, SnapshotLocation};
-
-use super::{
-    AnalysisObject, EvalStmtPhase, PCGNodeLike, Pcg, PcgError, PcgNode, PcgUnsupportedError,
+use crate::utils::{
+    self, AnalysisLocation, HasBorrowCheckerCtxt, HasCompilerCtxt, HasPlace, Place,
+    SnapshotLocation,
 };
+
+use super::{AnalysisObject, EvalStmtPhase, Pcg, PcgError, PcgNode, PcgUnsupportedError};
 
 mod assign;
 mod function_call;
@@ -31,20 +32,16 @@ mod stmt;
 mod triple;
 mod upgrade;
 
-pub(crate) struct PcgVisitor<'pcg, 'mir, 'tcx> {
-    pcg: &'pcg mut Pcg<'tcx>,
-    ctxt: CompilerCtxt<'mir, 'tcx>,
+pub(crate) struct PcgVisitor<'pcg, 'a, 'tcx> {
+    pcg: &'pcg mut Pcg<'a, 'tcx>,
+    ctxt: AnalysisCtxt<'a, 'tcx>,
     actions: PcgActions<'tcx>,
     analysis_location: AnalysisLocation,
-    tw: &'pcg TripleWalker<'mir, 'tcx>,
+    tw: &'pcg TripleWalker<'a, 'tcx>,
     debug_data: Option<PcgDebugData>,
 }
 
-impl<'pcg, 'mir, 'tcx> PcgVisitor<'pcg, 'mir, 'tcx> {
-    fn analysis_ctxt(&self) -> AnalysisCtxt<'mir, 'tcx> {
-        AnalysisCtxt::new(self.ctxt, self.location().block)
-    }
-
+impl<'pcg, 'a, 'tcx> PcgVisitor<'pcg, 'a, 'tcx> {
     fn prev_snapshot_location(&self) -> SnapshotLocation {
         SnapshotLocation::before(self.analysis_location)
     }
@@ -58,7 +55,7 @@ impl<'pcg, 'mir, 'tcx> PcgVisitor<'pcg, 'mir, 'tcx> {
     }
 
     fn outlives(&self, sup: PcgRegion, sub: PcgRegion) -> bool {
-        self.ctxt.bc.outlives(sup, sub, self.location())
+        self.ctxt.bc().outlives(sup, sub, self.location())
     }
 
     fn connect_outliving_projections(
@@ -92,12 +89,12 @@ impl<'pcg, 'mir, 'tcx> PcgVisitor<'pcg, 'mir, 'tcx> {
     }
 
     pub(crate) fn visit(
-        pcg: &'pcg mut Pcg<'tcx>,
-        ctxt: CompilerCtxt<'mir, 'tcx>,
-        tw: &'pcg TripleWalker<'mir, 'tcx>,
+        pcg: &'pcg mut Pcg<'a, 'tcx>,
+        tw: &'pcg TripleWalker<'a, 'tcx>,
         analysis_location: AnalysisLocation,
         analysis_object: AnalysisObject<'_, 'tcx>,
         debug_data: Option<PcgDebugData>,
+        ctxt: AnalysisCtxt<'a, 'tcx>,
     ) -> Result<PcgActions<'tcx>, PcgError> {
         let visitor = Self::new(pcg, ctxt, tw, analysis_location, debug_data);
         let actions = visitor.apply(analysis_object)?;
@@ -105,9 +102,9 @@ impl<'pcg, 'mir, 'tcx> PcgVisitor<'pcg, 'mir, 'tcx> {
     }
 
     pub(crate) fn new(
-        pcg: &'pcg mut Pcg<'tcx>,
-        ctxt: CompilerCtxt<'mir, 'tcx>,
-        tw: &'pcg TripleWalker<'mir, 'tcx>,
+        pcg: &'pcg mut Pcg<'a, 'tcx>,
+        ctxt: AnalysisCtxt<'a, 'tcx>,
+        tw: &'pcg TripleWalker<'a, 'tcx>,
         analysis_location: AnalysisLocation,
         debug_data: Option<PcgDebugData>,
     ) -> Self {
@@ -206,7 +203,7 @@ impl<'tcx> FallableVisitor<'tcx> for PcgVisitor<'_, '_, 'tcx> {
         _location: Location,
     ) -> Result<(), PcgError> {
         if place.contains_unsafe_deref(self.ctxt) {
-            tracing::error!("DerefUnsafePtr: {}", place.to_short_string(self.ctxt));
+            tracing::error!("DerefUnsafePtr: {}", place.to_short_string(self.ctxt.ctxt));
             return Err(PcgError::unsupported(PcgUnsupportedError::DerefUnsafePtr));
         }
         Ok(())
@@ -261,22 +258,25 @@ impl<'state, 'mir: 'state> PlaceObtainer<'state, 'mir, '_> {
         for (place, candidate_cap) in places_to_collapse {
             self.collapse_owned_places_and_lifetime_projections_to(
                 place,
-                candidate_cap,
+                candidate_cap.expect_concrete(),
                 format!(
                     "Collapse owned place {} (iteration {})",
-                    place.to_short_string(self.ctxt),
+                    place.to_short_string(self.ctxt.ctxt),
                     iteration
                 ),
                 self.ctxt,
             )?;
             if place.projection.is_empty()
-                && self.pcg.capabilities.get(place, self.ctxt) == Some(CapabilityKind::Read)
+                && self
+                    .pcg
+                    .capabilities
+                    .get(place, self.ctxt)
+                    .map(|c| c.expect_concrete())
+                    == Some(CapabilityKind::Read)
             {
-                self.pcg.capabilities.insert(
-                    place,
-                    CapabilityKind::Exclusive,
-                    self.analysis_ctxt(),
-                );
+                self.pcg
+                    .capabilities
+                    .insert(place, CapabilityKind::Exclusive, self.ctxt);
             }
         }
         Ok(true)
@@ -345,38 +345,6 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         Ok(self.actions)
     }
 
-    #[allow(unused)]
-    fn any_reachable_reverse(
-        &self,
-        node: PcgNode<'tcx>,
-        predicate: impl Fn(&PcgNode<'tcx>) -> bool,
-    ) -> bool {
-        let mut stack = vec![node];
-        let mut seen = HashSet::default();
-        while let Some(node) = stack.pop() {
-            if seen.contains(&node) {
-                continue;
-            }
-            seen.insert(node);
-            if predicate(&node) {
-                return true;
-            }
-            if let Some(local_node) = node.try_to_local_node(self.ctxt) {
-                let blocked_by = self
-                    .pcg
-                    .borrow
-                    .graph()
-                    .nodes_blocked_by(local_node, self.ctxt);
-                for node in blocked_by {
-                    if !seen.contains(&node) {
-                        stack.push(node);
-                    }
-                }
-            }
-        }
-        false
-    }
-
     fn activate_twophase_borrow_created_at(
         &mut self,
         created_location: Location,
@@ -387,22 +355,9 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         };
         tracing::debug!(
             "activate twophase borrow: {}",
-            borrow.to_short_string(self.ctxt)
+            borrow.to_short_string(self.ctxt.ctxt)
         );
         let blocked_place = borrow.blocked_place.place();
-        //     if self
-        //         .pcg
-        //         .borrow
-        //         .graph()
-        //         .contains(borrow.deref_place(self.ctxt), self.ctxt)
-        //     {
-        //         let upgrade_action = BorrowPcgAction::restore_capability(
-        //             borrow.deref_place(self.ctxt).place(),
-        //             CapabilityKind::Exclusive,
-        //             "perform_borrow_initial_pre_operand_actions",
-        //         );
-        //         self.record_and_apply_action(upgrade_action.into())?;
-        //     }
         if !blocked_place.is_owned(self.ctxt) {
             self.place_obtainer()
                 .remove_read_permission_upwards_and_label_rps(
@@ -416,7 +371,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
     fn perform_borrow_initial_pre_operand_actions(&mut self) -> Result<(), PcgError> {
         self.place_obtainer()
             .pack_old_and_dead_borrow_leaves(None)?;
-        for created_location in self.ctxt.bc.twophase_borrow_activations(self.location()) {
+        for created_location in self.ctxt.bc().twophase_borrow_activations(self.location()) {
             self.activate_twophase_borrow_created_at(created_location)?;
         }
         let frozen_graph = self.pcg.borrow.graph.frozen_graph();
@@ -439,8 +394,8 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             if self.pcg.is_expansion_leaf(place, self.ctxt)
                 && !self
                     .ctxt
-                    .bc
-                    .is_directly_blocked(place, self.location(), self.ctxt)
+                    .bc()
+                    .is_directly_blocked(place, self.location(), self.ctxt.bc_ctxt())
                 && self.pcg.capabilities.get(place, self.ctxt).is_none()
             {
                 let action = PcgAction::restore_capability(
@@ -457,12 +412,19 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
 }
 
 impl<'tcx> OwnedPcg<'tcx> {
-    pub(crate) fn perform_expand_action(
+    pub(crate) fn perform_expand_action<
+        'a,
+        Ctxt: HasCompilerCtxt<'a, 'tcx>,
+        C: CapabilityOps<Ctxt>,
+    >(
         &mut self,
         expand: RepackExpand<'tcx>,
-        capabilities: &mut PlaceCapabilities<'tcx>,
-        ctxt: AnalysisCtxt<'_, 'tcx>,
-    ) -> Result<(), PcgError> {
+        capabilities: &mut impl PlaceCapabilitiesInterface<'tcx, C>,
+        ctxt: Ctxt,
+    ) -> Result<(), PcgError>
+    where
+        'tcx: 'a,
+    {
         let expansions = self.locals_mut()[expand.local()].get_allocated_mut();
         expansions.perform_expand_action(expand, capabilities, ctxt)
     }
