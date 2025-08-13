@@ -241,7 +241,10 @@ impl<'tcx> Place<'tcx> {
     }
 
     #[rustversion::since(2025-05-24)]
-    pub(crate) fn is_raw_ptr(&self, ctxt: impl HasCompilerCtxt<'_, 'tcx>) -> bool {
+    pub(crate) fn is_raw_ptr<'a>(&self, ctxt: impl HasCompilerCtxt<'a, 'tcx>) -> bool
+    where
+        'tcx: 'a,
+    {
         self.ty(ctxt).ty.is_raw_ptr()
     }
 
