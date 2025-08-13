@@ -32,6 +32,7 @@ jobs:
     runs-on: ${{ vars.RUNNER || 'ubuntu-latest' }}
     container:
       image: ${{ vars.RUNNER && 'catthehacker/ubuntu:full-latest' || null }}
+      options: --user root
       volumes:
         - /nix:/nix
     steps:
