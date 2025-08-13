@@ -605,6 +605,7 @@ mod private {
 
     #[derive(Clone)]
     pub struct CompleteDomain<'a, 'tcx> {
+        #[allow(dead_code)]
         pub(crate) ctxt: CompilerCtxt<'a, 'tcx>,
         pub(crate) data: std::result::Result<
             PcgDomainData<'a, 'tcx, SymbolicPlaceCapabilities<'a, 'tcx>>,
@@ -814,6 +815,7 @@ pub enum PcgUnsupportedError {
 }
 
 impl<'a, 'tcx> PcgDomain<'a, 'tcx> {
+    #[allow(dead_code)]
     pub(crate) fn has_error(&self) -> bool {
         match self {
             PcgDomain::Complete(d) => d.data.is_err(),

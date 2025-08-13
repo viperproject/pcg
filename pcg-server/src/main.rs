@@ -1,4 +1,5 @@
 use axum::{
+    #[allow(unused_imports)]
     body::Body,
     extract::Multipart,
     response::{Html, IntoResponse, Redirect, Response},
@@ -8,12 +9,15 @@ use axum::{
 use hyper::StatusCode;
 use std::{
     backtrace::Backtrace,
+    #[allow(unused_imports)]
     error::Error,
     fs,
     net::SocketAddr,
+    #[allow(unused_imports)]
     path::{Path, PathBuf},
     process::Command,
 };
+#[allow(unused_imports)]
 use tempfile::TempDir;
 use tokio::net::TcpListener;
 use tower_http::services::ServeDir;
@@ -24,7 +28,7 @@ use uuid::Uuid;
 #[tokio::main]
 async fn main() {
     // Initialize tracing with debug level
-    let subscriber = FmtSubscriber::builder().with_max_level(Level::DEBUG).init();
+    FmtSubscriber::builder().with_max_level(Level::DEBUG).init();
 
     // Ensure tmp directory exists
     fs::create_dir_all("tmp").expect("Failed to create tmp directory");
@@ -46,7 +50,7 @@ async fn serve_upload_form() -> impl IntoResponse {
     Html(html_content)
 }
 
-async fn handle_upload(mut multipart: Multipart) -> Response {
+async fn handle_upload(multipart: Multipart) -> Response {
     match handle_upload_inner(multipart).await {
         Ok(response) => response,
         Err(e) => {

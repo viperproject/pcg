@@ -64,6 +64,7 @@ macro_rules! capability_gte {
     };
 }
 
+#[allow(dead_code)]
 pub(crate) enum ConstraintResult<'arena> {
     Unsat,
     Sat(Option<SymbolicCapabilityConstraint<'arena>>),
@@ -78,6 +79,7 @@ impl ConstraintResult<'_> {
 #[derive(Debug, PartialEq, Eq, Hash)]
 pub(crate) enum SymbolicCapabilityConstraint<'arena> {
     Lt(SymbolicCapability<'arena>, SymbolicCapability<'arena>),
+    #[allow(dead_code)]
     Lte(SymbolicCapability<'arena>, SymbolicCapability<'arena>),
     Eq(SymbolicCapability<'arena>, SymbolicCapability<'arena>),
 }
@@ -97,6 +99,7 @@ impl<'arena> SymbolicCapabilityConstraint<'arena> {
         SymbolicCapabilityConstraint::Eq(lhs.into(), rhs.into())
     }
 
+    #[allow(dead_code)]
     pub(crate) fn lte(
         lhs: impl Into<SymbolicCapability<'arena>>,
         rhs: impl Into<SymbolicCapability<'arena>>,
@@ -104,6 +107,7 @@ impl<'arena> SymbolicCapabilityConstraint<'arena> {
         SymbolicCapabilityConstraint::Lte(lhs.into(), rhs.into())
     }
 
+    #[allow(dead_code)]
     pub(crate) fn gte(
         lhs: impl Into<SymbolicCapability<'arena>>,
         rhs: impl Into<SymbolicCapability<'arena>>,
@@ -120,7 +124,9 @@ pub struct CapabilityVar(usize);
 
 #[derive(Clone, Copy)]
 pub(crate) struct SymbolicCapabilityCtxt<'a> {
+    #[allow(dead_code)]
     counter: &'a Cell<usize>,
+    #[allow(dead_code)]
     constraints: &'a RefCell<SymbolicCapabilityConstraints<'a>>,
 }
 
@@ -133,6 +139,7 @@ impl<'a> SymbolicCapabilityCtxt<'a> {
             ))),
         }
     }
+    #[allow(dead_code)]
     fn fresh_variable(&self) -> CapabilityVar {
         let var = CapabilityVar(self.counter.get());
         self.counter.set(var.0 + 1);

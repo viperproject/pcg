@@ -10,10 +10,12 @@ pub(crate) struct AnalysisCtxt<'a, 'tcx> {
     pub(crate) settings: &'a PcgSettings<'a>,
     pub(crate) symbolic_capability_ctxt: SymbolicCapabilityCtxt<'a>,
     pub(crate) block: Option<mir::BasicBlock>,
+    #[allow(dead_code)]
     pub(crate) arena: PcgArena<'a>,
 }
 
 impl<'a> AnalysisCtxt<'a, '_> {
+    #[allow(dead_code)]
     pub(crate) fn alloc<T>(&self, val: T) -> &'a mut T {
         self.arena.alloc(val)
     }
