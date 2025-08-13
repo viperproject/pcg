@@ -30,7 +30,7 @@ jobs:
 
   rustfmt:
     runs-on: ${{ vars.RUNNER || 'ubuntu-latest' }}
-    container: ${{ fromJSON(vars.CONTAINER) || null }}
+    container: ${{ fromJSON(vars.CONTAINER || 'null') }}
       # image: ${{ vars.RUNNER && 'catthehacker/ubuntu:full-latest' || null }}
       # options: --user root
       # volumes:
