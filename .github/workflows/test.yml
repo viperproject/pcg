@@ -31,7 +31,7 @@ jobs:
   rustfmt:
     runs-on: ${{ vars.RUNNER || 'ubuntu-latest' }}
     container:
-      image: rust:1.89
+      image: catthehacker/ubuntu:full-latest
     steps:
     - uses: actions/checkout@v4
     - name: Check code formatting
