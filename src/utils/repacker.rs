@@ -172,7 +172,15 @@ pub trait HasBorrowCheckerCtxt<'a, 'tcx, BC = &'a dyn BorrowCheckerInterface<'tc
 
 impl<'a, 'tcx, T: Copy> HasCompilerCtxt<'a, 'tcx> for CompilerCtxt<'a, 'tcx, T> {
     fn ctxt(&self) -> CompilerCtxt<'a, 'tcx, ()> {
-        CompilerCtxt::new(self.body(), self.tcx(), ())
+        CompilerCtxt::new(self.mir, self.tcx, ())
+    }
+
+    fn body(&self) -> &'a Body<'tcx> {
+        self.mir
+    }
+
+    fn tcx(&self) -> TyCtxt<'tcx> {
+        self.tcx
     }
 }
 
