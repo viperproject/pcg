@@ -452,13 +452,6 @@ fn main() {
         let x = ctxt.local_place("x").unwrap().to_rust_place(ctxt);
         check_all_statements(&ctxt.body(), &mut analysis, |_location, stmt| {
             let _ = stmt.aliases(x, &ctxt.body(), ctxt.tcx());
-            // assert!(
-            //     !stmt
-            //         .aliases(star_temp.into(), repacker)
-            //         .contains(&temp.into()),
-            //     "Bad alias for {:?}",
-            //     location
-            // );
         });
     });
 
