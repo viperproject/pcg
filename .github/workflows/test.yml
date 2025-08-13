@@ -14,6 +14,7 @@ env:
 jobs:
   check_warnings:
     runs-on: ${{ vars.RUNNER || 'ubuntu-latest' }}
+    container: ${{ fromJSON(vars.CONTAINER || 'null') }}
     steps:
     - uses: actions/checkout@v4
     - name: Check for warnings
@@ -23,6 +24,7 @@ jobs:
 
   clippy:
     runs-on: ${{ vars.RUNNER || 'ubuntu-latest' }}
+    container: ${{ fromJSON(vars.CONTAINER || 'null') }}
     steps:
     - uses: actions/checkout@v4
     - name: Run Clippy
@@ -31,10 +33,6 @@ jobs:
   rustfmt:
     runs-on: ${{ vars.RUNNER || 'ubuntu-latest' }}
     container: ${{ fromJSON(vars.CONTAINER || 'null') }}
-      # image: ${{ vars.RUNNER && 'catthehacker/ubuntu:full-latest' || null }}
-      # options: --user root
-      # volumes:
-      #   - /nix:/nix
     steps:
     - uses: actions/checkout@v4
     - name: Check code formatting
@@ -42,6 +40,7 @@ jobs:
 
   test_files:
     runs-on: ${{ vars.RUNNER || 'ubuntu-latest' }}
+    container: ${{ fromJSON(vars.CONTAINER || 'null') }}
     steps:
     - uses: actions/checkout@v4
     - name: Run tests on files
@@ -49,6 +48,7 @@ jobs:
 
   build_2025_07_21:
     runs-on: ${{ vars.RUNNER || 'ubuntu-latest' }}
+    container: ${{ fromJSON(vars.CONTAINER || 'null') }}
     steps:
     - uses: actions/checkout@v4
     - name: Build using Rust Nightly 2025-07-21
@@ -65,6 +65,7 @@ jobs:
 
   test_crates:
     runs-on: ${{ vars.RUNNER || 'ubuntu-latest' }}
+    container: ${{ fromJSON(vars.CONTAINER || 'null') }}
     steps:
     - uses: actions/checkout@v4
     - name: Run tests on selected crates
@@ -72,6 +73,7 @@ jobs:
 
   unit_tests:
     runs-on: ${{ vars.RUNNER || 'ubuntu-latest' }}
+    container: ${{ fromJSON(vars.CONTAINER || 'null') }}
     steps:
     - uses: actions/checkout@v4
     - name: Run unit tests
@@ -79,6 +81,7 @@ jobs:
 
   doc_tests:
     runs-on: ${{ vars.RUNNER || 'ubuntu-latest' }}
+    container: ${{ fromJSON(vars.CONTAINER || 'null') }}
     steps:
     - uses: actions/checkout@v4
     - name: Run unit tests
@@ -86,6 +89,7 @@ jobs:
 
   prusti_purification_tests:
     runs-on: ${{ vars.RUNNER || 'ubuntu-latest' }}
+    container: ${{ fromJSON(vars.CONTAINER || 'null') }}
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
@@ -125,6 +129,7 @@ jobs:
 
   mutation_tests:
     runs-on: ${{ vars.RUNNER || 'ubuntu-latest' }}
+    container: ${{ fromJSON(vars.CONTAINER || 'null') }}
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
@@ -144,6 +149,7 @@ jobs:
 
   flowistry_tests:
     runs-on: ${{ vars.RUNNER || 'ubuntu-latest' }}
+    container: ${{ fromJSON(vars.CONTAINER || 'null') }}
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
