@@ -31,10 +31,10 @@ jobs:
   rustfmt:
     runs-on: ${{ vars.RUNNER || 'ubuntu-latest' }}
     container: ${{ fromJSON(vars.CONTAINER) || null }}
-      image: ${{ vars.RUNNER && 'catthehacker/ubuntu:full-latest' || null }}
-      options: --user root
-      volumes:
-        - /nix:/nix
+      # image: ${{ vars.RUNNER && 'catthehacker/ubuntu:full-latest' || null }}
+      # options: --user root
+      # volumes:
+      #   - /nix:/nix
     steps:
     - uses: actions/checkout@v4
     - name: Check code formatting
