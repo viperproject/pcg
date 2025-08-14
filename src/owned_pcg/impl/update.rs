@@ -17,9 +17,9 @@ use crate::{
 
 use crate::rustc_interface::middle::mir::RETURN_PLACE;
 
-use super::OwnedPcgData;
+use super::OwnedPcg;
 
-impl<'tcx> OwnedPcgData<'tcx> {
+impl<'tcx> OwnedPcg<'tcx> {
     fn check_pre_satisfied<'a>(
         &self,
         pre: PlaceCondition<'tcx>,

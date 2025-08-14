@@ -15,18 +15,23 @@ use crate::utils::{
     SnapshotLocation,
 };
 
+impl<'a, 'tcx: 'a> std::fmt::Debug for AnalysisCtxt<'a, 'tcx> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "AnalysisCtxt {{ block: {:?} }}", self.block)
+    }
+}
+
 #[derive(Copy, Clone)]
 pub(crate) struct AnalysisCtxt<'a, 'tcx> {
     pub(crate) ctxt: CompilerCtxt<'a, 'tcx>,
     pub(crate) body_analysis: &'a BodyAnalysis<'a, 'tcx>,
     pub(crate) settings: &'a PcgSettings<'a>,
     pub(crate) symbolic_capability_ctxt: SymbolicCapabilityCtxt<'a, 'tcx>,
-    pub(crate) block: Option<mir::BasicBlock>,
+    pub(crate) block: mir::BasicBlock,
     pub(crate) arena: PcgArena<'a>,
 }
 
 impl<'a, 'tcx: 'a> AnalysisCtxt<'a, 'tcx> {
-    #[allow(dead_code)]
     pub(crate) fn alloc<T>(&self, val: T) -> &'a mut T {
         self.arena.alloc(val)
     }
@@ -174,7 +179,7 @@ impl<'a, 'tcx> AnalysisCtxt<'a, 'tcx> {
     }
     pub(crate) fn new(
         ctxt: CompilerCtxt<'a, 'tcx>,
-        block: Option<mir::BasicBlock>,
+        block: mir::BasicBlock,
         body_analysis: &'a BodyAnalysis<'a, 'tcx>,
         symbolic_capability_ctxt: SymbolicCapabilityCtxt<'a, 'tcx>,
         arena: PcgArena<'a>,
@@ -192,7 +197,7 @@ impl<'a, 'tcx> AnalysisCtxt<'a, 'tcx> {
         match predicate {
             LogPredicate::DebugBlock => {
                 if let Some(debug_block) = self.settings.debug_block {
-                    debug_block == self.block.unwrap()
+                    debug_block == self.block
                 } else {
                     false
                 }

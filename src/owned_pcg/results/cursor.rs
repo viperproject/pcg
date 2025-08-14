@@ -80,14 +80,12 @@ impl<'a, 'tcx> PcgAnalysis<'a, 'tcx> {
 
         self.cursor.seek_after_primary_effect(location);
 
-        let state = self.cursor.get().expect_complete();
-
-        let data = state.data.as_ref().map_err(|e| e.clone())?;
+        let state = self.cursor.get().expect_results();
 
         let result = PcgLocation {
             location,
-            actions: data.actions.clone(),
-            states: data.pcg.states.to_owned(),
+            actions: state.data.actions.clone(),
+            states: state.data.pcg.states.to_owned(),
         };
 
         self.curr_stmt = Some(location.successor_within_block());
@@ -103,10 +101,8 @@ impl<'a, 'tcx> PcgAnalysis<'a, 'tcx> {
         let from_pcg = &self
             .cursor
             .get()
-            .expect_complete()
+            .expect_results()
             .data
-            .as_ref()
-            .map_err(|e| e.clone())?
             .pcg;
         let from_post_main = from_pcg.states[EvalStmtPhase::PostMain].clone();
         let self_abstraction_edges = from_post_main
@@ -135,15 +131,13 @@ impl<'a, 'tcx> PcgAnalysis<'a, 'tcx> {
                 let to = &self
                     .cursor
                     .get()
-                    .expect_complete()
+                    .expect_results()
                     .data
-                    .as_ref()
-                    .map_err(|e| e.clone())?
                     .pcg;
 
                 let owned_bridge = from_post_main
                     .owned
-                    .bridge::<crate::pcg::CapabilityKind, CompilerCtxt<'a, 'tcx>>(
+                    .bridge(
                         &to.entry_state.owned,
                         &from_post_main.capabilities.to_concrete(ctxt),
                         ctxt,

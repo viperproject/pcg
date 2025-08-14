@@ -33,7 +33,7 @@ where
                     .obtain(place, ObtainType::Capability(capability))?;
             }
             PlaceCondition::AllocateOrDeallocate(local) => {
-                self.pcg.owned.locals_mut()[local] =
+                self.pcg.owned[local] =
                     OwnedPcgLocal::Allocated(LocalExpansions::new(local));
                 self.pcg
                     .capabilities

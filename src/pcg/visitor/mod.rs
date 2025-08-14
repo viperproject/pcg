@@ -337,7 +337,7 @@ where
         local: mir::Local,
         iteration: usize,
     ) -> Result<bool, PcgError> {
-        let local_expansions = self.pcg.owned.data.as_ref().unwrap()[local].get_allocated();
+        let local_expansions = self.pcg.owned[local].get_allocated();
         let leaf_expansions = local_expansions.leaf_expansions(self.ctxt);
         let parent_places = leaf_expansions
             .iter()
@@ -391,7 +391,7 @@ where
         Ok(true)
     }
     pub(crate) fn collapse_owned_places(&mut self) -> Result<(), PcgError> {
-        let allocated_locals = self.pcg.owned.data.as_ref().unwrap().allocated_locals();
+        let allocated_locals = self.pcg.owned.allocated_locals();
         for local in allocated_locals {
             let mut iteration = 1;
             while self.collapse_iteration(local, iteration)? {
@@ -444,7 +444,7 @@ impl<'tcx> OwnedPcg<'tcx> {
     where
         'tcx: 'a,
     {
-        let expansions = self.locals_mut()[expand.local()].get_allocated_mut();
+        let expansions = self[expand.local()].get_allocated_mut();
         expansions.perform_expand_action(expand, capabilities, ctxt)
     }
 }

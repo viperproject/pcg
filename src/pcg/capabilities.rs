@@ -421,7 +421,7 @@ impl CapabilityLike for CapabilityKind {
     }
 }
 
-impl <'a> CapabilityLike for SymbolicCapability<'a> {
+impl<'a> CapabilityLike for SymbolicCapability<'a> {
     fn expect_concrete(self) -> CapabilityKind {
         match self {
             SymbolicCapability::Concrete(c) => c,
@@ -434,9 +434,13 @@ impl <'a> CapabilityLike for SymbolicCapability<'a> {
 
 impl<'a, 'tcx> CapabilityOps<AnalysisCtxt<'a, 'tcx>> for SymbolicCapability<'a> {
     fn minimum(self, other: impl Into<Self>, ctxt: AnalysisCtxt<'a, 'tcx>) -> Option<Self> {
+        let other = other.into();
+        if self == other {
+            return Some(self);
+        }
         Some(SymbolicCapability::Minimum(
             ctxt.alloc(self),
-            ctxt.alloc(other.into()),
+            ctxt.alloc(other),
         ))
     }
 }
@@ -451,9 +455,7 @@ impl<'a> SymbolicCapability<'a> {
     pub(crate) fn expect_concrete(self) -> CapabilityKind {
         match self {
             SymbolicCapability::Concrete(c) => c,
-            SymbolicCapability::Variable(_) => panic!("Expected concrete capability"),
-            SymbolicCapability::Minimum(_, _) => panic!("Expected concrete capability"),
-            SymbolicCapability::None => panic!("Expected concrete capability"),
+            other => panic!("Expected concrete capability, got {:?}", other),
         }
     }
 }

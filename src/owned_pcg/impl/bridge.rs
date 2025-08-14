@@ -5,14 +5,14 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 use crate::{
-    owned_pcg::{LocalExpansions, OwnedPcgData, OwnedPcgLocal, RepackOp},
+    owned_pcg::{LocalExpansions, OwnedPcg, OwnedPcgLocal, RepackOp},
     pcg::{
         CapabilityKind, CapabilityOps, PcgError, place_capabilities::PlaceCapabilitiesInterface,
     },
     utils::HasCompilerCtxt,
 };
 
-impl<'tcx> OwnedPcgData<'tcx> {
+impl<'tcx> OwnedPcg<'tcx> {
     pub(crate) fn bridge<'a, Ctxt: HasCompilerCtxt<'a, 'tcx>, C: CapabilityOps<Ctxt>>(
         &self,
         other: &Self,

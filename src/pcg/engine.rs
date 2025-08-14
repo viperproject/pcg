@@ -20,9 +20,8 @@ use super::{
 use crate::{
     BodyAndBorrows,
     pcg::{
-        CapabilityOps, CompleteDomain, HasPcgDomainData, InProgressDomain, MaybeCompleteDomain,
-        PcgDomainData, PcgDomainT, PcgUnsupportedError, SymbolicCapability, SymbolicCapabilityCtxt,
-        ctxt::AnalysisCtxt, triple::TripleWalker,
+        CapabilityOps, DataflowState, DomainDataWithCtxt, HasPcgDomainData, PcgDomainData,
+        SymbolicCapability, SymbolicCapabilityCtxt, ctxt::AnalysisCtxt, triple::TripleWalker,
     },
     pcg_validity_assert,
     rustc_interface::{
@@ -201,33 +200,16 @@ impl<'a, 'tcx: 'a> PcgEngine<'a, 'tcx> {
     fn analysis_ctxt(&self, block: BasicBlock) -> AnalysisCtxt<'a, 'tcx> {
         AnalysisCtxt::new(
             self.ctxt,
-            Some(block),
+            block,
             self.body_analysis,
             self.symbolic_capability_ctxt,
             self.arena,
         )
     }
 
-    fn initial_state_for_block(&self, block: BasicBlock) -> InProgressDomain<'a, 'tcx> {
-        InProgressDomain::new(
-            Ok(PcgDomainData::new(self.arena)),
-            self.debug_data_for_block(block),
-            self.analysis_ctxt(block),
-        )
-    }
-
-    fn initialize(&self, state: &mut PcgDomain<'a, 'tcx>, block: BasicBlock) -> bool {
-        if state.is_bottom() {
-            *state = PcgDomain::MaybeComplete(self.initial_state_for_block(block).into());
-            true
-        } else {
-            false
-        }
-    }
-
     fn visit_all_phases<Ctxt: HasBorrowCheckerCtxt<'a, 'tcx>>(
         &mut self,
-        state: &mut PcgDomainT<'a, 'tcx, Ctxt>,
+        state: &mut DomainDataWithCtxt<'a, 'tcx, Ctxt>,
         object: AnalysisObject<'_, 'tcx>,
         tw: &TripleWalker<'a, 'tcx>,
         location: Location,
@@ -235,7 +217,7 @@ impl<'a, 'tcx: 'a> PcgEngine<'a, 'tcx> {
     where
         SymbolicCapability<'a>: CapabilityOps<Ctxt>,
     {
-        let domain = state.data.as_mut().unwrap();
+        let domain = &mut state.data;
         for phase in EvalStmtPhase::phases() {
             let curr = PcgArenaRef::make_mut(&mut domain.pcg.states.0[phase]);
             let analysis_location = AnalysisLocation {
@@ -267,6 +249,26 @@ impl<'a, 'tcx: 'a> PcgEngine<'a, 'tcx> {
         if !self.reachable_blocks.contains(location.block.index()) {
             return Ok(());
         }
+        if let PcgDomain::Analysis(DataflowState::Pending(pending)) = state {
+            let mut iter = pending.into_iter();
+            let first = iter.next().unwrap();
+            let mut result: DomainDataWithCtxt<'a, 'tcx, AnalysisCtxt<'a, 'tcx>> =
+                DomainDataWithCtxt::new(
+                    PcgDomainData::from_incoming(location.block, &first),
+                    self.debug_data_for_block(location.block),
+                    self.analysis_ctxt(location.block),
+                );
+            let to_join = Rc::make_mut(&mut result.data.pcg.entry_state);
+            for domain in iter {
+                to_join.join(
+                    &domain.data.pcg.states.0.post_main,
+                    location.block,
+                    domain.ctxt.block,
+                    result.ctxt,
+                )?;
+            }
+            *state = PcgDomain::Analysis(DataflowState::Transfer(result));
+        }
 
         if let AnalysisObject::Terminator(t) = object {
             for block in successor_blocks(t) {
@@ -274,14 +276,15 @@ impl<'a, 'tcx: 'a> PcgEngine<'a, 'tcx> {
             }
         }
 
-        if self.initialize(state, location.block) {
+        tracing::info!("Analyzing {:?}", location);
+        if !self.analyzed_blocks.contains(location.block.index()) {
             state
-                .expect_in_progress_mut()
+                .expect_analysis_mut()
+                .expect_transfer_mut()
                 .register_new_debug_iteration(location);
         }
-        let state = state.expect_maybe_complete_mut();
 
-        let pcg_data = state.data_mut()?;
+        let pcg_data = state.data_mut();
 
         let pcg = &mut pcg_data.pcg;
         if location.statement_index != 0 {
@@ -300,12 +303,11 @@ impl<'a, 'tcx: 'a> PcgEngine<'a, 'tcx> {
         }
 
         match state {
-            MaybeCompleteDomain::InProgress(state) => {
+            PcgDomain::Analysis(DataflowState::Transfer(state)) => {
                 self.visit_all_phases(state, object, &tw, location)?
             }
-            MaybeCompleteDomain::Complete(state) => {
-                self.visit_all_phases(state, object, &tw, location)?
-            }
+            PcgDomain::Results(state) => self.visit_all_phases(state, object, &tw, location)?,
+            _ => todo!(),
         }
 
         self.analyzed_blocks.insert(location.block.index());
@@ -377,14 +379,23 @@ impl<'a, 'tcx: 'a> Analysis<'tcx> for PcgEngine<'a, 'tcx> {
     const NAME: &'static str = "pcg";
 
     fn bottom_value(&self, _body: &Body<'tcx>) -> Self::Domain {
-        PcgDomain::Bottom(None)
+        PcgDomain::bottom()
     }
 
     fn initialize_start_block(&self, _body: &Body<'tcx>, state: &mut Self::Domain) {
         if state.is_bottom() {
-            *state = PcgDomain::MaybeComplete(self.initial_state_for_block(START_BLOCK).into());
+            *state = PcgDomain::Analysis(
+                DataflowState::Transfer(
+                    DomainDataWithCtxt::new(
+                        PcgDomainData::start_block(self.analysis_ctxt(START_BLOCK)),
+                        self.debug_data_for_block(START_BLOCK),
+                        self.analysis_ctxt(START_BLOCK),
+                    ),
+                )
+                .into(),
+            );
         } else {
-            pcg_validity_assert!(state.is_complete());
+            pcg_validity_assert!(state.is_results(), "unexpected state: {:?}", state);
         }
     }
 

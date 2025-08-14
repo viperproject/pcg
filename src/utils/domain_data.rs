@@ -10,7 +10,6 @@ use super::validity::HasValidityCheck;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct DomainData<T> {
     pub(crate) entry_state: T,
-    pub(crate) incoming_states: IncomingStates,
     pub(crate) states: DomainDataStates<T>,
 }
 
@@ -18,7 +17,6 @@ impl<'a, T: Clone> DomainData<PcgArenaRef<'a, T>> {
     pub(crate) fn new(entry_state: PcgArenaRef<'a, T>) -> Self {
         Self {
             entry_state: entry_state.clone(),
-            incoming_states: IncomingStates::default(),
             states: DomainDataStates::new(entry_state),
         }
     }

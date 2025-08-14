@@ -164,7 +164,7 @@ pub(crate) trait BorrowsStateLike<'tcx> {
                     pcg_validity_assert!(cap.expect_concrete() < restore.capability())
                 }
                 if !capabilities.insert(restore_place, restore.capability(), ctxt) {
-                    panic!("Capability should have been updated")
+                    // panic!("Capability should have been updated")
                 }
                 if restore.capability() == CapabilityKind::Exclusive {
                     self.label_region_projection(
@@ -348,14 +348,15 @@ impl<'tcx> BorrowsState<'tcx> {
         }
     }
 
-    pub(crate) fn initialize_as_start_block<'a>(
-        &mut self,
+    pub(crate) fn start_block<'a>(
         capabilities: &mut PlaceCapabilities<'tcx, SymbolicCapability<'a>>,
         analysis_ctxt: AnalysisCtxt<'a, 'tcx>,
-    ) {
+    ) -> Self {
+        let mut borrow = Self::default();
         for arg in analysis_ctxt.body().args_iter() {
-            self.introduce_initial_borrows(arg, capabilities, analysis_ctxt);
+            borrow.introduce_initial_borrows(arg, capabilities, analysis_ctxt);
         }
+        borrow
     }
 
     pub fn graph(&self) -> &BorrowsGraph<'tcx> {

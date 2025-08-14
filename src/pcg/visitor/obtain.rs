@@ -66,7 +66,7 @@ where
     SymbolicCapability<'a>: CapabilityOps<Ctxt>,
 {
     fn get_local_expansions(&self, local: mir::Local) -> &crate::owned_pcg::LocalExpansions<'tcx> {
-        self.pcg.owned.locals()[local].get_allocated()
+        self.pcg.owned[local].get_allocated()
     }
 
     fn borrows_state(&mut self) -> BorrowStateMutRef<'_, 'tcx> {
@@ -512,7 +512,7 @@ where
                 RepackOp::DerefShallowInit(from, to) => {
                     let target_places = from.expand_one_level(to, self.ctxt)?.expansion();
                     let capability_projections =
-                        self.pcg.owned.locals_mut()[from.local].get_allocated_mut();
+                        self.pcg.owned[from.local].get_allocated_mut();
                     capability_projections.insert_expansion(
                         from,
                         PlaceExpansion::from_places(target_places.clone(), self.ctxt),
@@ -528,7 +528,7 @@ where
                 }
                 RepackOp::Collapse(collapse) => {
                     let capability_projections =
-                        self.pcg.owned.locals_mut()[collapse.local()].get_allocated_mut();
+                        self.pcg.owned[collapse.local()].get_allocated_mut();
                     capability_projections.perform_collapse_action(
                         collapse,
                         self.pcg.capabilities,
@@ -744,7 +744,7 @@ where
     SymbolicCapability<'a>: CapabilityOps<Ctxt>,
 {
     fn contains_owned_expansion_to(&self, target: Place<'tcx>) -> bool {
-        self.pcg.owned.locals()[target.local]
+        self.pcg.owned[target.local]
             .get_allocated()
             .contains_expansion_to(target, self.ctxt)
     }

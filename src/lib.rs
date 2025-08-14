@@ -313,7 +313,7 @@ pub fn run_pcg<'a, 'tcx>(
     }
     if let Some(dir_path) = &visualization_output_path {
         for block in body.basic_blocks.indices() {
-            let state = analysis.entry_set_for_block(block).expect_complete();
+            let state = analysis.entry_set_for_block(block).expect_results();
             let block_iterations_json_file =
                 format!("{}/block_{}_iterations.json", dir_path, block.index());
             state

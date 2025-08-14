@@ -12,7 +12,9 @@ use crate::{
     pcg::{
         BodyAnalysis, CapabilityKind, CapabilityOps, PcgError, SymbolicCapability,
         ctxt::AnalysisCtxt,
-        place_capabilities::{PlaceCapabilitiesReader, SymbolicPlaceCapabilities},
+        place_capabilities::{
+            PlaceCapabilities, PlaceCapabilitiesReader, SymbolicPlaceCapabilities,
+        },
         triple::Triple,
     },
     rustc_interface::middle::mir,
@@ -24,7 +26,7 @@ use crate::{
     visualization::{dot_graph::DotGraph, generate_pcg_dot_graph},
 };
 
-#[derive(Clone, Debug, PartialEq, Eq, Default)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Pcg<'a, 'tcx, Capabilities = SymbolicPlaceCapabilities<'a, 'tcx>> {
     pub(crate) owned: OwnedPcg<'tcx>,
     pub(crate) borrow: BorrowsState<'tcx>,
@@ -285,9 +287,7 @@ impl<'a, 'tcx: 'a> Pcg<'a, 'tcx> {
     ) where
         SymbolicCapability<'a>: CapabilityOps<Ctxt>,
     {
-        self.owned
-            .locals_mut()
-            .ensures(t, &mut self.capabilities, ctxt);
+        self.owned.ensures(t, &mut self.capabilities, ctxt);
     }
 
     #[tracing::instrument(skip(self, other, ctxt))]
@@ -339,10 +339,15 @@ impl<'a, 'tcx: 'a> Pcg<'a, 'tcx> {
         result.extend(capabilities);
         result
     }
-    pub(crate) fn initialize_as_start_block(&mut self, analysis_ctxt: AnalysisCtxt<'a, 'tcx>) {
-        self.owned
-            .initialize_as_start_block(&mut self.capabilities, analysis_ctxt);
-        self.borrow
-            .initialize_as_start_block(&mut self.capabilities, analysis_ctxt);
+    pub(crate) fn start_block(analysis_ctxt: AnalysisCtxt<'a, 'tcx>) -> Self {
+        let mut capabilities = PlaceCapabilities::default();
+        let owned = OwnedPcg::start_block(&mut capabilities, analysis_ctxt);
+        let borrow = BorrowsState::start_block(&mut capabilities, analysis_ctxt);
+        Pcg {
+            owned,
+            borrow,
+            capabilities,
+            _marker: PhantomData,
+        }
     }
 }

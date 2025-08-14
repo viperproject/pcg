@@ -4,7 +4,7 @@ use crate::{
         region_projection::{LifetimeProjection, MaybeRemoteRegionProjectionBase},
         state::BorrowStateRef,
     },
-    owned_pcg::{OwnedPcgData, OwnedPcgLocal},
+    owned_pcg::{OwnedPcg, OwnedPcgLocal},
     pcg::{
         CapabilityKind, MaybeHasLocation, PcgNode, PcgRef, SymbolicCapability,
         place_capabilities::{PlaceCapabilities, PlaceCapabilitiesReader},
@@ -312,7 +312,7 @@ where
 }
 
 pub(crate) struct PcgGraphConstructor<'pcg, 'a, 'tcx> {
-    summary: &'pcg OwnedPcgData<'tcx>,
+    summary: &'pcg OwnedPcg<'tcx>,
     borrows_domain: BorrowStateRef<'pcg, 'tcx>,
     capabilities: &'pcg PlaceCapabilities<'tcx, SymbolicCapability<'a>>,
     constructor: GraphConstructor<'a, 'tcx>,
@@ -378,7 +378,7 @@ impl<'pcg, 'a: 'pcg, 'tcx: 'a> PcgGraphConstructor<'pcg, 'a, 'tcx> {
         location: mir::Location,
     ) -> Self {
         Self {
-            summary: pcg.owned.locals(),
+            summary: pcg.owned,
             borrows_domain: pcg.borrow,
             capabilities: pcg.capabilities,
             constructor: GraphConstructor::new(repacker, Some(location)),

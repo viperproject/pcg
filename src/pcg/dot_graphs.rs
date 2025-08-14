@@ -7,16 +7,16 @@ use crate::rustc_interface::middle::mir::{self, BasicBlock};
 use crate::utils::HasBorrowCheckerCtxt;
 use crate::visualization::write_pcg_dot_graph_to_file;
 
-#[derive(Clone, Serialize, Default)]
+#[derive(Clone, Serialize, Default, Debug)]
 pub(crate) struct PcgDotGraphsForBlock(Vec<PcgDotGraphsForStmt>);
 
-#[derive(Clone, Serialize, Default)]
+#[derive(Clone, Serialize, Default, Debug)]
 pub(crate) struct PcgDotGraphsForIteration {
     at_phase: Vec<(DataflowStmtPhase, String)>,
     actions: BTreeMap<EvalStmtPhase, Vec<String>>,
 }
 
-#[derive(Clone, Serialize, Default)]
+#[derive(Clone, Serialize, Default, Debug)]
 struct PcgDotGraphsForStmt {
     iterations: Vec<PcgDotGraphsForIteration>,
 }
