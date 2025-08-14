@@ -249,6 +249,7 @@ impl<'a, 'tcx: 'a> PcgEngine<'a, 'tcx> {
         if !self.reachable_blocks.contains(location.block.index()) {
             return Ok(());
         }
+        pcg_validity_assert!(!state.is_bottom(), "unexpected state: {:?}", state);
         if let PcgDomain::Analysis(DataflowState::Pending(pending)) = state {
             let mut iter = pending.into_iter();
             let first = iter.next().unwrap();
@@ -385,13 +386,11 @@ impl<'a, 'tcx: 'a> Analysis<'tcx> for PcgEngine<'a, 'tcx> {
     fn initialize_start_block(&self, _body: &Body<'tcx>, state: &mut Self::Domain) {
         if state.is_bottom() {
             *state = PcgDomain::Analysis(
-                DataflowState::Transfer(
-                    DomainDataWithCtxt::new(
-                        PcgDomainData::start_block(self.analysis_ctxt(START_BLOCK)),
-                        self.debug_data_for_block(START_BLOCK),
-                        self.analysis_ctxt(START_BLOCK),
-                    ),
-                )
+                DataflowState::Transfer(DomainDataWithCtxt::new(
+                    PcgDomainData::start_block(self.analysis_ctxt(START_BLOCK)),
+                    self.debug_data_for_block(START_BLOCK),
+                    self.analysis_ctxt(START_BLOCK),
+                ))
                 .into(),
             );
         } else {
