@@ -1,3 +1,12 @@
+use crate::{
+    pcg::place_capabilities::{
+        PlaceCapabilitiesInterface, PlaceCapabilitiesReader, SymbolicPlaceCapabilities,
+    },
+    pcg_validity_assert,
+    rustc_interface::index::{Idx, IndexVec},
+    rustc_interface::middle::mir,
+    utils::{HasCompilerCtxt, data_structures::HashMap},
+};
 use std::{
     cell::{Cell, RefCell},
     cmp::Ordering,
@@ -8,7 +17,7 @@ use derive_more::From;
 
 use crate::{
     pcg::{PcgArena, ctxt::AnalysisCtxt},
-    utils::data_structures::HashSet,
+    utils::{Place, SnapshotLocation, data_structures::HashSet},
 };
 
 /// Macro for generating patterns that match a capability and all "greater" capabilities
@@ -67,7 +76,7 @@ macro_rules! capability_gte {
 #[allow(dead_code)]
 pub(crate) enum ConstraintResult<'arena> {
     Unsat,
-    Sat(Option<SymbolicCapabilityConstraint<'arena>>),
+    Sat(Option<CapabilityConstraint<'arena>>),
 }
 
 impl ConstraintResult<'_> {
@@ -76,103 +85,343 @@ impl ConstraintResult<'_> {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Hash)]
-pub(crate) enum SymbolicCapabilityConstraint<'arena> {
-    Lt(SymbolicCapability<'arena>, SymbolicCapability<'arena>),
-    #[allow(dead_code)]
-    Lte(SymbolicCapability<'arena>, SymbolicCapability<'arena>),
-    Eq(SymbolicCapability<'arena>, SymbolicCapability<'arena>),
+pub(crate) struct Choice {
+    num_options: usize,
 }
 
-impl<'arena> SymbolicCapabilityConstraint<'arena> {
-    pub(crate) fn lt(
-        lhs: impl Into<SymbolicCapability<'arena>>,
-        rhs: impl Into<SymbolicCapability<'arena>>,
+impl Choice {
+    pub(crate) fn new(num_options: usize) -> Self {
+        Self { num_options }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
+pub(crate) struct ChoiceIdx(usize);
+
+impl Idx for ChoiceIdx {
+    fn new(index: usize) -> Self {
+        Self(index)
+    }
+
+    fn index(self) -> usize {
+        self.0
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
+pub(crate) struct Decision(usize);
+
+impl Idx for Decision {
+    fn new(index: usize) -> Self {
+        Self(index)
+    }
+
+    fn index(self) -> usize {
+        self.0
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
+pub(crate) enum CapabilityConstraint<'a> {
+    Decision {
+        choice: ChoiceIdx,
+        decision: Decision,
+    },
+    Lt(SymbolicCapability<'a>, SymbolicCapability<'a>),
+    #[allow(dead_code)]
+    Lte(SymbolicCapability<'a>, SymbolicCapability<'a>),
+    Eq(SymbolicCapability<'a>, SymbolicCapability<'a>),
+    All(&'a [CapabilityConstraint<'a>]),
+    Any(&'a [CapabilityConstraint<'a>]),
+    Not(&'a CapabilityConstraint<'a>),
+    False,
+    True,
+}
+
+use CapabilityConstraint::*;
+impl<'a> CapabilityConstraint<'a> {
+    pub(crate) fn implies(self, other: Self, arena: PcgArena<'a>) -> Self {
+        CapabilityConstraint::not(arena.alloc(self)).or(other, arena)
+    }
+
+    pub(crate) fn not(constraint: &'a CapabilityConstraint<'a>) -> Self {
+        CapabilityConstraint::Not(constraint)
+    }
+
+    pub(crate) fn or(self, other: Self, arena: PcgArena<'a>) -> Self {
+        CapabilityConstraint::Any(arena.alloc(vec![self, other]))
+    }
+
+    pub(crate) fn all(caps: &'a [CapabilityConstraint<'a>]) -> Self {
+        CapabilityConstraint::All(caps)
+    }
+
+    pub(crate) fn and(self, other: Self, arena: PcgArena<'a>) -> Self {
+        match (self, other) {
+            (All(xs), All(ys)) => {
+                All(arena.alloc(xs.iter().chain(ys.iter()).copied().collect::<Vec<_>>()))
+            }
+            _ => todo!(),
+        }
+    }
+
+    pub(crate) fn all_read(places: &[SymbolicCapability<'a>], arena: PcgArena<'a>) -> Self {
+        Self::all_eq(
+            places,
+            SymbolicCapability::Concrete(CapabilityKind::Read),
+            arena,
+        )
+    }
+
+    pub(crate) fn all_exclusive(places: &[SymbolicCapability<'a>], arena: PcgArena<'a>) -> Self {
+        Self::all_eq(
+            places,
+            SymbolicCapability::Concrete(CapabilityKind::Exclusive),
+            arena,
+        )
+    }
+
+    pub(crate) fn all_eq(
+        places: &[SymbolicCapability<'a>],
+        cap: SymbolicCapability<'a>,
+        arena: PcgArena<'a>,
     ) -> Self {
-        SymbolicCapabilityConstraint::Lt(lhs.into(), rhs.into())
+        let mut conds = HashSet::default();
+        for place_cap in places.iter().copied() {
+            match CapabilityConstraint::eq(place_cap, cap) {
+                True => {}
+                False => return False,
+                result => {
+                    conds.insert(result);
+                }
+            }
+        }
+        CapabilityConstraint::all(arena.alloc(conds.into_iter().collect::<Vec<_>>()))
+    }
+
+    pub(crate) fn lt(
+        lhs: impl Into<SymbolicCapability<'a>>,
+        rhs: impl Into<SymbolicCapability<'a>>,
+    ) -> Self {
+        CapabilityConstraint::Lt(lhs.into(), rhs.into())
     }
 
     pub(crate) fn eq(
-        lhs: impl Into<SymbolicCapability<'arena>>,
-        rhs: impl Into<SymbolicCapability<'arena>>,
+        lhs: impl Into<SymbolicCapability<'a>>,
+        rhs: impl Into<SymbolicCapability<'a>>,
     ) -> Self {
-        SymbolicCapabilityConstraint::Eq(lhs.into(), rhs.into())
+        CapabilityConstraint::Eq(lhs.into(), rhs.into())
     }
 
     #[allow(dead_code)]
     pub(crate) fn lte(
-        lhs: impl Into<SymbolicCapability<'arena>>,
-        rhs: impl Into<SymbolicCapability<'arena>>,
+        lhs: impl Into<SymbolicCapability<'a>>,
+        rhs: impl Into<SymbolicCapability<'a>>,
     ) -> Self {
-        SymbolicCapabilityConstraint::Lte(lhs.into(), rhs.into())
+        CapabilityConstraint::Lte(lhs.into(), rhs.into())
     }
 
     #[allow(dead_code)]
     pub(crate) fn gte(
-        lhs: impl Into<SymbolicCapability<'arena>>,
-        rhs: impl Into<SymbolicCapability<'arena>>,
+        lhs: impl Into<SymbolicCapability<'a>>,
+        rhs: impl Into<SymbolicCapability<'a>>,
     ) -> Self {
-        SymbolicCapabilityConstraint::Lte(rhs.into(), lhs.into())
+        CapabilityConstraint::Lte(rhs.into(), lhs.into())
     }
 }
 
+pub(crate) trait Lookup<V, T> {
+    fn get(&self, var: V) -> T;
+}
+
 #[derive(Debug, PartialEq, Eq)]
-pub(crate) struct SymbolicCapabilityConstraints<'tcx>(HashSet<SymbolicCapabilityConstraint<'tcx>>);
+pub(crate) struct SymbolicCapabilityConstraints<'tcx>(HashSet<CapabilityConstraint<'tcx>>);
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, From)]
 pub struct CapabilityVar(usize);
 
-#[derive(Clone, Copy)]
-pub(crate) struct SymbolicCapabilityCtxt<'a> {
-    #[allow(dead_code)]
-    counter: &'a Cell<usize>,
-    #[allow(dead_code)]
-    constraints: &'a RefCell<SymbolicCapabilityConstraints<'a>>,
+pub(crate) struct Choices {
+    choices: Vec<Choice>,
 }
 
-impl<'a> SymbolicCapabilityCtxt<'a> {
-    pub fn new(arena: PcgArena<'a>) -> Self {
+impl Choices {
+    fn new() -> Self {
+        Self { choices: vec![] }
+    }
+    fn add_choice(&mut self, choice: Choice) -> ChoiceIdx {
+        self.choices.push(choice);
+        ChoiceIdx(self.choices.len() - 1)
+    }
+}
+
+#[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
+pub(crate) struct PlaceAtLocation<'tcx> {
+    place: Place<'tcx>,
+    location: SnapshotLocation,
+}
+
+impl<'tcx> PlaceAtLocation<'tcx> {
+    fn new(place: Place<'tcx>, location: SnapshotLocation) -> Self {
+        Self { place, location }
+    }
+}
+
+pub(crate) struct CapabilityVars<'tcx>(Vec<PlaceAtLocation<'tcx>>);
+
+impl<'tcx> CapabilityVars<'tcx> {
+    fn contains(&self, pl: PlaceAtLocation<'tcx>) -> bool {
+        self.0.iter().any(|p| *p == pl)
+    }
+
+    fn insert(&mut self, pl: PlaceAtLocation<'tcx>) -> CapabilityVar {
+        pcg_validity_assert!(!self.contains(pl));
+        self.0.push(pl);
+        CapabilityVar(self.0.len() - 1)
+    }
+}
+
+#[derive(Clone, Copy)]
+pub(crate) struct SymbolicCapabilityCtxt<'a, 'tcx> {
+    constraints: &'a RefCell<SymbolicCapabilityConstraints<'a>>,
+    vars: &'a RefCell<CapabilityVars<'tcx>>,
+    choices: &'a RefCell<Choices>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub(crate) enum IntroduceConstraints<'tcx> {
+    ExpandForSharedBorrow {
+        base_place: Place<'tcx>,
+        expansion_places: Vec<Place<'tcx>>,
+        before_location: SnapshotLocation,
+        after_location: SnapshotLocation,
+    },
+}
+
+impl<'tcx> IntroduceConstraints<'tcx> {
+    pub(crate) fn before_location(&self) -> SnapshotLocation {
+        match self {
+            IntroduceConstraints::ExpandForSharedBorrow {
+                before_location, ..
+            } => *before_location,
+        }
+    }
+
+    pub(crate) fn after_location(&self) -> SnapshotLocation {
+        match self {
+            IntroduceConstraints::ExpandForSharedBorrow { after_location, .. } => *after_location,
+        }
+    }
+
+    pub(crate) fn affected_places(&self) -> impl Iterator<Item = Place<'tcx>> {
+        match self {
+            IntroduceConstraints::ExpandForSharedBorrow {
+                base_place,
+                expansion_places,
+                ..
+            } => expansion_places
+                .iter()
+                .chain(std::iter::once(base_place))
+                .copied(),
+        }
+    }
+}
+
+pub(crate) struct CapabilityRule<'a, 'tcx> {
+    pub(crate) pre: CapabilityConstraint<'a>,
+    pub(crate) post: HashMap<Place<'tcx>, CapabilityKind>,
+}
+
+impl<'a, 'tcx> CapabilityRule<'a, 'tcx> {
+    pub fn new(pre: CapabilityConstraint<'a>, post: HashMap<Place<'tcx>, CapabilityKind>) -> Self {
+        Self { pre, post }
+    }
+}
+
+pub(crate) enum CapabilityRules<'a, 'tcx> {
+    OneOf(IndexVec<Decision, CapabilityRule<'a, 'tcx>>),
+}
+
+impl<'a, 'tcx> CapabilityRules<'a, 'tcx> {
+    pub(crate) fn one_of(rules: Vec<CapabilityRule<'a, 'tcx>>) -> Self {
+        Self::OneOf(IndexVec::from_iter(rules.into_iter()))
+    }
+}
+
+impl<'a, 'tcx> SymbolicCapabilityCtxt<'a, 'tcx> {
+    pub(crate) fn require(&self, constraint: CapabilityConstraint<'a>) {
+        self.constraints.borrow_mut().0.insert(constraint);
+    }
+
+    pub(crate) fn new(arena: PcgArena<'a>) -> Self {
         Self {
-            counter: arena.alloc(Cell::new(0)),
             constraints: arena.alloc(RefCell::new(SymbolicCapabilityConstraints(
                 HashSet::default(),
             ))),
+            vars: arena.alloc(RefCell::new(CapabilityVars(vec![]))),
+            choices: arena.alloc(RefCell::new(Choices::new())),
         }
     }
-    #[allow(dead_code)]
-    fn fresh_variable(&self) -> CapabilityVar {
-        let var = CapabilityVar(self.counter.get());
-        self.counter.set(var.0 + 1);
-        var
+
+    pub(crate) fn add_choice(&self, choice: Choice) -> ChoiceIdx {
+        self.choices.borrow_mut().add_choice(choice)
     }
 
-    pub(crate) fn require(&self, _cap: SymbolicCapabilityConstraint) -> ConstraintResult<'a> {
-        todo!()
+    pub(crate) fn introduce_var(
+        &self,
+        place: Place<'tcx>,
+        location: SnapshotLocation,
+    ) -> CapabilityVar {
+        pcg_validity_assert!(
+            !self
+                .vars
+                .borrow()
+                .contains(PlaceAtLocation::new(place, location))
+        );
+        self.vars
+            .borrow_mut()
+            .insert(PlaceAtLocation::new(place, location))
     }
 }
 
 pub type SymbolicCapabilityRef<'arena> = &'arena SymbolicCapability<'arena>;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash, From)]
-pub enum SymbolicCapability<'arena> {
+pub enum SymbolicCapability<'a> {
     Concrete(CapabilityKind),
     Variable(CapabilityVar),
-    Minimum(SymbolicCapabilityRef<'arena>, SymbolicCapabilityRef<'arena>),
+    Minimum(SymbolicCapabilityRef<'a>, SymbolicCapabilityRef<'a>),
     None,
+}
+
+impl<'a> SymbolicCapability<'a> {
+    pub(crate) fn gte(self, other: impl Into<Self>) -> CapabilityConstraint<'a> {
+        CapabilityConstraint::gte(self, other.into())
+    }
 }
 
 mod private {
     use crate::pcg::CapabilityKind;
 
-    pub trait CapabilityOps<Ctxt>: Clone + Copy + From<CapabilityKind> + PartialEq + Sized {
+    pub trait CapabilityLike {
         fn expect_concrete(self) -> CapabilityKind;
+    }
+
+    pub trait CapabilityOps<Ctxt>:
+        Clone + Copy + From<CapabilityKind> + PartialEq + Sized + CapabilityLike
+    {
         fn minimum(self, other: impl Into<Self>, ctxt: Ctxt) -> Option<Self>;
     }
 }
 
 pub(crate) use private::*;
 
-impl<'a, 'tcx> CapabilityOps<AnalysisCtxt<'a, 'tcx>> for SymbolicCapability<'a> {
+impl CapabilityLike for CapabilityKind {
+    fn expect_concrete(self) -> CapabilityKind {
+        self
+    }
+}
+
+impl <'a> CapabilityLike for SymbolicCapability<'a> {
     fn expect_concrete(self) -> CapabilityKind {
         match self {
             SymbolicCapability::Concrete(c) => c,
@@ -181,9 +430,14 @@ impl<'a, 'tcx> CapabilityOps<AnalysisCtxt<'a, 'tcx>> for SymbolicCapability<'a> 
             SymbolicCapability::None => panic!("Expected concrete capability"),
         }
     }
+}
 
-    fn minimum(self, _other: impl Into<Self>, _ctxt: AnalysisCtxt<'a, 'tcx>) -> Option<Self> {
-        todo!()
+impl<'a, 'tcx> CapabilityOps<AnalysisCtxt<'a, 'tcx>> for SymbolicCapability<'a> {
+    fn minimum(self, other: impl Into<Self>, ctxt: AnalysisCtxt<'a, 'tcx>) -> Option<Self> {
+        Some(SymbolicCapability::Minimum(
+            ctxt.alloc(self),
+            ctxt.alloc(other.into()),
+        ))
     }
 }
 
@@ -191,12 +445,9 @@ impl<T> CapabilityOps<T> for CapabilityKind {
     fn minimum(self, other: impl Into<Self>, _ctxt: T) -> Option<Self> {
         self.minimum(other.into())
     }
-    fn expect_concrete(self) -> CapabilityKind {
-        self
-    }
 }
 
-impl SymbolicCapability<'_> {
+impl<'a> SymbolicCapability<'a> {
     pub(crate) fn expect_concrete(self) -> CapabilityKind {
         match self {
             SymbolicCapability::Concrete(c) => c,

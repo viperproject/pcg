@@ -2,7 +2,6 @@ use std::collections::BTreeMap;
 
 use serde_derive::Serialize;
 
-use crate::RECORD_PCG;
 use crate::pcg::{DataflowStmtPhase, EvalStmtPhase, PcgDebugData, PcgRef};
 use crate::rustc_interface::middle::mir::{self, BasicBlock};
 use crate::utils::HasBorrowCheckerCtxt;
@@ -29,19 +28,14 @@ impl PcgDotGraphsForStmt {
 }
 
 impl PcgDotGraphsForBlock {
-    pub(crate) fn relative_filename(
-        &self,
-        block: BasicBlock,
-        statement_index: usize,
-        to_graph: ToGraph,
-    ) -> String {
-        let iteration = self.num_iterations(statement_index);
+    pub(crate) fn relative_filename(&self, location: mir::Location, to_graph: ToGraph) -> String {
+        let iteration = self.num_iterations(location.statement_index);
         match to_graph {
             ToGraph::Phase(phase) => {
                 format!(
                     "{:?}_stmt_{}_iteration_{}_{}.dot",
-                    block,
-                    statement_index,
+                    location.block,
+                    location.statement_index,
                     iteration,
                     phase.to_filename_str_part()
                 )
@@ -49,7 +43,7 @@ impl PcgDotGraphsForBlock {
             ToGraph::Action(phase, action_idx) => {
                 format!(
                     "{:?}_stmt_{}_iteration_{}_{:?}_action_{}.dot",
-                    block, statement_index, iteration, phase, action_idx,
+                    location.block, location.statement_index, iteration, phase, action_idx,
                 )
             }
         }
@@ -128,40 +122,35 @@ pub(crate) enum ToGraph {
 }
 
 pub(crate) fn generate_dot_graph<'pcg, 'a, 'tcx: 'a>(
-    block: BasicBlock,
-    statement_index: usize,
+    location: mir::Location,
     to_graph: ToGraph,
     pcg: PcgRef<'pcg, 'a, 'tcx>,
     debug_data: Option<&PcgDebugData>,
     ctxt: impl HasBorrowCheckerCtxt<'a, 'tcx>,
 ) {
-    if !*RECORD_PCG.lock().unwrap() {
-        return;
-    }
-    if block.as_usize() == 0 {
+    if location.block.as_usize() == 0 {
         assert!(!matches!(
             to_graph,
             ToGraph::Phase(DataflowStmtPhase::Join(_))
         ));
     }
     if let Some(debug_data) = debug_data {
-        let relative_filename =
-            debug_data
-                .dot_graphs
-                .borrow()
-                .relative_filename(block, statement_index, to_graph);
+        let relative_filename = debug_data
+            .dot_graphs
+            .borrow()
+            .relative_filename(location, to_graph);
         let filename = dot_filename_for(&debug_data.dot_output_dir, &relative_filename);
         match to_graph {
             ToGraph::Action(phase, action_idx) => {
                 debug_data.dot_graphs.borrow_mut().insert_for_action(
-                    statement_index,
+                    location.statement_index,
                     phase,
                     action_idx,
                     relative_filename,
                 );
             }
             ToGraph::Phase(phase) => debug_data.dot_graphs.borrow_mut().insert_for_phase(
-                statement_index,
+                location.statement_index,
                 phase,
                 relative_filename,
             ),
@@ -170,10 +159,7 @@ pub(crate) fn generate_dot_graph<'pcg, 'a, 'tcx: 'a>(
         write_pcg_dot_graph_to_file(
             pcg,
             ctxt,
-            mir::Location {
-                block,
-                statement_index,
-            },
+            location,
             &filename,
         )
         .unwrap();

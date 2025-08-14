@@ -1,16 +1,20 @@
 use crate::{
     owned_pcg::{LocalExpansions, OwnedPcgLocal},
     pcg::{
-        CapabilityKind, PcgError, PcgUnsupportedError,
+        CapabilityKind, CapabilityOps, PcgError, PcgUnsupportedError, SymbolicCapability,
         obtain::ObtainType,
         place_capabilities::PlaceCapabilitiesInterface,
         triple::{PlaceCondition, Triple},
     },
+    utils::HasBorrowCheckerCtxt,
 };
 
 use super::PcgVisitor;
 
-impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
+impl<'a, 'tcx: 'a, Ctxt: HasBorrowCheckerCtxt<'a, 'tcx>> PcgVisitor<'_, 'a, 'tcx, Ctxt>
+where
+    SymbolicCapability<'a>: CapabilityOps<Ctxt>,
+{
     #[tracing::instrument(skip(self))]
     pub(crate) fn require_triple(&mut self, triple: Triple<'tcx>) -> Result<(), PcgError> {
         match triple.pre() {

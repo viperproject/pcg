@@ -6,6 +6,7 @@ use crate::borrow_pcg::edge::abstraction::function::{FunctionCallAbstraction, Fu
 use crate::borrow_pcg::edge::abstraction::{AbstractionBlockEdge, AbstractionType};
 use crate::borrow_pcg::has_pcs_elem::LabelLifetimeProjectionPredicate;
 use crate::pcg::obtain::{HasSnapshotLocation, PlaceExpander};
+use crate::pcg::{CapabilityOps, SymbolicCapability, SymbolicCapabilityCtxt};
 use crate::rustc_interface::middle::mir::{Location, Operand};
 use crate::utils::display::DisplayWithCompilerCtxt;
 
@@ -24,7 +25,10 @@ fn get_function_data<'a, 'tcx: 'a>(
     }
 }
 
-impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
+impl<'a, 'tcx: 'a, Ctxt: HasBorrowCheckerCtxt<'a, 'tcx>> PcgVisitor<'_, 'a, 'tcx, Ctxt>
+where
+    SymbolicCapability<'a>: CapabilityOps<Ctxt>,
+{
     #[tracing::instrument(skip(self, func, args, destination))]
     pub(super) fn make_function_call_abstraction(
         &mut self,
@@ -93,7 +97,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                     pre_rp.label(),
                     format!(
                         "Function call:Label Pre version of {}",
-                        rp.to_short_string(self.ctxt.ctxt),
+                        rp.to_short_string(self.ctxt.bc_ctxt()),
                     ),
                 )
                 .into(),
@@ -104,7 +108,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             let mut outputs = vec![];
             for post_rp in post_rps.iter() {
                 if post_rp.is_invariant_in_type(self.ctxt)
-                    && self.ctxt.ctxt.bc.outlives(
+                    && self.ctxt.bc_ctxt().bc.outlives(
                         pre_rp.region(self.ctxt),
                         post_rp.region(self.ctxt),
                         location,

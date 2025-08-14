@@ -7,7 +7,7 @@ use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::borrow_pcg::edge_data::EdgeData;
 use crate::borrow_pcg::graph::Conditioned;
 use crate::borrow_pcg::graph::frozen::FrozenGraphRef;
-use crate::pcg::PcgNode;
+use crate::pcg::{CapabilityOps, PcgNode, SymbolicCapability};
 use crate::pcg::obtain::{PlaceCollapser, PlaceObtainer};
 use crate::utils::Place;
 use crate::utils::data_structures::{HashMap, HashSet};
@@ -88,7 +88,11 @@ impl<'tcx> EdgesToRemove<'tcx> {
     }
 }
 
-impl<'pcg, 'mir: 'pcg, 'tcx> PlaceObtainer<'pcg, 'mir, 'tcx> {
+impl<'pcg, 'a: 'pcg, 'tcx: 'a, Ctxt: HasBorrowCheckerCtxt<'a, 'tcx>>
+    PlaceObtainer<'pcg, 'a, 'tcx, Ctxt>
+where
+    SymbolicCapability<'a>: CapabilityOps<Ctxt>,
+{
     /// Removes leaves that are old or dead (based on the borrow checker). This
     /// function should called prior to evaluating the effect of the statement
     /// at `location`.
@@ -246,7 +250,7 @@ impl<'pcg, 'mir: 'pcg, 'tcx> PlaceObtainer<'pcg, 'mir, 'tcx> {
                     ShouldPackEdge::Yes {
                         reason: format!(
                             "Expansion {} is packable",
-                            expansion.to_short_string(self.ctxt.ctxt)
+                            expansion.to_short_string(self.ctxt.bc_ctxt())
                         )
                         .into(),
                     }
@@ -260,13 +264,13 @@ impl<'pcg, 'mir: 'pcg, 'tcx> PlaceObtainer<'pcg, 'mir, 'tcx> {
                     if let ShouldKillNode::Yes { reason } = should_kill_node(node, &fg) {
                         why_killed_reasons.push(format!(
                             "{}: {}",
-                            node.to_short_string(self.ctxt.ctxt),
+                            node.to_short_string(self.ctxt.bc_ctxt()),
                             reason
                         ));
                     } else {
                         tracing::debug!(
                             "Node {} will not be killed",
-                            node.to_short_string(self.ctxt.ctxt)
+                            node.to_short_string(self.ctxt.bc_ctxt())
                         );
                         return ShouldPackEdge::No;
                     }
@@ -285,7 +289,7 @@ impl<'pcg, 'mir: 'pcg, 'tcx> PlaceObtainer<'pcg, 'mir, 'tcx> {
         for edge in leaf_edges.into_iter().map(|e| e.to_owned_edge()) {
             tracing::debug!(
                 "Checking leaf edge: {}",
-                edge.kind.to_short_string(self.ctxt.ctxt)
+                edge.kind.to_short_string(self.ctxt.bc_ctxt())
             );
             if let ShouldPackEdge::Yes { reason } = should_pack_edge(edge.kind()) {
                 edges_to_remove.push(edge, reason);

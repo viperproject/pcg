@@ -4,12 +4,14 @@ use crate::borrow_pcg::borrow_pcg_edge::BorrowPcgEdge;
 use crate::borrow_pcg::edge::outlives::{BorrowFlowEdge, BorrowFlowEdgeKind};
 use crate::borrow_pcg::region_projection::{LifetimeProjection, PcgRegion};
 use crate::owned_pcg::{OwnedPcg, RepackExpand};
-use crate::pcg::PcgDebugData;
 use crate::pcg::ctxt::AnalysisCtxt;
 use crate::pcg::obtain::{PlaceCollapser, PlaceObtainer};
-use crate::pcg::place_capabilities::{PlaceCapabilitiesInterface, PlaceCapabilitiesReader};
+use crate::pcg::place_capabilities::{
+    PlaceCapabilities, PlaceCapabilitiesInterface, PlaceCapabilitiesReader,
+};
 use crate::pcg::triple::TripleWalker;
 use crate::pcg::{CapabilityKind, CapabilityOps};
+use crate::pcg::{PcgDebugData, SymbolicCapability};
 use crate::rustc_interface::middle::mir::{self, Location, Operand, Rvalue, Statement, Terminator};
 use crate::utils::data_structures::HashSet;
 use crate::utils::display::DisplayWithCompilerCtxt;
@@ -32,16 +34,49 @@ mod stmt;
 mod triple;
 mod upgrade;
 
-pub(crate) struct PcgVisitor<'pcg, 'a, 'tcx> {
+pub(crate) struct PcgVisitor<'pcg, 'a, 'tcx, Ctxt = AnalysisCtxt<'a, 'tcx>> {
     pcg: &'pcg mut Pcg<'a, 'tcx>,
-    ctxt: AnalysisCtxt<'a, 'tcx>,
+    ctxt: Ctxt,
     actions: PcgActions<'tcx>,
     analysis_location: AnalysisLocation,
     tw: &'pcg TripleWalker<'a, 'tcx>,
     debug_data: Option<PcgDebugData>,
 }
 
-impl<'pcg, 'a, 'tcx> PcgVisitor<'pcg, 'a, 'tcx> {
+impl<'pcg, 'a, 'tcx: 'a, Ctxt: HasBorrowCheckerCtxt<'a, 'tcx>> PcgVisitor<'pcg, 'a, 'tcx, Ctxt>
+where
+    SymbolicCapability<'a>: CapabilityOps<Ctxt>,
+{
+    pub(crate) fn visit(
+        pcg: &'pcg mut Pcg<'a, 'tcx>,
+        tw: &'pcg TripleWalker<'a, 'tcx>,
+        analysis_location: AnalysisLocation,
+        analysis_object: AnalysisObject<'_, 'tcx>,
+        debug_data: Option<PcgDebugData>,
+        ctxt: Ctxt,
+    ) -> Result<PcgActions<'tcx>, PcgError> {
+        let visitor = Self::new(pcg, ctxt, tw, analysis_location, debug_data);
+        let actions = visitor.apply(analysis_object)?;
+        Ok(actions)
+    }
+
+    pub(crate) fn new(
+        pcg: &'pcg mut Pcg<'a, 'tcx>,
+        ctxt: Ctxt,
+        tw: &'pcg TripleWalker<'a, 'tcx>,
+        analysis_location: AnalysisLocation,
+        debug_data: Option<PcgDebugData>,
+    ) -> Self {
+        Self {
+            pcg,
+            ctxt,
+            actions: PcgActions::default(),
+            analysis_location,
+            tw,
+            debug_data,
+        }
+    }
+
     fn prev_snapshot_location(&self) -> SnapshotLocation {
         SnapshotLocation::before(self.analysis_location)
     }
@@ -52,6 +87,99 @@ impl<'pcg, 'a, 'tcx> PcgVisitor<'pcg, 'a, 'tcx> {
 
     fn location(&self) -> Location {
         self.analysis_location.location
+    }
+
+    fn perform_borrow_initial_pre_operand_actions(&mut self) -> Result<(), PcgError> {
+        self.place_obtainer()
+            .pack_old_and_dead_borrow_leaves(None)?;
+        for created_location in self.ctxt.bc().twophase_borrow_activations(self.location()) {
+            self.activate_twophase_borrow_created_at(created_location)?;
+        }
+        let frozen_graph = self.pcg.borrow.graph.frozen_graph();
+        let leaf_nodes = frozen_graph.leaf_nodes(self.ctxt);
+        let leaf_future_node_places = leaf_nodes
+            .iter()
+            .filter_map(|node| match node {
+                PcgNode::Place(_) => None,
+                PcgNode::LifetimeProjection(region_projection) => {
+                    if region_projection.is_future() {
+                        region_projection.base.as_current_place()
+                    } else {
+                        None
+                    }
+                }
+            })
+            .collect::<HashSet<_>>();
+        for place in leaf_future_node_places {
+            // If the place is a leaf, and its not borrowed, then we remove the future label
+            if self.pcg.is_expansion_leaf(place, self.ctxt)
+                && !self
+                    .ctxt
+                    .bc()
+                    .is_directly_blocked(place, self.location(), self.ctxt.bc_ctxt())
+                && self.pcg.capabilities.get(place, self.ctxt).is_none()
+            {
+                let action = PcgAction::restore_capability(
+                    place,
+                    CapabilityKind::Exclusive,
+                    "Leaf future node restore cap",
+                    self.ctxt,
+                );
+                self.record_and_apply_action(action)?;
+            }
+        }
+        Ok(())
+    }
+
+    pub(crate) fn apply(
+        mut self,
+        object: AnalysisObject<'_, 'tcx>,
+    ) -> Result<PcgActions<'tcx>, PcgError> {
+        match self.phase() {
+            EvalStmtPhase::PreOperands => {
+                self.perform_borrow_initial_pre_operand_actions()?;
+                self.place_obtainer().collapse_owned_places()?;
+                for triple in self.tw.operand_triples.iter() {
+                    tracing::debug!("Require triple {:?}", triple);
+                    self.require_triple(*triple)?;
+                }
+            }
+            EvalStmtPhase::PostOperands => {
+                for triple in self.tw.operand_triples.iter() {
+                    self.ensure_triple(*triple)?;
+                }
+            }
+            EvalStmtPhase::PreMain => {
+                for triple in self.tw.main_triples.iter() {
+                    tracing::debug!("Require triple {:?}", triple);
+                    self.require_triple(*triple)?;
+                }
+            }
+            EvalStmtPhase::PostMain => {
+                for triple in self.tw.main_triples.iter() {
+                    self.ensure_triple(*triple)?;
+                }
+            }
+        }
+        let location = self.location();
+        match object {
+            AnalysisObject::Statement(statement) => {
+                self.visit_statement_fallable(statement, location)?
+            }
+            AnalysisObject::Terminator(terminator) => {
+                self.visit_terminator_fallable(terminator, location)?;
+                if self.phase() == EvalStmtPhase::PostMain {
+                    // when the analysis object is a terminator, this step ensures
+                    // the owned PCG is in the most-packed state for the join.
+                    self.place_obtainer().collapse_owned_places()?;
+                }
+            }
+        }
+        if self.phase() == EvalStmtPhase::PostMain {
+            // self.pcg .as_mut_ref()
+            //     .assert_validity_at_location(self.ctxt, location);
+        }
+        Ok(self.actions)
     }
 
     fn outlives(&self, sup: PcgRegion, sub: PcgRegion) -> bool {
@@ -87,39 +215,13 @@ impl<'pcg, 'a, 'tcx> PcgVisitor<'pcg, 'a, 'tcx> {
         }
         Ok(())
     }
-
-    pub(crate) fn visit(
-        pcg: &'pcg mut Pcg<'a, 'tcx>,
-        tw: &'pcg TripleWalker<'a, 'tcx>,
-        analysis_location: AnalysisLocation,
-        analysis_object: AnalysisObject<'_, 'tcx>,
-        debug_data: Option<PcgDebugData>,
-        ctxt: AnalysisCtxt<'a, 'tcx>,
-    ) -> Result<PcgActions<'tcx>, PcgError> {
-        let visitor = Self::new(pcg, ctxt, tw, analysis_location, debug_data);
-        let actions = visitor.apply(analysis_object)?;
-        Ok(actions)
-    }
-
-    pub(crate) fn new(
-        pcg: &'pcg mut Pcg<'a, 'tcx>,
-        ctxt: AnalysisCtxt<'a, 'tcx>,
-        tw: &'pcg TripleWalker<'a, 'tcx>,
-        analysis_location: AnalysisLocation,
-        debug_data: Option<PcgDebugData>,
-    ) -> Self {
-        Self {
-            pcg,
-            ctxt,
-            actions: PcgActions::default(),
-            analysis_location,
-            tw,
-            debug_data,
-        }
-    }
 }
 
-impl<'tcx> FallableVisitor<'tcx> for PcgVisitor<'_, '_, 'tcx> {
+impl<'a, 'tcx: 'a, Ctxt: HasBorrowCheckerCtxt<'a, 'tcx>> FallableVisitor<'tcx>
+    for PcgVisitor<'_, 'a, 'tcx, Ctxt>
+where
+    SymbolicCapability<'a>: CapabilityOps<Ctxt>,
+{
     #[tracing::instrument(skip(self))]
     fn visit_statement_fallable(
         &mut self,
@@ -203,7 +305,10 @@ impl<'tcx> FallableVisitor<'tcx> for PcgVisitor<'_, '_, 'tcx> {
         _location: Location,
     ) -> Result<(), PcgError> {
         if place.contains_unsafe_deref(self.ctxt) {
-            tracing::error!("DerefUnsafePtr: {}", place.to_short_string(self.ctxt.ctxt));
+            tracing::error!(
+                "DerefUnsafePtr: {}",
+                place.to_short_string(self.ctxt.bc_ctxt())
+            );
             return Err(PcgError::unsupported(PcgUnsupportedError::DerefUnsafePtr));
         }
         Ok(())
@@ -222,7 +327,11 @@ impl<'tcx> FallableVisitor<'tcx> for PcgVisitor<'_, '_, 'tcx> {
     }
 }
 
-impl<'state, 'mir: 'state> PlaceObtainer<'state, 'mir, '_> {
+impl<'state, 'a, 'tcx: 'a, Ctxt: HasBorrowCheckerCtxt<'a, 'tcx>>
+    PlaceObtainer<'state, 'a, 'tcx, Ctxt>
+where
+    SymbolicCapability<'a>: CapabilityOps<Ctxt>,
+{
     fn collapse_iteration(
         &mut self,
         local: mir::Local,
@@ -261,7 +370,7 @@ impl<'state, 'mir: 'state> PlaceObtainer<'state, 'mir, '_> {
                 candidate_cap.expect_concrete(),
                 format!(
                     "Collapse owned place {} (iteration {})",
-                    place.to_short_string(self.ctxt.ctxt),
+                    place.to_short_string(self.ctxt.bc_ctxt()),
                     iteration
                 ),
                 self.ctxt,
@@ -293,58 +402,10 @@ impl<'state, 'mir: 'state> PlaceObtainer<'state, 'mir, '_> {
     }
 }
 
-impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
-    pub(crate) fn apply(
-        mut self,
-        object: AnalysisObject<'_, 'tcx>,
-    ) -> Result<PcgActions<'tcx>, PcgError> {
-        match self.phase() {
-            EvalStmtPhase::PreOperands => {
-                self.perform_borrow_initial_pre_operand_actions()?;
-                self.place_obtainer().collapse_owned_places()?;
-                for triple in self.tw.operand_triples.iter() {
-                    tracing::debug!("Require triple {:?}", triple);
-                    self.require_triple(*triple)?;
-                }
-            }
-            EvalStmtPhase::PostOperands => {
-                for triple in self.tw.operand_triples.iter() {
-                    self.ensure_triple(*triple)?;
-                }
-            }
-            EvalStmtPhase::PreMain => {
-                for triple in self.tw.main_triples.iter() {
-                    tracing::debug!("Require triple {:?}", triple);
-                    self.require_triple(*triple)?;
-                }
-            }
-            EvalStmtPhase::PostMain => {
-                for triple in self.tw.main_triples.iter() {
-                    self.ensure_triple(*triple)?;
-                }
-            }
-        }
-        let location = self.location();
-        match object {
-            AnalysisObject::Statement(statement) => {
-                self.visit_statement_fallable(statement, location)?
-            }
-            AnalysisObject::Terminator(terminator) => {
-                self.visit_terminator_fallable(terminator, location)?;
-                if self.phase() == EvalStmtPhase::PostMain {
-                    // when the analysis object is a terminator, this step ensures
-                    // the owned PCG is in the most-packed state for the join.
-                    self.place_obtainer().collapse_owned_places()?;
-                }
-            }
-        }
-        if self.phase() == EvalStmtPhase::PostMain {
-            // self.pcg .as_mut_ref()
-            //     .assert_validity_at_location(self.ctxt, location);
-        }
-        Ok(self.actions)
-    }
-
+impl<'a, 'tcx: 'a, Ctxt: HasBorrowCheckerCtxt<'a, 'tcx>> PcgVisitor<'_, 'a, 'tcx, Ctxt>
+where
+    SymbolicCapability<'a>: CapabilityOps<Ctxt>,
+{
     fn activate_twophase_borrow_created_at(
         &mut self,
         created_location: Location,
@@ -355,7 +416,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
         };
         tracing::debug!(
             "activate twophase borrow: {}",
-            borrow.to_short_string(self.ctxt.ctxt)
+            borrow.to_short_string(self.ctxt.bc_ctxt())
         );
         let blocked_place = borrow.blocked_place.place();
         if !blocked_place.is_owned(self.ctxt) {
@@ -364,48 +425,6 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                     blocked_place,
                     "Activate twophase borrow",
                 )?;
-        }
-        Ok(())
-    }
-
-    fn perform_borrow_initial_pre_operand_actions(&mut self) -> Result<(), PcgError> {
-        self.place_obtainer()
-            .pack_old_and_dead_borrow_leaves(None)?;
-        for created_location in self.ctxt.bc().twophase_borrow_activations(self.location()) {
-            self.activate_twophase_borrow_created_at(created_location)?;
-        }
-        let frozen_graph = self.pcg.borrow.graph.frozen_graph();
-        let leaf_nodes = frozen_graph.leaf_nodes(self.ctxt);
-        let leaf_future_node_places = leaf_nodes
-            .iter()
-            .filter_map(|node| match node {
-                PcgNode::Place(_) => None,
-                PcgNode::LifetimeProjection(region_projection) => {
-                    if region_projection.is_future() {
-                        region_projection.base.as_current_place()
-                    } else {
-                        None
-                    }
-                }
-            })
-            .collect::<HashSet<_>>();
-        for place in leaf_future_node_places {
-            // If the place is a leaf, and its not borrowed, then we remove the future label
-            if self.pcg.is_expansion_leaf(place, self.ctxt)
-                && !self
-                    .ctxt
-                    .bc()
-                    .is_directly_blocked(place, self.location(), self.ctxt.bc_ctxt())
-                && self.pcg.capabilities.get(place, self.ctxt).is_none()
-            {
-                let action = PcgAction::restore_capability(
-                    place,
-                    CapabilityKind::Exclusive,
-                    "Leaf future node restore cap",
-                    self.ctxt,
-                );
-                self.record_and_apply_action(action)?;
-            }
         }
         Ok(())
     }

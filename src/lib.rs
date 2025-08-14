@@ -176,19 +176,7 @@ impl<'tcx> DebugLines<CompilerCtxt<'_, 'tcx>> for BorrowPcgActions<'tcx> {
 }
 
 use borrow_pcg::action::actions::BorrowPcgActions;
-use std::sync::Mutex;
 use utils::eval_stmt_data::EvalStmtData;
-
-lazy_static::lazy_static! {
-    /// Whether to record PCG information for each block. This is used for
-    /// debugging only. This is set to true when the PCG is initially
-    /// constructed, and then disabled after its construction. The reason for
-    /// using a global variable is that debugging information is written during
-    /// the dataflow operations of the PCG, which are also used when examining
-    /// PCG results. We don't want to write the debugging information to disk
-    /// during examination, of course.
-    static ref RECORD_PCG: Mutex<bool> = Mutex::new(false);
-}
 
 struct PCGStmtVisualizationData<'a, 'tcx> {
     actions: &'a EvalStmtData<PcgActions<'tcx>>,
@@ -317,21 +305,15 @@ pub fn run_pcg<'a, 'tcx>(
         &pcg_ctxt.arena,
         visualization_output_path,
     );
-    {
-        let mut record_pcg = RECORD_PCG.lock().unwrap();
-        *record_pcg = true;
-    }
     let body = pcg_ctxt.compiler_ctxt.body();
     let tcx = pcg_ctxt.compiler_ctxt.tcx();
-    let analysis = compute_fixpoint(AnalysisEngine(engine), tcx, body);
-    {
-        let mut record_pcg = RECORD_PCG.lock().unwrap();
-        *record_pcg = false;
+    let mut analysis = compute_fixpoint(AnalysisEngine(engine), tcx, body);
+    for state in analysis.results.entry_states.iter_mut() {
+        state.complete();
     }
     if let Some(dir_path) = &visualization_output_path {
         for block in body.basic_blocks.indices() {
-            let state = analysis.entry_set_for_block(block).expect_in_progress();
-            assert!(state.block() == block);
+            let state = analysis.entry_set_for_block(block).expect_complete();
             let block_iterations_json_file =
                 format!("{}/block_{}_iterations.json", dir_path, block.index());
             state

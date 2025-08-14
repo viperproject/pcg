@@ -12,14 +12,20 @@ use crate::{
         region_projection::LifetimeProjection,
     },
     pcg::{
-        CapabilityKind, PcgError, PcgNode,
+        CapabilityKind, CapabilityOps, PcgError, PcgNode, SymbolicCapability,
         obtain::{HasSnapshotLocation, PlaceObtainer},
         place_capabilities::{BlockType, PlaceCapabilitiesReader},
     },
-    utils::{Place, data_structures::HashSet, display::DisplayWithCompilerCtxt},
+    utils::{
+        HasBorrowCheckerCtxt, Place, data_structures::HashSet, display::DisplayWithCompilerCtxt,
+    },
 };
 
-impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
+impl<'state, 'a: 'state, 'tcx: 'a, Ctxt: HasBorrowCheckerCtxt<'a, 'tcx>>
+    PlaceObtainer<'state, 'a, 'tcx, Ctxt>
+where
+    SymbolicCapability<'a>: CapabilityOps<Ctxt>,
+{
     fn weaken_place_from_read_upwards(
         &mut self,
         place: Place<'tcx>,
@@ -38,7 +44,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                         format!(
                             "{}: remove read permission upwards from base place {} (downgrade R to W for mut ref)",
                             debug_ctxt,
-                            place.to_short_string(self.ctxt.ctxt),
+                            place.to_short_string(self.ctxt.bc_ctxt()),
                         ),
                         self.ctxt,
                     )
@@ -53,7 +59,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                     format!(
                         "{}: remove read permission upwards from base place {}",
                         debug_ctxt,
-                        place.to_short_string(self.ctxt.ctxt),
+                        place.to_short_string(self.ctxt.bc_ctxt()),
                     ),
                     self.ctxt,
                 )
@@ -97,7 +103,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                             format!(
                                 "{}: remove_read_permission_upwards_and_label_rps: restore exclusive cap for leaf place {}",
                                 debug_ctxt,
-                                place.to_short_string(self.ctxt.ctxt)
+                                place.to_short_string(self.ctxt.bc_ctxt())
                             ),
                         )
                         .into(),
@@ -153,7 +159,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                             format!(
                                 "{}: remove_read_permission_upwards_and_label_rps: label current lifetime projection {} with previous snapshot location {:?}",
                                 debug_ctxt,
-                                current_rp.to_short_string(self.ctxt.ctxt),
+                                current_rp.to_short_string(self.ctxt.bc_ctxt()),
                                 self.prev_snapshot_location()
                             ),
                         )

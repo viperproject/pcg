@@ -4,17 +4,20 @@ use crate::action::BorrowPcgAction;
 use crate::borrow_pcg::action::LabelPlaceReason;
 use crate::borrow_pcg::borrow_pcg_edge::BorrowPcgEdgeLike;
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
-use crate::pcg::CapabilityKind;
+use crate::pcg::{CapabilityKind, CapabilityOps, SymbolicCapability};
 use crate::pcg::place_capabilities::PlaceCapabilitiesReader;
 use crate::pcg_validity_assert;
 use crate::rustc_interface::middle::mir::{Statement, StatementKind};
 
 use crate::utils::visitor::FallableVisitor;
-use crate::utils::{self};
+use crate::utils::{self, HasBorrowCheckerCtxt};
 
 use super::{EvalStmtPhase, PcgError};
 
-impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
+impl<'a, 'tcx: 'a, Ctxt: HasBorrowCheckerCtxt<'a, 'tcx>> PcgVisitor<'_, 'a, 'tcx, Ctxt>
+where
+    SymbolicCapability<'a>: CapabilityOps<Ctxt>,
+{
     pub(crate) fn perform_statement_actions(
         &mut self,
         statement: &Statement<'tcx>,

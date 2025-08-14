@@ -153,7 +153,7 @@ impl<T> Default for PlaceCapabilities<'_, T> {
 pub(crate) type SymbolicPlaceCapabilities<'a, 'tcx> =
     PlaceCapabilities<'tcx, SymbolicCapability<'a>>;
 
-impl<'a, 'tcx> SymbolicPlaceCapabilities<'a, 'tcx> {
+impl<'a, 'tcx: 'a> SymbolicPlaceCapabilities<'a, 'tcx> {
     pub(crate) fn to_concrete(
         &self,
         ctxt: impl HasCompilerCtxt<'a, 'tcx>,
@@ -165,20 +165,23 @@ impl<'a, 'tcx> SymbolicPlaceCapabilities<'a, 'tcx> {
         concrete
     }
 
-    pub(crate) fn update_for_deref(
+    pub(crate) fn update_for_deref<Ctxt: HasBorrowCheckerCtxt<'a, 'tcx>>(
         &mut self,
         ref_place: Place<'tcx>,
         capability: CapabilityKind,
-        ctxt: AnalysisCtxt<'a, 'tcx>,
-    ) -> Result<bool, PcgError> {
-        if capability.is_read() || ref_place.is_shared_ref(ctxt.ctxt) {
+        ctxt: Ctxt,
+    ) -> Result<bool, PcgError>
+    where
+        SymbolicCapability<'a>: CapabilityOps<Ctxt>,
+    {
+        if capability.is_read() || ref_place.is_shared_ref(ctxt.bc_ctxt()) {
             self.insert(
                 ref_place,
                 SymbolicCapability::Concrete(CapabilityKind::Read),
                 ctxt,
             );
             self.insert(
-                ref_place.project_deref(ctxt.ctxt),
+                ref_place.project_deref(ctxt.bc_ctxt()),
                 SymbolicCapability::Concrete(CapabilityKind::Read),
                 ctxt,
             );
@@ -189,7 +192,7 @@ impl<'a, 'tcx> SymbolicPlaceCapabilities<'a, 'tcx> {
                 ctxt,
             );
             self.insert(
-                ref_place.project_deref(ctxt.ctxt),
+                ref_place.project_deref(ctxt.bc_ctxt()),
                 SymbolicCapability::Concrete(CapabilityKind::Exclusive),
                 ctxt,
             );
@@ -197,21 +200,23 @@ impl<'a, 'tcx> SymbolicPlaceCapabilities<'a, 'tcx> {
         Ok(true)
     }
 
-    pub(crate) fn update_for_expansion(
+    pub(crate) fn update_for_expansion<Ctxt: HasBorrowCheckerCtxt<'a, 'tcx>>(
         &mut self,
         expansion: &BorrowPcgExpansion<'tcx>,
         block_type: BlockType,
-        ctxt: AnalysisCtxt<'a, 'tcx>,
-    ) -> Result<bool, PcgError> {
+        ctxt: Ctxt,
+    ) -> Result<bool, PcgError>
+    where
+        SymbolicCapability<'a>: CapabilityOps<Ctxt>,
+    {
         let mut changed = false;
         // We dont change if only expanding region projections
         if expansion.base.is_place() {
             let base = expansion.base;
-            let base_capability = self.get(base.place(), ctxt.ctxt);
+            let base_capability = self.get(base.place(), ctxt);
             let expanded_capability = if let Some(capability) = base_capability {
                 let concrete_cap = capability.expect_concrete();
-                let expanded =
-                    block_type.expansion_capability(base.place(), concrete_cap, ctxt.ctxt);
+                let expanded = block_type.expansion_capability(base.place(), concrete_cap, ctxt);
                 SymbolicCapability::Concrete(expanded)
             } else {
                 return Ok(true);
@@ -226,12 +231,15 @@ impl<'a, 'tcx> SymbolicPlaceCapabilities<'a, 'tcx> {
         Ok(changed)
     }
 
-    pub(crate) fn update_capabilities_for_block_of_place(
+    pub(crate) fn update_capabilities_for_block_of_place<Ctxt: HasBorrowCheckerCtxt<'a, 'tcx>>(
         &mut self,
         blocked_place: Place<'tcx>,
         block_type: BlockType,
-        ctxt: AnalysisCtxt<'a, 'tcx>,
-    ) -> bool {
+        ctxt: Ctxt,
+    ) -> bool
+    where
+        SymbolicCapability<'a>: CapabilityOps<Ctxt>,
+    {
         let retained_capability = block_type.blocked_place_maximum_retained_capability();
         if let Some(capability) = retained_capability {
             self.insert(
@@ -341,7 +349,7 @@ impl BlockType {
         self,
         _blocked_place: Place<'tcx>,
         blocked_capability: CapabilityKind,
-        _ctxt: CompilerCtxt<'_, 'tcx>,
+        _ctxt: impl HasCompilerCtxt<'_, 'tcx>,
     ) -> CapabilityKind {
         match self {
             BlockType::DerefMutRefUnderSharedRef => CapabilityKind::Read,
@@ -382,7 +390,7 @@ where
     pub(crate) fn remove_all_for_local(
         &mut self,
         local: mir::Local,
-        _ctxt: CompilerCtxt<'_, 'tcx>,
+        ctxt: impl HasCompilerCtxt<'_, 'tcx>,
     ) {
         self.0.retain(|place, _| place.local != local);
     }

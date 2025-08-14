@@ -56,7 +56,7 @@ pub struct AnalysisAndResults<'tcx, A>
 where
     A: mir_dataflow::Analysis<'tcx>,
 {
-    results: mir_dataflow::Results<'tcx, A>,
+    pub(crate) results: mir_dataflow::Results<'tcx, A>,
 }
 pub trait Analysis<'tcx> {
     const NAME: &'static str;

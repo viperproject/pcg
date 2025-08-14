@@ -4,10 +4,10 @@ use crate::borrow_pcg::borrow_pcg_edge::BorrowPcgEdge;
 use crate::borrow_pcg::edge::outlives::{BorrowFlowEdge, BorrowFlowEdgeKind};
 use crate::borrow_pcg::has_pcs_elem::LabelLifetimeProjectionPredicate;
 use crate::borrow_pcg::region_projection::{LifetimeProjection, MaybeRemoteRegionProjectionBase};
-use crate::pcg::CapabilityKind;
-use crate::pcg::EvalStmtPhase;
+use crate::pcg::{EvalStmtPhase, SymbolicCapability};
 use crate::pcg::obtain::{ActionApplier, HasSnapshotLocation, PlaceExpander};
 use crate::pcg::place_capabilities::PlaceCapabilitiesInterface;
+use crate::pcg::{CapabilityKind, CapabilityOps, SymbolicCapabilityCtxt};
 use crate::rustc_interface::middle::mir::{self, Operand, Rvalue};
 
 use crate::rustc_interface::middle::ty::{self};
@@ -16,7 +16,10 @@ use crate::utils::{self, AnalysisLocation, HasBorrowCheckerCtxt, SnapshotLocatio
 
 use super::{PcgError, PcgUnsupportedError};
 
-impl<'a, 'tcx: 'a> PcgVisitor<'_, 'a, 'tcx> {
+impl<'a, 'tcx: 'a, Ctxt: HasBorrowCheckerCtxt<'a, 'tcx>> PcgVisitor<'_, 'a, 'tcx, Ctxt>
+where
+    SymbolicCapability<'a>: CapabilityOps<Ctxt>,
+{
     // The label that should be used when referencing (after PostOperands), the
     // value at the place before the move.
     pub(crate) fn pre_operand_move_label(&self) -> SnapshotLocation {

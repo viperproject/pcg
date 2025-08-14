@@ -7,15 +7,12 @@
 use crate::{
     owned_pcg::{LocalExpansions, OwnedPcgLocal},
     pcg::{
-        CapabilityKind,
-        ctxt::AnalysisCtxt,
-        place_capabilities::{
+        ctxt::AnalysisCtxt, place_capabilities::{
             PlaceCapabilitiesInterface, PlaceCapabilitiesReader, SymbolicPlaceCapabilities,
-        },
-        triple::{PlaceCondition, Triple},
+        }, triple::{PlaceCondition, Triple}, CapabilityKind, CapabilityOps, SymbolicCapability
     },
     pcg_validity_assert,
-    utils::{CompilerCtxt, LocalMutationIsAllowed, display::DisplayWithCompilerCtxt},
+    utils::{display::DisplayWithCompilerCtxt, CompilerCtxt, HasBorrowCheckerCtxt, HasCompilerCtxt, LocalMutationIsAllowed},
 };
 
 use crate::rustc_interface::middle::mir::RETURN_PLACE;
@@ -27,8 +24,8 @@ impl<'tcx> OwnedPcgData<'tcx> {
         &self,
         pre: PlaceCondition<'tcx>,
         capabilities: &SymbolicPlaceCapabilities<'a, 'tcx>,
-        ctxt: CompilerCtxt<'a, 'tcx>,
-    ) {
+        ctxt: impl HasBorrowCheckerCtxt<'a, 'tcx>,
+    ) where 'tcx: 'a{
         match pre {
             PlaceCondition::ExpandTwoPhase(_place) => {}
             PlaceCondition::Unalloc(local) => {
@@ -54,7 +51,7 @@ impl<'tcx> OwnedPcgData<'tcx> {
                         pcg_validity_assert!(
                             !place.projects_shared_ref(ctxt),
                             "Cannot get exclusive on projection of shared ref {}",
-                            place.to_short_string(ctxt)
+                            place.to_short_string(ctxt.bc_ctxt())
                         );
                     }
                     CapabilityKind::ShallowExclusive => unreachable!(),
@@ -73,7 +70,7 @@ impl<'tcx> OwnedPcgData<'tcx> {
                             false,
                             [ctxt],
                             "No capability for {}",
-                            place.to_short_string(ctxt)
+                            place.to_short_string(ctxt.bc_ctxt())
                         );
                     }
                 }
@@ -88,13 +85,16 @@ impl<'tcx> OwnedPcgData<'tcx> {
             PlaceCondition::RemoveCapability(_) => unreachable!(),
         }
     }
-    pub(crate) fn ensures<'a>(
+    pub(crate) fn ensures<'a, Ctxt: HasBorrowCheckerCtxt<'a, 'tcx>>(
         &mut self,
         t: Triple<'tcx>,
         place_capabilities: &mut SymbolicPlaceCapabilities<'a, 'tcx>,
-        ctxt: AnalysisCtxt<'a, 'tcx>,
-    ) {
-        self.check_pre_satisfied(t.pre(), place_capabilities, ctxt.ctxt);
+        ctxt: Ctxt,
+    ) where
+        'tcx: 'a,
+        SymbolicCapability<'a>: CapabilityOps<Ctxt>,
+    {
+        self.check_pre_satisfied(t.pre(), place_capabilities, ctxt);
         let Some(post) = t.post() else {
             return;
         };
@@ -102,7 +102,7 @@ impl<'tcx> OwnedPcgData<'tcx> {
             PlaceCondition::Return => unreachable!(),
             PlaceCondition::Unalloc(local) => {
                 self[local] = OwnedPcgLocal::Unallocated;
-                place_capabilities.remove_all_for_local(local, ctxt.ctxt);
+                place_capabilities.remove_all_for_local(local, ctxt);
             }
             PlaceCondition::AllocateOrDeallocate(local) => {
                 self[local] = OwnedPcgLocal::Allocated(LocalExpansions::new(local));

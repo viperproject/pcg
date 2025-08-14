@@ -9,7 +9,6 @@ use crate::borrow_pcg::graph::Conditioned;
 use crate::borrow_pcg::has_pcs_elem::LabelLifetimeProjectionPredicate;
 use crate::borrow_pcg::state::{BorrowStateMutRef, BorrowsStateLike};
 use crate::owned_pcg::RepackOp;
-use crate::pcg::CapabilityKind;
 use crate::pcg::ctxt::AnalysisCtxt;
 use crate::pcg::dot_graphs::{ToGraph, generate_dot_graph};
 use crate::pcg::obtain::{
@@ -19,6 +18,7 @@ use crate::pcg::obtain::{
 use crate::pcg::place_capabilities::{
     BlockType, PlaceCapabilitiesInterface, PlaceCapabilitiesReader, SymbolicPlaceCapabilities,
 };
+use crate::pcg::{CapabilityKind, CapabilityOps, SymbolicCapability};
 use crate::pcg::{
     EvalStmtPhase, PCGNodeLike, PcgDebugData, PcgMutRef, PcgNode, PcgRef, PcgRefLike,
 };
@@ -26,14 +26,17 @@ use crate::rustc_interface::middle::mir;
 use crate::utils::data_structures::HashSet;
 use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::maybe_old::MaybeLabelledPlace;
-use crate::utils::{CompilerCtxt, HasBorrowCheckerCtxt, HasPlace};
+use crate::utils::{CompilerCtxt, HasBorrowCheckerCtxt, HasCompilerCtxt, HasPlace};
 use std::cmp::Ordering;
 
 use crate::utils::{Place, SnapshotLocation};
 
 use super::{PcgError, PcgVisitor};
-impl<'a, 'tcx: 'a> PcgVisitor<'_, 'a, 'tcx> {
-    pub(crate) fn place_obtainer(&mut self) -> PlaceObtainer<'_, 'a, 'tcx> {
+impl<'a, 'tcx: 'a, Ctxt: HasBorrowCheckerCtxt<'a, 'tcx>> PcgVisitor<'_, 'a, 'tcx, Ctxt>
+where
+    SymbolicCapability<'a>: CapabilityOps<Ctxt>,
+{
+    pub(crate) fn place_obtainer(&mut self) -> PlaceObtainer<'_, 'a, 'tcx, Ctxt> {
         let prev_snapshot_location = self.prev_snapshot_location();
         let pcg_ref = self.pcg.into();
         PlaceObtainer::new(
@@ -57,7 +60,11 @@ impl<'a, 'tcx: 'a> PcgVisitor<'_, 'a, 'tcx> {
     }
 }
 
-impl<'state, 'a: 'state, 'tcx: 'a> PlaceCollapser<'a, 'tcx> for PlaceObtainer<'state, 'a, 'tcx> {
+impl<'state, 'a: 'state, 'tcx: 'a, Ctxt: HasBorrowCheckerCtxt<'a, 'tcx>> PlaceCollapser<'a, 'tcx>
+    for PlaceObtainer<'state, 'a, 'tcx, Ctxt>
+where
+    SymbolicCapability<'a>: CapabilityOps<Ctxt>,
+{
     fn get_local_expansions(&self, local: mir::Local) -> &crate::owned_pcg::LocalExpansions<'tcx> {
         self.pcg.owned.locals()[local].get_allocated()
     }
@@ -89,7 +96,11 @@ impl<'state, 'a: 'state, 'tcx: 'a> PlaceCollapser<'a, 'tcx> for PlaceObtainer<'s
     }
 }
 
-impl<'state, 'a: 'state, 'tcx: 'a> PlaceObtainer<'state, 'a, 'tcx> {
+impl<'state, 'a: 'state, 'tcx: 'a, Ctxt: HasBorrowCheckerCtxt<'a, 'tcx>>
+    PlaceObtainer<'state, 'a, 'tcx, Ctxt>
+where
+    SymbolicCapability<'a>: CapabilityOps<Ctxt>,
+{
     fn restore_place(&mut self, place: Place<'tcx>, context: &str) -> Result<(), PcgError> {
         // The place to restore could come from a local that was conditionally
         // allocated and therefore we can't get back to it, and certainly
@@ -129,7 +140,7 @@ impl<'state, 'a: 'state, 'tcx: 'a> PlaceObtainer<'state, 'a, 'tcx> {
                         rp.with_placeholder_label(self.ctxt).into(),
                         format!(
                             "Place {} unblocked: remove placeholder label of rps of newly unblocked nodes",
-                            place.to_short_string(self.ctxt.ctxt)
+                            place.to_short_string(self.ctxt.bc_ctxt())
                         ),
                     )
                     .into(),
@@ -142,12 +153,12 @@ impl<'state, 'a: 'state, 'tcx: 'a> PlaceObtainer<'state, 'a, 'tcx> {
         edge: &BorrowPcgEdgeKind<'tcx>,
     ) -> Result<(), PcgError> {
         let fg = self.pcg.borrow.graph.frozen_graph();
-        let blocked_nodes = edge.blocked_nodes(self.ctxt.ctxt);
+        let blocked_nodes = edge.blocked_nodes(self.ctxt.ctxt());
 
         // After removing an edge, some nodes may become accessible, their capabilities should be restored
         let to_restore = blocked_nodes
             .into_iter()
-            .filter(|node| !fg.has_edge_blocking(*node, self.ctxt.ctxt))
+            .filter(|node| !fg.has_edge_blocking(*node, self.ctxt.bc_ctxt()))
             .collect::<Vec<_>>();
 
         for node in to_restore {
@@ -302,7 +313,7 @@ impl<'state, 'a: 'state, 'tcx: 'a> PlaceObtainer<'state, 'a, 'tcx> {
                             for rp in place.lifetime_projections(self.ctxt) {
                                 tracing::debug!(
                                     "labeling region projection: {}",
-                                    rp.to_short_string(self.ctxt.ctxt)
+                                    rp.to_short_string(self.ctxt.bc_ctxt())
                                 );
                                 self.record_and_apply_action(
                                     BorrowPcgAction::label_lifetime_projection(
@@ -324,7 +335,7 @@ impl<'state, 'a: 'state, 'tcx: 'a> PlaceObtainer<'state, 'a, 'tcx> {
                 if self.ctxt.bc().is_dead(
                     borrow
                         .assigned_lifetime_projection(self.ctxt)
-                        .to_pcg_node(self.ctxt.ctxt),
+                        .to_pcg_node(self.ctxt.bc_ctxt()),
                     self.location(),
                 ) && let MaybeLabelledPlace::Current(place) = borrow.assigned_ref()
                     && let Some(existing_cap) = self.pcg.capabilities.get(place, self.ctxt)
@@ -400,7 +411,7 @@ impl<'state, 'a: 'state, 'tcx: 'a> PlaceObtainer<'state, 'a, 'tcx> {
     pub(crate) fn upgrade_read_to_exclusive(&mut self, place: Place<'tcx>) -> Result<(), PcgError> {
         tracing::debug!(
             "upgrade_read_to_exclusive: {}",
-            place.to_short_string(self.ctxt.ctxt)
+            place.to_short_string(self.ctxt.bc_ctxt())
         );
         self.record_and_apply_action(
             BorrowPcgAction::restore_capability(
@@ -420,7 +431,7 @@ impl<'state, 'a: 'state, 'tcx: 'a> PlaceObtainer<'state, 'a, 'tcx> {
     pub(crate) fn new(
         pcg: PcgMutRef<'state, 'a, 'tcx>,
         actions: Option<&'state mut Vec<PcgAction<'tcx>>>,
-        ctxt: AnalysisCtxt<'a, 'tcx>,
+        ctxt: Ctxt,
         location: mir::Location,
         prev_snapshot_location: SnapshotLocation,
         debug_data: Option<&'state mut PcgDebugData>,
@@ -469,7 +480,10 @@ impl<'state, 'a: 'state, 'tcx: 'a> PlaceObtainer<'state, 'a, 'tcx> {
         &mut self,
         action: PcgAction<'tcx>,
     ) -> Result<bool, PcgError> {
-        tracing::debug!("Applying Action: {}", action.debug_line(self.ctxt.ctxt));
+        tracing::debug!(
+            "Applying Action: {}",
+            action.debug_line(self.ctxt.bc_ctxt())
+        );
         let analysis_ctxt = self.ctxt;
         let result = match &action {
             PcgAction::Borrow(action) => self.pcg.borrow.apply_action(
@@ -537,8 +551,7 @@ impl<'state, 'a: 'state, 'tcx: 'a> PlaceObtainer<'state, 'a, 'tcx> {
                 capabilities: self.pcg.capabilities,
             };
             generate_dot_graph(
-                location.block,
-                location.statement_index,
+                location,
                 ToGraph::Action(phase, actions.len()),
                 pcg_ref,
                 self.debug_data.as_deref(),
@@ -556,13 +569,21 @@ impl<'state, 'a: 'state, 'tcx: 'a> PlaceObtainer<'state, 'a, 'tcx> {
     }
 }
 
-impl<'state, 'mir: 'state, 'tcx> ActionApplier<'tcx> for PlaceObtainer<'state, 'mir, 'tcx> {
+impl<'state, 'a: 'state, 'tcx: 'a, Ctxt: HasBorrowCheckerCtxt<'a, 'tcx>> ActionApplier<'tcx>
+    for PlaceObtainer<'state, 'a, 'tcx, Ctxt>
+where
+    SymbolicCapability<'a>: CapabilityOps<Ctxt>,
+{
     fn apply_action(&mut self, action: PcgAction<'tcx>) -> Result<bool, PcgError> {
         self.record_and_apply_action(action)
     }
 }
 
-impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
+impl<'state, 'a: 'state, 'tcx: 'a, Ctxt: HasBorrowCheckerCtxt<'a, 'tcx>>
+    PlaceObtainer<'state, 'a, 'tcx, Ctxt>
+where
+    SymbolicCapability<'a>: CapabilityOps<Ctxt>,
+{
     /// Ensures that the place is expanded to the given place, with a certain
     /// capability.
     ///
@@ -635,14 +656,14 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
             self.collapse_owned_places_and_lifetime_projections_to(
                 place,
                 collapse_cap,
-                format!("Obtain {}", place.to_short_string(self.ctxt.ctxt)),
+                format!("Obtain {}", place.to_short_string(self.ctxt.bc_ctxt())),
                 self.ctxt,
             )?;
             self.render_debug_graph(
                 None,
                 &format!(
                     "after step 2 (collapse owned places and lifetime projections to {})",
-                    place.to_short_string(self.ctxt.ctxt)
+                    place.to_short_string(self.ctxt.bc_ctxt())
                 ),
             );
         }
@@ -652,7 +673,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
             tracing::debug!(
                 "Obtain {:?} to place {} in phase {:?}",
                 obtain_type,
-                place.to_short_string(self.ctxt.ctxt),
+                place.to_short_string(self.ctxt.bc_ctxt()),
                 self.phase()
             );
             // It's possible that we want to obtain exclusive or write permission to
@@ -717,7 +738,11 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
     }
 }
 
-impl<'pcg, 'mir: 'pcg, 'tcx> PlaceExpander<'mir, 'tcx> for PlaceObtainer<'pcg, 'mir, 'tcx> {
+impl<'pcg, 'a: 'pcg, 'tcx: 'a, Ctxt: HasBorrowCheckerCtxt<'a, 'tcx>> PlaceExpander<'a, 'tcx>
+    for PlaceObtainer<'pcg, 'a, 'tcx, Ctxt>
+where
+    SymbolicCapability<'a>: CapabilityOps<Ctxt>,
+{
     fn contains_owned_expansion_to(&self, target: Place<'tcx>) -> bool {
         self.pcg.owned.locals()[target.local]
             .get_allocated()
