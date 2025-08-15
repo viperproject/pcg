@@ -1,17 +1,14 @@
 use crate::{
     owned_pcg::{LocalExpansions, OwnedPcgLocal},
     pcg::{
-        CapabilityKind, CapabilityOps, PcgError, PcgUnsupportedError, SymbolicCapability,
-        obtain::ObtainType,
-        place_capabilities::PlaceCapabilitiesInterface,
-        triple::{PlaceCondition, Triple},
+        obtain::ObtainType, place_capabilities::PlaceCapabilitiesInterface, triple::{PlaceCondition, Triple}, CapabilityKind, CapabilityOps, PcgError, PcgUnsupportedError, SymbolicCapability
     },
-    utils::HasBorrowCheckerCtxt,
+    utils::{DataflowCtxt, HasBorrowCheckerCtxt},
 };
 
 use super::PcgVisitor;
 
-impl<'a, 'tcx: 'a, Ctxt: HasBorrowCheckerCtxt<'a, 'tcx>> PcgVisitor<'_, 'a, 'tcx, Ctxt>
+impl<'a, 'tcx: 'a, Ctxt: DataflowCtxt<'a, 'tcx>> PcgVisitor<'_, 'a, 'tcx, Ctxt>
 where
     SymbolicCapability<'a>: CapabilityOps<Ctxt>,
 {

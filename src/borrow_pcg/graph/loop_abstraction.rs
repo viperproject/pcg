@@ -370,7 +370,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 statement_index: 0,
             },
             snapshot_location,
-            None,
         );
         let mut to_obtain: Vec<PlaceUsage<'tcx>> = vec![];
         for place_usage in to_expand.iter() {

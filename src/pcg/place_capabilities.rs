@@ -310,13 +310,15 @@ impl<'tcx> HasValidityCheck<'tcx> for PlaceCapabilities<'tcx> {
     }
 }
 
-impl<'tcx, T: Copy + std::fmt::Debug> DebugLines<CompilerCtxt<'_, 'tcx>>
-    for PlaceCapabilities<'tcx, T>
-{
+impl<'tcx> DebugLines<CompilerCtxt<'_, 'tcx>> for SymbolicPlaceCapabilities<'_, 'tcx> {
     fn debug_lines(&self, repacker: CompilerCtxt<'_, 'tcx>) -> Vec<String> {
         self.iter()
             .map(|(node, capability)| {
-                format!("{}: {:?}", node.to_short_string(repacker), capability)
+                format!(
+                    "{}: {:?}",
+                    node.to_short_string(repacker),
+                    capability.expect_concrete()
+                )
             })
             .sorted()
             .collect()

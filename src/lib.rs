@@ -308,19 +308,27 @@ pub fn run_pcg<'a, 'tcx>(
     let body = pcg_ctxt.compiler_ctxt.body();
     let tcx = pcg_ctxt.compiler_ctxt.tcx();
     let mut analysis = compute_fixpoint(AnalysisEngine(engine), tcx, body);
-    for state in analysis.results.entry_states.iter_mut() {
-        state.complete();
+    for (block, state) in analysis.results.entry_states.iter_enumerated_mut() {
+        let engine = &analysis.results.analysis;
+        let ctxt = engine.analysis_ctxt(block);
+        state.complete(ctxt);
     }
     if let Some(dir_path) = &visualization_output_path {
         for block in body.basic_blocks.indices() {
-            let state = analysis.entry_set_for_block(block).expect_results();
+            let state = analysis.entry_set_for_block(block);
+            if state.is_bottom() {
+                continue;
+            }
+            let state = state.expect_results();
             let block_iterations_json_file =
                 format!("{}/block_{}_iterations.json", dir_path, block.index());
-            state
-                .dot_graphs()
-                .unwrap()
-                .borrow()
-                .write_json_file(&block_iterations_json_file);
+            let ctxt = analysis.results.analysis.analysis_ctxt(block);
+            if let Some(graphs) = ctxt.graphs {
+                graphs
+                    .dot_graphs
+                    .borrow()
+                    .write_json_file(&block_iterations_json_file);
+            }
         }
     }
     let mut fpcs_analysis = owned_pcg::PcgAnalysis::new(analysis.into_results_cursor(body));

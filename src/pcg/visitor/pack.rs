@@ -7,9 +7,9 @@ use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::borrow_pcg::edge_data::EdgeData;
 use crate::borrow_pcg::graph::Conditioned;
 use crate::borrow_pcg::graph::frozen::FrozenGraphRef;
-use crate::pcg::{CapabilityOps, PcgNode, SymbolicCapability};
 use crate::pcg::obtain::{PlaceCollapser, PlaceObtainer};
-use crate::utils::Place;
+use crate::pcg::{CapabilityOps, PcgNode, SymbolicCapability};
+use crate::utils::{DataflowCtxt, Place};
 use crate::utils::data_structures::{HashMap, HashSet};
 use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::maybe_old::MaybeLabelledPlace;
@@ -88,8 +88,7 @@ impl<'tcx> EdgesToRemove<'tcx> {
     }
 }
 
-impl<'pcg, 'a: 'pcg, 'tcx: 'a, Ctxt: HasBorrowCheckerCtxt<'a, 'tcx>>
-    PlaceObtainer<'pcg, 'a, 'tcx, Ctxt>
+impl<'pcg, 'a: 'pcg, 'tcx: 'a, Ctxt: DataflowCtxt<'a, 'tcx>> PlaceObtainer<'pcg, 'a, 'tcx, Ctxt>
 where
     SymbolicCapability<'a>: CapabilityOps<Ctxt>,
 {

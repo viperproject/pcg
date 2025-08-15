@@ -438,6 +438,11 @@ impl<'a, 'tcx> CapabilityOps<AnalysisCtxt<'a, 'tcx>> for SymbolicCapability<'a> 
         if self == other {
             return Some(self);
         }
+        if let SymbolicCapability::Concrete(c) = self {
+            if let SymbolicCapability::Concrete(other) = other {
+                return c.minimum(other).map(SymbolicCapability::Concrete);
+            }
+        }
         Some(SymbolicCapability::Minimum(
             ctxt.alloc(self),
             ctxt.alloc(other),

@@ -23,18 +23,14 @@ use crate::{
     r#loop::PlaceUsageType,
     owned_pcg::{ExpandedPlace, LocalExpansions, RepackCollapse, RepackOp},
     pcg::{
-        CapabilityKind, PCGNodeLike, PcgDebugData, PcgError, PcgMutRef, PcgRefLike,
-        ctxt::AnalysisCtxt,
-        place_capabilities::{
+        ctxt::AnalysisCtxt, place_capabilities::{
             BlockType, PlaceCapabilitiesInterface, PlaceCapabilitiesReader,
             SymbolicPlaceCapabilities,
-        },
+        }, CapabilityKind, PCGNodeLike, PcgBlockDebugVisualizationGraphs, PcgError, PcgMutRef, PcgRefLike
     },
     rustc_interface::middle::mir,
     utils::{
-        CompilerCtxt, DebugImgcat, HasBorrowCheckerCtxt, HasCompilerCtxt, HasPlace, Place,
-        ProjectionKind, ShallowExpansion, SnapshotLocation, data_structures::HashSet,
-        display::DisplayWithCompilerCtxt,
+        data_structures::HashSet, display::DisplayWithCompilerCtxt, CompilerCtxt, DataflowCtxt, DebugImgcat, HasBorrowCheckerCtxt, HasCompilerCtxt, HasPlace, Place, ProjectionKind, ShallowExpansion, SnapshotLocation
     },
 };
 
@@ -44,10 +40,9 @@ pub(crate) struct PlaceObtainer<'state, 'a, 'tcx, Ctxt = AnalysisCtxt<'a, 'tcx>>
     pub(crate) actions: Option<&'state mut Vec<PcgAction<'tcx>>>,
     pub(crate) location: mir::Location,
     pub(crate) prev_snapshot_location: SnapshotLocation,
-    pub(crate) debug_data: Option<&'state mut PcgDebugData>,
 }
 
-impl<'a, 'tcx: 'a, Ctxt: HasBorrowCheckerCtxt<'a, 'tcx>> RenderDebugGraph
+impl<'a, 'tcx: 'a, Ctxt: DataflowCtxt<'a, 'tcx>> RenderDebugGraph
     for PlaceObtainer<'_, 'a, 'tcx, Ctxt>
 {
     fn render_debug_graph(&self, debug_imgcat: Option<DebugImgcat>, comment: &str) {
@@ -60,15 +55,31 @@ impl<'a, 'tcx: 'a, Ctxt: HasBorrowCheckerCtxt<'a, 'tcx>> RenderDebugGraph
     }
 }
 
-impl <Ctxt> HasSnapshotLocation for PlaceObtainer<'_, '_, '_, Ctxt> {
+impl<Ctxt> HasSnapshotLocation for PlaceObtainer<'_, '_, '_, Ctxt> {
     fn prev_snapshot_location(&self) -> SnapshotLocation {
         self.prev_snapshot_location
     }
 }
 
-impl <Ctxt> PlaceObtainer<'_, '_, '_, Ctxt> {
+impl<'state, 'a, 'tcx, Ctxt> PlaceObtainer<'state, 'a, 'tcx, Ctxt> {
     pub(crate) fn location(&self) -> mir::Location {
         self.location
+    }
+
+    pub(crate) fn new(
+        pcg: PcgMutRef<'state, 'a, 'tcx>,
+        actions: Option<&'state mut Vec<PcgAction<'tcx>>>,
+        ctxt: Ctxt,
+        location: mir::Location,
+        prev_snapshot_location: SnapshotLocation,
+    ) -> Self {
+        Self {
+            pcg,
+            ctxt,
+            actions,
+            location,
+            prev_snapshot_location,
+        }
     }
 }
 

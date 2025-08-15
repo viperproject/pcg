@@ -4,20 +4,27 @@ use crate::pcg::place_capabilities::{
 };
 use crate::pcg::{
     BodyAnalysis, CapabilityConstraint, CapabilityKind, CapabilityRule, CapabilityRules,
-    CapabilityVar, Choice, ChoiceIdx, IntroduceConstraints, PcgArena, SymbolicCapability,
-    SymbolicCapabilityCtxt,
+    CapabilityVar, Choice, ChoiceIdx, DataflowStmtPhase, IntroduceConstraints, PcgArena,
+    PcgBlockDebugVisualizationGraphs, PcgRef, SymbolicCapability, SymbolicCapabilityCtxt,
 };
 use crate::rustc_interface::middle::{mir, ty};
 use crate::utils::data_structures::HashMap;
 use crate::utils::logging::LogPredicate;
 use crate::utils::{
-    CompilerCtxt, HasBorrowCheckerCtxt, HasCompilerCtxt, PcgSettings, Place, SETTINGS,
-    SnapshotLocation,
+    CompilerCtxt, DataflowCtxt, HasBorrowCheckerCtxt, HasCompilerCtxt, PcgSettings, Place,
+    SETTINGS, SnapshotLocation, StmtGraphs, ToGraph,
 };
+use crate::visualization::write_pcg_dot_graph_to_file;
 
 impl<'a, 'tcx: 'a> std::fmt::Debug for AnalysisCtxt<'a, 'tcx> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "AnalysisCtxt {{ block: {:?} }}", self.block)
+    }
+}
+
+impl<'a, 'tcx: 'a> DataflowCtxt<'a, 'tcx> for AnalysisCtxt<'a, 'tcx> {
+    fn try_into_analysis_ctxt(self) -> Option<AnalysisCtxt<'a, 'tcx>> {
+        Some(self)
     }
 }
 
@@ -28,10 +35,49 @@ pub(crate) struct AnalysisCtxt<'a, 'tcx> {
     pub(crate) settings: &'a PcgSettings<'a>,
     pub(crate) symbolic_capability_ctxt: SymbolicCapabilityCtxt<'a, 'tcx>,
     pub(crate) block: mir::BasicBlock,
+    pub(crate) graphs: Option<PcgBlockDebugVisualizationGraphs<'a>>,
     pub(crate) arena: PcgArena<'a>,
 }
 
+fn dot_filename_for(output_dir: &str, relative_filename: &str) -> String {
+    format!("{}/{}", output_dir, relative_filename)
+}
+
 impl<'a, 'tcx: 'a> AnalysisCtxt<'a, 'tcx> {
+    pub(crate) fn generate_pcg_debug_visualization_graph<'pcg>(
+        self,
+        location: mir::Location,
+        to_graph: ToGraph,
+        pcg: PcgRef<'pcg, 'a, 'tcx>,
+    ) {
+        if location.block.as_usize() == 0 {
+            assert!(!matches!(
+                to_graph,
+                ToGraph::Phase(DataflowStmtPhase::Join(_))
+            ));
+        }
+        if let Some(debug_data) = self.graphs {
+            let relative_filename = StmtGraphs::relative_filename(location, to_graph);
+            let filename = dot_filename_for(&debug_data.dot_output_dir, &relative_filename);
+            match to_graph {
+                ToGraph::Action(phase, action_idx) => {
+                    debug_data.dot_graphs.borrow_mut().insert_for_action(
+                        location,
+                        phase,
+                        action_idx,
+                        relative_filename,
+                    );
+                }
+                ToGraph::Phase(phase) => debug_data.dot_graphs.borrow_mut().insert_for_phase(
+                    location.statement_index,
+                    phase,
+                    relative_filename,
+                ),
+            }
+
+            write_pcg_dot_graph_to_file(pcg, self, location, &filename).unwrap();
+        }
+    }
     pub(crate) fn alloc<T>(&self, val: T) -> &'a mut T {
         self.arena.alloc(val)
     }
@@ -183,12 +229,14 @@ impl<'a, 'tcx> AnalysisCtxt<'a, 'tcx> {
         body_analysis: &'a BodyAnalysis<'a, 'tcx>,
         symbolic_capability_ctxt: SymbolicCapabilityCtxt<'a, 'tcx>,
         arena: PcgArena<'a>,
+        graphs: Option<PcgBlockDebugVisualizationGraphs<'a>>,
     ) -> Self {
         Self {
             ctxt,
             body_analysis,
             settings: &SETTINGS,
             block,
+            graphs,
             symbolic_capability_ctxt,
             arena,
         }

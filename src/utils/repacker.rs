@@ -4,23 +4,28 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+use std::collections::BTreeMap;
+
+use serde::Serialize;
+use serde_derive::Serialize;
+
 use crate::{
     borrow_checker::BorrowCheckerInterface,
     borrow_pcg::borrow_pcg_expansion::PlaceExpansion,
     owned_pcg::RepackGuide,
+    pcg::{ctxt::AnalysisCtxt, DataflowStmtPhase, EvalStmtPhase, PcgBlockDebugVisualizationGraphs, PcgRef},
     pcg_validity_assert,
     rustc_interface::{
-        FieldIdx, PlaceTy, RustBitSet,
-        index::Idx,
-        middle::{
+        index::Idx, middle::{
             mir::{
-                BasicBlock, Body, HasLocalDecls, Local, Mutability, Place as MirPlace, PlaceElem,
-                ProjectionElem, VarDebugInfoContents,
+                self, BasicBlock, Body, HasLocalDecls, Local, Mutability, Place as MirPlace,
+                PlaceElem, ProjectionElem, VarDebugInfoContents,
             },
             ty::{TyCtxt, TyKind},
-        },
+        }, FieldIdx, PlaceTy, RustBitSet
     },
     validity_checks_enabled,
+    visualization::write_pcg_dot_graph_to_file,
 };
 
 use crate::rustc_interface::mir_dataflow;
@@ -163,6 +168,67 @@ pub trait HasCompilerCtxt<'a, 'tcx>: Copy {
     }
 }
 
+#[derive(Clone, Copy)]
+pub(crate) enum ToGraph {
+    Phase(DataflowStmtPhase),
+    Action(EvalStmtPhase, usize),
+}
+
+#[derive(Clone, Serialize, Default, Debug)]
+pub(crate) struct StmtGraphs {
+    at_phase: Vec<(DataflowStmtPhase, String)>,
+    actions: BTreeMap<EvalStmtPhase, Vec<String>>,
+}
+
+impl StmtGraphs {
+    pub(crate) fn relative_filename(location: mir::Location, to_graph: ToGraph) -> String {
+        match to_graph {
+            ToGraph::Phase(phase) => {
+                format!(
+                    "{:?}_stmt_{}_{}.dot",
+                    location.block,
+                    location.statement_index,
+                    phase.to_filename_str_part()
+                )
+            }
+            ToGraph::Action(phase, action_idx) => {
+                format!(
+                    "{:?}_stmt_{}_{:?}_action_{}.dot",
+                    location.block, location.statement_index, phase, action_idx,
+                )
+            }
+        }
+    }
+
+    pub(crate) fn insert_for_phase(&mut self, phase: DataflowStmtPhase, filename: String) {
+        self.at_phase.push((phase, filename));
+    }
+
+    pub(crate) fn insert_for_action(
+        &mut self,
+        phase: EvalStmtPhase,
+        action_idx: usize,
+        filename: String,
+    ) {
+        let within_phase = self.actions.entry(phase).or_default();
+        assert_eq!(
+            within_phase.len(),
+            action_idx,
+            "Action index {} isn't equal to number of existing actions for {:?}",
+            action_idx,
+            phase
+        );
+        within_phase.push(filename);
+    }
+
+    pub(crate) fn write_json_file(&self, filename: &str) {
+        std::fs::write(filename, serde_json::to_string_pretty(&self).unwrap()).unwrap();
+    }
+}
+
+pub(crate) trait DataflowCtxt<'a, 'tcx: 'a>: HasBorrowCheckerCtxt<'a, 'tcx> {
+    fn try_into_analysis_ctxt(self) -> Option<AnalysisCtxt<'a, 'tcx>>;
+}
 pub trait HasBorrowCheckerCtxt<'a, 'tcx, BC = &'a dyn BorrowCheckerInterface<'tcx>>:
     HasCompilerCtxt<'a, 'tcx>
 {
@@ -203,10 +269,7 @@ pub struct CompilerCtxt<'a, 'tcx, T = &'a dyn BorrowCheckerInterface<'tcx>> {
 
 impl<'a, 'tcx, T: Copy> std::fmt::Debug for CompilerCtxt<'a, 'tcx, T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "CompilerCtxt",
-        )
+        write!(f, "CompilerCtxt",)
     }
 }
 

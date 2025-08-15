@@ -10,11 +10,11 @@ use crate::pcg_validity_assert;
 use crate::rustc_interface::middle::mir::{Statement, StatementKind};
 
 use crate::utils::visitor::FallableVisitor;
-use crate::utils::{self, HasBorrowCheckerCtxt};
+use crate::utils::{self, DataflowCtxt, HasBorrowCheckerCtxt};
 
 use super::{EvalStmtPhase, PcgError};
 
-impl<'a, 'tcx: 'a, Ctxt: HasBorrowCheckerCtxt<'a, 'tcx>> PcgVisitor<'_, 'a, 'tcx, Ctxt>
+impl<'a, 'tcx: 'a, Ctxt: DataflowCtxt<'a, 'tcx>> PcgVisitor<'_, 'a, 'tcx, Ctxt>
 where
     SymbolicCapability<'a>: CapabilityOps<Ctxt>,
 {

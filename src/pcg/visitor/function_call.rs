@@ -12,7 +12,7 @@ use crate::utils::display::DisplayWithCompilerCtxt;
 
 use super::PcgError;
 use crate::rustc_interface::middle::ty::{self};
-use crate::utils::{self, HasBorrowCheckerCtxt, HasCompilerCtxt, SnapshotLocation};
+use crate::utils::{self, DataflowCtxt, HasBorrowCheckerCtxt, HasCompilerCtxt, SnapshotLocation};
 
 fn get_function_data<'a, 'tcx: 'a>(
     func: &Operand<'tcx>,
@@ -25,7 +25,7 @@ fn get_function_data<'a, 'tcx: 'a>(
     }
 }
 
-impl<'a, 'tcx: 'a, Ctxt: HasBorrowCheckerCtxt<'a, 'tcx>> PcgVisitor<'_, 'a, 'tcx, Ctxt>
+impl<'a, 'tcx: 'a, Ctxt: DataflowCtxt<'a, 'tcx>> PcgVisitor<'_, 'a, 'tcx, Ctxt>
 where
     SymbolicCapability<'a>: CapabilityOps<Ctxt>,
 {

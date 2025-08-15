@@ -11,7 +11,7 @@ use crate::pcg::place_capabilities::{
 };
 use crate::pcg::triple::TripleWalker;
 use crate::pcg::{CapabilityKind, CapabilityOps};
-use crate::pcg::{PcgDebugData, SymbolicCapability};
+use crate::pcg::{PcgBlockDebugVisualizationGraphs, SymbolicCapability};
 use crate::rustc_interface::middle::mir::{self, Location, Operand, Rvalue, Statement, Terminator};
 use crate::utils::data_structures::HashSet;
 use crate::utils::display::DisplayWithCompilerCtxt;
@@ -20,7 +20,7 @@ use crate::action::PcgActions;
 use crate::utils::maybe_old::MaybeLabelledPlace;
 use crate::utils::visitor::FallableVisitor;
 use crate::utils::{
-    self, AnalysisLocation, HasBorrowCheckerCtxt, HasCompilerCtxt, HasPlace, Place,
+    self, AnalysisLocation, DataflowCtxt, HasBorrowCheckerCtxt, HasCompilerCtxt, HasPlace, Place,
     SnapshotLocation,
 };
 
@@ -40,10 +40,9 @@ pub(crate) struct PcgVisitor<'pcg, 'a, 'tcx, Ctxt = AnalysisCtxt<'a, 'tcx>> {
     actions: PcgActions<'tcx>,
     analysis_location: AnalysisLocation,
     tw: &'pcg TripleWalker<'a, 'tcx>,
-    debug_data: Option<PcgDebugData>,
 }
 
-impl<'pcg, 'a, 'tcx: 'a, Ctxt: HasBorrowCheckerCtxt<'a, 'tcx>> PcgVisitor<'pcg, 'a, 'tcx, Ctxt>
+impl<'pcg, 'a, 'tcx: 'a, Ctxt: DataflowCtxt<'a, 'tcx>> PcgVisitor<'pcg, 'a, 'tcx, Ctxt>
 where
     SymbolicCapability<'a>: CapabilityOps<Ctxt>,
 {
@@ -52,10 +51,9 @@ where
         tw: &'pcg TripleWalker<'a, 'tcx>,
         analysis_location: AnalysisLocation,
         analysis_object: AnalysisObject<'_, 'tcx>,
-        debug_data: Option<PcgDebugData>,
         ctxt: Ctxt,
     ) -> Result<PcgActions<'tcx>, PcgError> {
-        let visitor = Self::new(pcg, ctxt, tw, analysis_location, debug_data);
+        let visitor = Self::new(pcg, ctxt, tw, analysis_location);
         let actions = visitor.apply(analysis_object)?;
         Ok(actions)
     }
@@ -65,7 +63,6 @@ where
         ctxt: Ctxt,
         tw: &'pcg TripleWalker<'a, 'tcx>,
         analysis_location: AnalysisLocation,
-        debug_data: Option<PcgDebugData>,
     ) -> Self {
         Self {
             pcg,
@@ -73,7 +70,6 @@ where
             actions: PcgActions::default(),
             analysis_location,
             tw,
-            debug_data,
         }
     }
 
@@ -217,7 +213,7 @@ where
     }
 }
 
-impl<'a, 'tcx: 'a, Ctxt: HasBorrowCheckerCtxt<'a, 'tcx>> FallableVisitor<'tcx>
+impl<'a, 'tcx: 'a, Ctxt: DataflowCtxt<'a, 'tcx>> FallableVisitor<'tcx>
     for PcgVisitor<'_, 'a, 'tcx, Ctxt>
 where
     SymbolicCapability<'a>: CapabilityOps<Ctxt>,
@@ -327,7 +323,7 @@ where
     }
 }
 
-impl<'state, 'a, 'tcx: 'a, Ctxt: HasBorrowCheckerCtxt<'a, 'tcx>>
+impl<'state, 'a, 'tcx: 'a, Ctxt: DataflowCtxt<'a, 'tcx>>
     PlaceObtainer<'state, 'a, 'tcx, Ctxt>
 where
     SymbolicCapability<'a>: CapabilityOps<Ctxt>,
@@ -402,7 +398,7 @@ where
     }
 }
 
-impl<'a, 'tcx: 'a, Ctxt: HasBorrowCheckerCtxt<'a, 'tcx>> PcgVisitor<'_, 'a, 'tcx, Ctxt>
+impl<'a, 'tcx: 'a, Ctxt: DataflowCtxt<'a, 'tcx>> PcgVisitor<'_, 'a, 'tcx, Ctxt>
 where
     SymbolicCapability<'a>: CapabilityOps<Ctxt>,
 {

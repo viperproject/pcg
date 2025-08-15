@@ -31,15 +31,14 @@ type MirGraph = {
   edges: MirGraphEdge[];
 };
 
-export type IterationActions = Record<string, string[]>;
+export type StmtActions = Record<string, string[]>;
 
-export type PcgIteration = {
+export type PcgStmt = {
   at_phase: [string, string][];
-  actions: IterationActions;
+  actions: StmtActions;
 };
 
-export type PcgStmtIterations = { iterations: PcgIteration[] };
-export type PcgBlockDotGraphs = PcgStmtIterations[];
+export type PcgBlockDotGraphs = PcgStmt[];
 
 const fetchJsonFile = async (filePath: string) => {
   const response = await fetch(filePath);

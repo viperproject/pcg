@@ -10,7 +10,6 @@ use crate::borrow_pcg::has_pcs_elem::LabelLifetimeProjectionPredicate;
 use crate::borrow_pcg::state::{BorrowStateMutRef, BorrowsStateLike};
 use crate::owned_pcg::RepackOp;
 use crate::pcg::ctxt::AnalysisCtxt;
-use crate::pcg::dot_graphs::{ToGraph, generate_dot_graph};
 use crate::pcg::obtain::{
     ActionApplier, HasSnapshotLocation, ObtainType, PlaceCollapser, PlaceExpander, PlaceObtainer,
     RenderDebugGraph,
@@ -20,19 +19,22 @@ use crate::pcg::place_capabilities::{
 };
 use crate::pcg::{CapabilityKind, CapabilityOps, SymbolicCapability};
 use crate::pcg::{
-    EvalStmtPhase, PCGNodeLike, PcgDebugData, PcgMutRef, PcgNode, PcgRef, PcgRefLike,
+    EvalStmtPhase, PCGNodeLike, PcgBlockDebugVisualizationGraphs, PcgMutRef, PcgNode, PcgRef,
+    PcgRefLike,
 };
 use crate::rustc_interface::middle::mir;
 use crate::utils::data_structures::HashSet;
 use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::maybe_old::MaybeLabelledPlace;
-use crate::utils::{CompilerCtxt, HasBorrowCheckerCtxt, HasCompilerCtxt, HasPlace};
+use crate::utils::{
+    CompilerCtxt, DataflowCtxt, HasBorrowCheckerCtxt, HasCompilerCtxt, HasPlace, ToGraph,
+};
 use std::cmp::Ordering;
 
 use crate::utils::{Place, SnapshotLocation};
 
 use super::{PcgError, PcgVisitor};
-impl<'a, 'tcx: 'a, Ctxt: HasBorrowCheckerCtxt<'a, 'tcx>> PcgVisitor<'_, 'a, 'tcx, Ctxt>
+impl<'a, 'tcx: 'a, Ctxt: DataflowCtxt<'a, 'tcx>> PcgVisitor<'_, 'a, 'tcx, Ctxt>
 where
     SymbolicCapability<'a>: CapabilityOps<Ctxt>,
 {
@@ -45,11 +47,6 @@ where
             self.ctxt,
             self.analysis_location.location,
             prev_snapshot_location,
-            if let Some(debug_data) = &mut self.debug_data {
-                Some(debug_data)
-            } else {
-                None
-            },
         )
     }
     pub(crate) fn record_and_apply_action(
@@ -60,7 +57,7 @@ where
     }
 }
 
-impl<'state, 'a: 'state, 'tcx: 'a, Ctxt: HasBorrowCheckerCtxt<'a, 'tcx>> PlaceCollapser<'a, 'tcx>
+impl<'state, 'a: 'state, 'tcx: 'a, Ctxt: DataflowCtxt<'a, 'tcx>> PlaceCollapser<'a, 'tcx>
     for PlaceObtainer<'state, 'a, 'tcx, Ctxt>
 where
     SymbolicCapability<'a>: CapabilityOps<Ctxt>,
@@ -96,7 +93,7 @@ where
     }
 }
 
-impl<'state, 'a: 'state, 'tcx: 'a, Ctxt: HasBorrowCheckerCtxt<'a, 'tcx>>
+impl<'state, 'a: 'state, 'tcx: 'a, Ctxt: DataflowCtxt<'a, 'tcx>>
     PlaceObtainer<'state, 'a, 'tcx, Ctxt>
 where
     SymbolicCapability<'a>: CapabilityOps<Ctxt>,
@@ -428,24 +425,6 @@ where
         Ok(())
     }
 
-    pub(crate) fn new(
-        pcg: PcgMutRef<'state, 'a, 'tcx>,
-        actions: Option<&'state mut Vec<PcgAction<'tcx>>>,
-        ctxt: Ctxt,
-        location: mir::Location,
-        prev_snapshot_location: SnapshotLocation,
-        debug_data: Option<&'state mut PcgDebugData>,
-    ) -> Self {
-        Self {
-            pcg,
-            ctxt,
-            actions,
-            location,
-            prev_snapshot_location,
-            debug_data,
-        }
-    }
-
     // This function is called if we want to obtain non-read capability to `place`
     // If the closest ancestor of `place` has read capability, then we are allowed to
     // upgrade the capability of the ancestor to `E` in exchange for downgrading all
@@ -511,8 +490,7 @@ where
                 }
                 RepackOp::DerefShallowInit(from, to) => {
                     let target_places = from.expand_one_level(to, self.ctxt)?.expansion();
-                    let capability_projections =
-                        self.pcg.owned[from.local].get_allocated_mut();
+                    let capability_projections = self.pcg.owned[from.local].get_allocated_mut();
                     capability_projections.insert_expansion(
                         from,
                         PlaceExpansion::from_places(target_places.clone(), self.ctxt),
@@ -550,13 +528,13 @@ where
                 borrow: self.pcg.borrow.as_ref(),
                 capabilities: self.pcg.capabilities,
             };
-            generate_dot_graph(
-                location,
-                ToGraph::Action(phase, actions.len()),
-                pcg_ref,
-                self.debug_data.as_deref(),
-                self.ctxt,
-            );
+            if let Some(analysis_ctxt) = self.ctxt.try_into_analysis_ctxt() {
+                analysis_ctxt.generate_pcg_debug_visualization_graph(
+                    location,
+                    ToGraph::Action(phase, actions.len()),
+                    pcg_ref,
+                );
+            }
             actions.push(action);
         }
         Ok(result)
@@ -569,7 +547,7 @@ where
     }
 }
 
-impl<'state, 'a: 'state, 'tcx: 'a, Ctxt: HasBorrowCheckerCtxt<'a, 'tcx>> ActionApplier<'tcx>
+impl<'state, 'a: 'state, 'tcx: 'a, Ctxt: DataflowCtxt<'a, 'tcx>> ActionApplier<'tcx>
     for PlaceObtainer<'state, 'a, 'tcx, Ctxt>
 where
     SymbolicCapability<'a>: CapabilityOps<Ctxt>,
@@ -579,7 +557,7 @@ where
     }
 }
 
-impl<'state, 'a: 'state, 'tcx: 'a, Ctxt: HasBorrowCheckerCtxt<'a, 'tcx>>
+impl<'state, 'a: 'state, 'tcx: 'a, Ctxt: DataflowCtxt<'a, 'tcx>>
     PlaceObtainer<'state, 'a, 'tcx, Ctxt>
 where
     SymbolicCapability<'a>: CapabilityOps<Ctxt>,
@@ -738,7 +716,7 @@ where
     }
 }
 
-impl<'pcg, 'a: 'pcg, 'tcx: 'a, Ctxt: HasBorrowCheckerCtxt<'a, 'tcx>> PlaceExpander<'a, 'tcx>
+impl<'pcg, 'a: 'pcg, 'tcx: 'a, Ctxt: DataflowCtxt<'a, 'tcx>> PlaceExpander<'a, 'tcx>
     for PlaceObtainer<'pcg, 'a, 'tcx, Ctxt>
 where
     SymbolicCapability<'a>: CapabilityOps<Ctxt>,

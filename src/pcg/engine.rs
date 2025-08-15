@@ -14,8 +14,8 @@ use bit_set::BitSet;
 use derive_more::From;
 
 use super::{
-    DataflowStmtPhase, ErrorState, EvalStmtPhase, PcgDebugData, PcgError, domain::PcgDomain,
-    visitor::PcgVisitor,
+    DataflowStmtPhase, ErrorState, EvalStmtPhase, PcgBlockDebugVisualizationGraphs, PcgError,
+    domain::PcgDomain, visitor::PcgVisitor,
 };
 use crate::{
     BodyAndBorrows,
@@ -38,8 +38,8 @@ use crate::{
         mir_dataflow::{Forward, move_paths::MoveData},
     },
     utils::{
-        AnalysisLocation, HasBorrowCheckerCtxt, MAX_NODES, domain_data::DomainDataIndex,
-        visitor::FallableVisitor,
+        AnalysisLocation, DataflowCtxt, HasBorrowCheckerCtxt, MAX_NODES,
+        domain_data::DomainDataIndex, visitor::FallableVisitor,
     },
 };
 use crate::{
@@ -117,9 +117,9 @@ impl<'tcx> From<borrowck::BodyWithBorrowckFacts<'tcx>> for BodyWithBorrowckFacts
     }
 }
 
-struct PCGEngineDebugData {
-    debug_output_dir: String,
-    dot_graphs: IndexVec<BasicBlock, Rc<RefCell<PcgDotGraphsForBlock>>>,
+struct PCGEngineDebugData<'a> {
+    debug_output_dir: &'a str,
+    dot_graphs: IndexVec<BasicBlock, &'a RefCell<PcgDotGraphsForBlock>>,
 }
 
 type Block = usize;
@@ -130,7 +130,7 @@ pub(crate) type PcgArena<'a> = &'a PcgArenaStore;
 pub struct PcgEngine<'a, 'tcx: 'a> {
     pub(crate) ctxt: CompilerCtxt<'a, 'tcx>,
     pub(crate) symbolic_capability_ctxt: SymbolicCapabilityCtxt<'a, 'tcx>,
-    debug_data: Option<PCGEngineDebugData>,
+    debug_graphs: Option<PCGEngineDebugData<'a>>,
     body_analysis: &'a BodyAnalysis<'a, 'tcx>,
     pub(crate) reachable_blocks: BitSet<Block>,
     pub(crate) analyzed_blocks: BitSet<Block>,
@@ -186,28 +186,31 @@ pub(crate) enum AnalysisObject<'mir, 'tcx> {
 }
 
 impl<'a, 'tcx: 'a> PcgEngine<'a, 'tcx> {
-    fn dot_graphs(&self, block: BasicBlock) -> Option<Rc<RefCell<PcgDotGraphsForBlock>>> {
-        self.debug_data
-            .as_ref()
-            .map(|data| data.dot_graphs[block].clone())
+    fn dot_graphs(&self, block: BasicBlock) -> Option<PcgBlockDebugVisualizationGraphs<'a>> {
+        self.debug_graphs.as_ref().map(|data| {
+            PcgBlockDebugVisualizationGraphs::new(
+                block,
+                data.debug_output_dir,
+                data.dot_graphs[block],
+            )
+        })
     }
-    fn debug_output_dir(&self) -> Option<String> {
-        self.debug_data
-            .as_ref()
-            .map(|data| data.debug_output_dir.clone())
+    fn debug_output_dir(&self) -> Option<&'a str> {
+        self.debug_graphs.as_ref().map(|data| data.debug_output_dir)
     }
 
-    fn analysis_ctxt(&self, block: BasicBlock) -> AnalysisCtxt<'a, 'tcx> {
+    pub(crate) fn analysis_ctxt(&self, block: BasicBlock) -> AnalysisCtxt<'a, 'tcx> {
         AnalysisCtxt::new(
             self.ctxt,
             block,
             self.body_analysis,
             self.symbolic_capability_ctxt,
             self.arena,
+            self.dot_graphs(block),
         )
     }
 
-    fn visit_all_phases<Ctxt: HasBorrowCheckerCtxt<'a, 'tcx>>(
+    fn visit_all_phases<Ctxt: DataflowCtxt<'a, 'tcx>>(
         &mut self,
         state: &mut DomainDataWithCtxt<'a, 'tcx, Ctxt>,
         object: AnalysisObject<'_, 'tcx>,
@@ -229,7 +232,6 @@ impl<'a, 'tcx: 'a> PcgEngine<'a, 'tcx> {
                 &tw,
                 analysis_location,
                 object,
-                state.debug_data.clone(),
                 state.ctxt,
             )?;
             if let Some(next_phase) = phase.next() {
@@ -250,39 +252,16 @@ impl<'a, 'tcx: 'a> PcgEngine<'a, 'tcx> {
             return Ok(());
         }
         pcg_validity_assert!(!state.is_bottom(), "unexpected state: {:?}", state);
-        if let PcgDomain::Analysis(DataflowState::Pending(pending)) = state {
-            let mut iter = pending.into_iter();
-            let first = iter.next().unwrap();
-            let mut result: DomainDataWithCtxt<'a, 'tcx, AnalysisCtxt<'a, 'tcx>> =
-                DomainDataWithCtxt::new(
-                    PcgDomainData::from_incoming(location.block, &first),
-                    self.debug_data_for_block(location.block),
-                    self.analysis_ctxt(location.block),
-                );
-            let to_join = Rc::make_mut(&mut result.data.pcg.entry_state);
-            for domain in iter {
-                to_join.join(
-                    &domain.data.pcg.states.0.post_main,
-                    location.block,
-                    domain.ctxt.block,
-                    result.ctxt,
-                )?;
-            }
-            *state = PcgDomain::Analysis(DataflowState::Transfer(result));
-        }
+        if let PcgDomain::Analysis(state) = state {
+            state.ensure_transfer(self.analysis_ctxt(location.block))?;
 
-        if let AnalysisObject::Terminator(t) = object {
-            for block in successor_blocks(t) {
-                self.reachable_blocks.insert(block.index());
+            if let AnalysisObject::Terminator(t) = object {
+                for block in successor_blocks(t) {
+                    self.reachable_blocks.insert(block.index());
+                }
             }
-        }
 
-        tracing::info!("Analyzing {:?}", location);
-        if !self.analyzed_blocks.contains(location.block.index()) {
-            state
-                .expect_analysis_mut()
-                .expect_transfer_mut()
-                .register_new_debug_iteration(location);
+            tracing::info!("Analyzing {:?}", location);
         }
 
         let pcg_data = state.data_mut();
@@ -311,11 +290,14 @@ impl<'a, 'tcx: 'a> PcgEngine<'a, 'tcx> {
             _ => todo!(),
         }
 
-        self.analyzed_blocks.insert(location.block.index());
+        if let PcgDomain::Analysis(state) = state {
+            let state = state.expect_transfer();
+            self.analyzed_blocks.insert(location.block.index());
 
-        state.generate_dot_graph(DataflowStmtPhase::Initial, location, self.ctxt);
-        for phase in EvalStmtPhase::phases() {
-            state.generate_dot_graph(phase.into(), location, self.ctxt);
+            state.generate_dot_graph(DataflowStmtPhase::Initial, location, state.ctxt);
+            for phase in EvalStmtPhase::phases() {
+                state.generate_dot_graph(phase.into(), location, state.ctxt);
+            }
         }
         Ok(())
     }
@@ -331,13 +313,18 @@ impl<'a, 'tcx: 'a> PcgEngine<'a, 'tcx> {
                 std::fs::remove_dir_all(dir_path).expect("Failed to delete directory contents");
             }
             create_dir_all(dir_path).expect("Failed to create directory for DOT files");
-            let dot_graphs = IndexVec::from_fn_n(
-                |_| Rc::new(RefCell::new(PcgDotGraphsForBlock::default())),
-                ctxt.body().basic_blocks.len(),
-            );
+            let dot_graphs: IndexVec<BasicBlock, &'a RefCell<PcgDotGraphsForBlock>> =
+                IndexVec::from_fn_n(
+                    |b| {
+                        let blocks: &'a RefCell<PcgDotGraphsForBlock> =
+                            arena.alloc(RefCell::new(PcgDotGraphsForBlock::new(b, ctxt)));
+                        blocks
+                    },
+                    ctxt.body().basic_blocks.len(),
+                );
             PCGEngineDebugData {
-                debug_output_dir: dir_path.to_string(),
-                dot_graphs,
+                debug_output_dir: arena.alloc(dir_path.to_string()),
+                dot_graphs: dot_graphs,
             }
         });
         let mut reachable_blocks = BitSet::default();
@@ -349,7 +336,7 @@ impl<'a, 'tcx: 'a> PcgEngine<'a, 'tcx> {
             first_error: ErrorState::default(),
             reachable_blocks,
             ctxt,
-            debug_data,
+            debug_graphs: debug_data,
             body_analysis: arena.alloc(BodyAnalysis::new(ctxt, move_data)),
             arena,
             symbolic_capability_ctxt: SymbolicCapabilityCtxt::new(arena),
@@ -366,13 +353,6 @@ impl<'a, 'tcx: 'a> PcgEngine<'a, 'tcx> {
     fn analysis_complete(&self) -> bool {
         self.analyzed_blocks == self.reachable_blocks
     }
-
-    fn debug_data_for_block(&self, block: BasicBlock) -> Option<PcgDebugData> {
-        self.debug_output_dir().map(|dir| PcgDebugData {
-            dot_output_dir: dir,
-            dot_graphs: self.dot_graphs(block).unwrap(),
-        })
-    }
 }
 
 impl<'a, 'tcx: 'a> Analysis<'tcx> for PcgEngine<'a, 'tcx> {
@@ -388,10 +368,8 @@ impl<'a, 'tcx: 'a> Analysis<'tcx> for PcgEngine<'a, 'tcx> {
             *state = PcgDomain::Analysis(
                 DataflowState::Transfer(DomainDataWithCtxt::new(
                     PcgDomainData::start_block(self.analysis_ctxt(START_BLOCK)),
-                    self.debug_data_for_block(START_BLOCK),
-                    self.analysis_ctxt(START_BLOCK),
-                ))
-                .into(),
+                    self.analysis_ctxt(START_BLOCK)))
+                    .into(),
             );
         } else {
             pcg_validity_assert!(state.is_results(), "unexpected state: {:?}", state);

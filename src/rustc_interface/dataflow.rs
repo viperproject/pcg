@@ -1,5 +1,7 @@
 use std::cell::RefMut;
 
+use derive_more::Deref;
+
 use super::mir_dataflow::{self, ResultsCursor};
 
 use super::mir_dataflow::Analysis as MirAnalysis;
@@ -129,7 +131,7 @@ where
     }
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Deref, Debug, Eq, PartialEq)]
 pub struct AnalysisEngine<T>(pub(crate) T);
 
 impl<'tcx, T: Analysis<'tcx>> mir_dataflow::Analysis<'tcx> for AnalysisEngine<T> {
