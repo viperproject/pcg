@@ -669,6 +669,16 @@ impl<'a, 'tcx> PcgDomain<'a, 'tcx> {
         }
     }
 
+    pub(crate) fn expect_results_or_error(
+        &self,
+    ) -> Result<&DomainDataWithCtxt<'a, 'tcx, ResultsCtxt<'a, 'tcx>>, PcgError> {
+        match self {
+            PcgDomain::Results(dataflow_state) => Ok(dataflow_state),
+            PcgDomain::Error(pcg_error) => Err(pcg_error.clone()),
+            _ => panic!("Expected results or error domain, got {:?}", self),
+        }
+    }
+
     pub(crate) fn expect_results(&self) -> &DomainDataWithCtxt<'a, 'tcx, ResultsCtxt<'a, 'tcx>> {
         match self {
             PcgDomain::Results(dataflow_state) => dataflow_state,

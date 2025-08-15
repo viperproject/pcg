@@ -80,11 +80,7 @@ impl<'a, 'tcx> PcgAnalysis<'a, 'tcx> {
 
         self.cursor.seek_after_primary_effect(location);
 
-        let state = match self.cursor.get() {
-            crate::pcg::PcgDomain::Error(pcg_error) => return Err(pcg_error.clone()),
-            crate::pcg::PcgDomain::Results(results) => results,
-            other => unreachable!("Expected results domain, got {:?}", other),
-        };
+        let state = self.cursor.get().expect_results_or_error()?;
 
         let result = PcgLocation {
             location,
@@ -102,12 +98,8 @@ impl<'a, 'tcx> PcgAnalysis<'a, 'tcx> {
         self.curr_stmt = None;
         self.end_stmt = None;
 
-        let from_pcg = &self
-            .cursor
-            .get()
-            .expect_results()
-            .data
-            .pcg;
+        let state = self.cursor.get().expect_results_or_error()?;
+        let from_pcg = &state.data.pcg;
         let from_post_main = from_pcg.states[EvalStmtPhase::PostMain].clone();
         let self_abstraction_edges = from_post_main
             .borrow
@@ -132,12 +124,13 @@ impl<'a, 'tcx> PcgAnalysis<'a, 'tcx> {
             .into_iter()
             .map(|succ| {
                 self.cursor.seek_to_block_start(succ);
-                let to = &self
+                let to = self
                     .cursor
                     .get()
-                    .expect_results()
+                    .expect_results_or_error()?
                     .data
-                    .pcg;
+                    .pcg
+                    .clone();
 
                 let owned_bridge = from_post_main
                     .owned
