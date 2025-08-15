@@ -319,7 +319,6 @@ pub fn run_pcg<'a, 'tcx>(
             if state.is_bottom() {
                 continue;
             }
-            let state = state.expect_results();
             let block_iterations_json_file =
                 format!("{}/block_{}_iterations.json", dir_path, block.index());
             let ctxt = analysis.results.analysis.analysis_ctxt(block);
@@ -546,7 +545,7 @@ macro_rules! pcg_validity_assert {
 
     // Without brackets
     ($cond:expr) => {
-        pcg_validity_assert!($cond, "PCG Assertion Failed: {}", stringify!($cond));
+        pcg_validity_assert!($cond, "PCG Assertion Failed: {}", stringify!($cond))
     };
     ($cond:expr, $($arg:tt)*) => {
         if $crate::validity_checks_enabled() {

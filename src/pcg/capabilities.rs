@@ -1,10 +1,7 @@
 use crate::{
-    pcg::place_capabilities::{
-        PlaceCapabilitiesInterface, PlaceCapabilitiesReader,
-    },
     pcg_validity_assert,
     rustc_interface::index::{Idx, IndexVec},
-    utils::{HasCompilerCtxt, data_structures::HashMap},
+    utils::data_structures::HashMap,
 };
 use std::{
     cell::RefCell,
@@ -78,12 +75,14 @@ pub(crate) enum ConstraintResult<'arena> {
     Sat(Option<CapabilityConstraint<'arena>>),
 }
 
+#[allow(dead_code)]
 impl ConstraintResult<'_> {
     pub(crate) fn is_sat(&self) -> bool {
         matches!(self, ConstraintResult::Sat(_))
     }
 }
 
+#[allow(dead_code)]
 pub(crate) struct Choice {
     num_options: usize,
 }
@@ -120,6 +119,7 @@ impl Idx for Decision {
     }
 }
 
+#[allow(dead_code)]
 #[derive(Debug, PartialEq, Eq, Hash, Clone, Copy)]
 pub(crate) enum CapabilityConstraint<'a> {
     Decision {
@@ -138,6 +138,7 @@ pub(crate) enum CapabilityConstraint<'a> {
 }
 
 use CapabilityConstraint::*;
+#[allow(dead_code)]
 impl<'a> CapabilityConstraint<'a> {
     pub(crate) fn implies(self, other: Self, arena: PcgArena<'a>) -> Self {
         CapabilityConstraint::not(arena.alloc(self)).or(other, arena)
@@ -229,10 +230,6 @@ impl<'a> CapabilityConstraint<'a> {
     }
 }
 
-pub(crate) trait Lookup<V, T> {
-    fn get(&self, var: V) -> T;
-}
-
 #[derive(Debug, PartialEq, Eq)]
 pub(crate) struct SymbolicCapabilityConstraints<'tcx>(HashSet<CapabilityConstraint<'tcx>>);
 
@@ -279,6 +276,7 @@ impl<'tcx> CapabilityVars<'tcx> {
     }
 }
 
+#[allow(dead_code)]
 #[derive(Clone, Copy)]
 pub(crate) struct SymbolicCapabilityCtxt<'a, 'tcx> {
     constraints: &'a RefCell<SymbolicCapabilityConstraints<'a>>,
@@ -286,6 +284,7 @@ pub(crate) struct SymbolicCapabilityCtxt<'a, 'tcx> {
     choices: &'a RefCell<Choices>,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) enum IntroduceConstraints<'tcx> {
     ExpandForSharedBorrow {
@@ -296,6 +295,7 @@ pub(crate) enum IntroduceConstraints<'tcx> {
     },
 }
 
+#[allow(dead_code)]
 impl<'tcx> IntroduceConstraints<'tcx> {
     pub(crate) fn before_location(&self) -> SnapshotLocation {
         match self {

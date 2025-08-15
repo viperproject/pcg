@@ -392,7 +392,7 @@ where
     pub(crate) fn remove_all_for_local(
         &mut self,
         local: mir::Local,
-        ctxt: impl HasCompilerCtxt<'_, 'tcx>,
+        _ctxt: impl HasCompilerCtxt<'_, 'tcx>,
     ) {
         self.0.retain(|place, _| place.local != local);
     }

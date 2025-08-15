@@ -4,14 +4,12 @@ use crate::borrow_pcg::borrow_pcg_edge::BorrowPcgEdge;
 use crate::borrow_pcg::edge::outlives::{BorrowFlowEdge, BorrowFlowEdgeKind};
 use crate::borrow_pcg::region_projection::{LifetimeProjection, PcgRegion};
 use crate::owned_pcg::{OwnedPcg, RepackExpand};
+use crate::pcg::SymbolicCapability;
 use crate::pcg::ctxt::AnalysisCtxt;
 use crate::pcg::obtain::{PlaceCollapser, PlaceObtainer};
-use crate::pcg::place_capabilities::{
-    PlaceCapabilitiesInterface, PlaceCapabilitiesReader,
-};
+use crate::pcg::place_capabilities::{PlaceCapabilitiesInterface, PlaceCapabilitiesReader};
 use crate::pcg::triple::TripleWalker;
 use crate::pcg::{CapabilityKind, CapabilityOps};
-use crate::pcg::SymbolicCapability;
 use crate::rustc_interface::middle::mir::{self, Location, Operand, Rvalue, Statement, Terminator};
 use crate::utils::data_structures::HashSet;
 use crate::utils::display::DisplayWithCompilerCtxt;
@@ -20,8 +18,7 @@ use crate::action::PcgActions;
 use crate::utils::maybe_old::MaybeLabelledPlace;
 use crate::utils::visitor::FallableVisitor;
 use crate::utils::{
-    self, AnalysisLocation, DataflowCtxt, HasCompilerCtxt, HasPlace, Place,
-    SnapshotLocation,
+    self, AnalysisLocation, DataflowCtxt, HasCompilerCtxt, HasPlace, Place, SnapshotLocation,
 };
 
 use super::{AnalysisObject, EvalStmtPhase, Pcg, PcgError, PcgNode, PcgUnsupportedError};

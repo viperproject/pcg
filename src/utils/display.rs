@@ -218,32 +218,6 @@ impl<'tcx> Place<'tcx> {
     }
 }
 
-pub(crate) trait DisplayDiff<Ctxt> {
-    #[must_use]
-    fn fmt_diff(&self, to: &Self, ctxt: Ctxt) -> String;
-}
-
 pub(crate) trait DebugLines<Ctxt> {
     fn debug_lines(&self, ctxt: Ctxt) -> Vec<String>;
-}
-impl<Ctxt: Copy, T: DebugLines<Ctxt>> DisplayDiff<Ctxt> for T {
-    fn fmt_diff(&self, to: &Self, ctxt: Ctxt) -> String {
-        let self_lines = self.debug_lines(ctxt);
-        let to_lines = to.debug_lines(ctxt);
-        let mut result = Vec::new();
-
-        for line in self_lines.iter() {
-            if !to_lines.contains(line) {
-                result.push(format!("-{line}"));
-            }
-        }
-
-        for line in to_lines.iter() {
-            if !self_lines.contains(line) {
-                result.push(format!("+{line}"));
-            }
-        }
-
-        result.join("\n")
-    }
 }

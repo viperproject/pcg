@@ -33,6 +33,7 @@ pub(crate) struct AnalysisCtxt<'a, 'tcx> {
     pub(crate) ctxt: CompilerCtxt<'a, 'tcx>,
     pub(crate) body_analysis: &'a BodyAnalysis<'a, 'tcx>,
     pub(crate) settings: &'a PcgSettings<'a>,
+    #[allow(dead_code)]
     pub(crate) symbolic_capability_ctxt: SymbolicCapabilityCtxt<'a, 'tcx>,
     pub(crate) block: mir::BasicBlock,
     pub(crate) graphs: Option<PcgBlockDebugVisualizationGraphs<'a>>,
@@ -82,6 +83,7 @@ impl<'a, 'tcx: 'a> AnalysisCtxt<'a, 'tcx> {
         self.arena.alloc(val)
     }
 
+    #[allow(dead_code)]
     pub(crate) fn create_place_capability_inference_vars(
         self,
         places: impl Iterator<Item = Place<'tcx>>,
@@ -98,6 +100,7 @@ impl<'a, 'tcx: 'a> AnalysisCtxt<'a, 'tcx> {
             .collect()
     }
 
+    #[allow(dead_code)]
     pub(crate) fn get_or_create_place_capability_inference_vars(
         self,
         places: impl Iterator<Item = Place<'tcx>>,
@@ -137,6 +140,7 @@ impl<'a, 'tcx: 'a> AnalysisCtxt<'a, 'tcx> {
         }
     }
 
+    #[allow(dead_code)]
     fn get_application_rules(
         self,
         constraints: &IntroduceConstraints<'tcx>,
@@ -166,6 +170,7 @@ impl<'a, 'tcx: 'a> AnalysisCtxt<'a, 'tcx> {
         }
     }
 
+    #[allow(dead_code)]
     fn apply_capability_rules(
         self,
         constraints: &IntroduceConstraints<'tcx>,

@@ -9,11 +9,11 @@ use crate::borrow_pcg::graph::Conditioned;
 use crate::borrow_pcg::graph::frozen::FrozenGraphRef;
 use crate::pcg::obtain::{PlaceCollapser, PlaceObtainer};
 use crate::pcg::{CapabilityOps, PcgNode, SymbolicCapability};
+use crate::utils::HasPlace;
 use crate::utils::data_structures::{HashMap, HashSet};
 use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::maybe_old::MaybeLabelledPlace;
 use crate::utils::{DataflowCtxt, Place};
-use crate::utils::HasPlace;
 
 type Reason = Cow<'static, str>;
 

@@ -12,10 +12,7 @@ use crate::{
     borrow_checker::BorrowCheckerInterface,
     borrow_pcg::borrow_pcg_expansion::PlaceExpansion,
     owned_pcg::RepackGuide,
-    pcg::{
-        DataflowStmtPhase, EvalStmtPhase,
-        ctxt::AnalysisCtxt,
-    },
+    pcg::{DataflowStmtPhase, EvalStmtPhase, ctxt::AnalysisCtxt},
     pcg_validity_assert,
     rustc_interface::{
         FieldIdx, PlaceTy, RustBitSet,
@@ -222,10 +219,6 @@ impl StmtGraphs {
             phase
         );
         within_phase.push(filename);
-    }
-
-    pub(crate) fn write_json_file(&self, filename: &str) {
-        std::fs::write(filename, serde_json::to_string_pretty(&self).unwrap()).unwrap();
     }
 }
 

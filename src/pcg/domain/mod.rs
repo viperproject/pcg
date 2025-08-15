@@ -18,8 +18,8 @@ use crate::{
     borrow_checker::BorrowCheckerInterface,
     r#loop::{LoopAnalysis, LoopPlaceUsageAnalysis, PlaceUsages},
     pcg::{
-        CapabilityOps, SymbolicCapability, ctxt::AnalysisCtxt,
-        dot_graphs::PcgDotGraphsForBlock, place_capabilities::SymbolicPlaceCapabilities,
+        CapabilityOps, SymbolicCapability, ctxt::AnalysisCtxt, dot_graphs::PcgDotGraphsForBlock,
+        place_capabilities::SymbolicPlaceCapabilities,
     },
     pcg_validity_assert,
     rustc_interface::{
@@ -27,7 +27,8 @@ use crate::{
         mir_dataflow::{JoinSemiLattice, fmt::DebugWithContext, move_paths::MoveData},
     },
     utils::{
-        CompilerCtxt, DataflowCtxt, HasBorrowCheckerCtxt, HasCompilerCtxt, PANIC_ON_ERROR, Place, ToGraph,
+        CompilerCtxt, DataflowCtxt, HasBorrowCheckerCtxt, HasCompilerCtxt, PANIC_ON_ERROR, Place,
+        ToGraph,
         arena::PcgArenaRef,
         domain_data::{DomainData, DomainDataIndex},
         eval_stmt_data::EvalStmtData,
@@ -53,6 +54,7 @@ pub struct DataflowIterationDebugInfo {
 
 #[derive(Copy, Clone, Debug)]
 pub(crate) struct PcgBlockDebugVisualizationGraphs<'a> {
+    #[allow(dead_code)]
     block: BasicBlock,
     pub(crate) dot_output_dir: &'a str,
     pub(crate) dot_graphs: &'a RefCell<PcgDotGraphsForBlock>,
@@ -76,16 +78,6 @@ impl<'a> PcgBlockDebugVisualizationGraphs<'a> {
 pub struct PcgDomainData<'a, 'tcx, Capabilities = SymbolicPlaceCapabilities<'a, 'tcx>> {
     pub(crate) pcg: DomainData<PcgArenaRef<'a, Pcg<'a, 'tcx, Capabilities>>>,
     pub(crate) actions: EvalStmtData<PcgActions<'tcx>>,
-}
-
-pub(crate) trait HasBlock {
-    fn block(&self) -> mir::BasicBlock;
-}
-
-impl<'a, 'tcx> HasBlock for AnalysisCtxt<'a, 'tcx> {
-    fn block(&self) -> mir::BasicBlock {
-        self.block
-    }
 }
 
 impl<'a, 'tcx> PcgDomainData<'a, 'tcx> {
@@ -117,12 +109,6 @@ impl<'a, 'tcx> PcgDomainData<'a, 'tcx> {
 impl<Capabilities: PartialEq> PartialEq for PcgDomainData<'_, '_, Capabilities> {
     fn eq(&self, other: &Self) -> bool {
         self.pcg == other.pcg
-    }
-}
-
-impl<'a, 'tcx: 'a> PcgDomainData<'a, 'tcx> {
-    pub(crate) fn pcg_mut(&mut self, phase: DomainDataIndex) -> &mut Pcg<'a, 'tcx> {
-        PcgArenaRef::make_mut(&mut self.pcg[phase])
     }
 }
 
@@ -305,13 +291,6 @@ impl<'a, 'tcx, T> DataflowState<'a, 'tcx, T> {
         }
     }
 
-    pub(crate) fn expect_pending(&self) -> &PendingDataflowState<'a, 'tcx, T> {
-        match self {
-            DataflowState::Pending(pending) => pending,
-            _ => panic!("Expected pending domain, got {:?}", self),
-        }
-    }
-
     pub(crate) fn expect_transfer(&self) -> &DomainDataWithCtxt<'a, 'tcx, T> {
         match self {
             DataflowState::Transfer(transfer) => transfer,
@@ -342,8 +321,8 @@ impl<'a, 'tcx, T> Eq for DataflowState<'a, 'tcx, T> {}
 impl<'a, 'tcx, T> std::fmt::Debug for DataflowState<'a, 'tcx, T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            DataflowState::Pending(pending) => write!(f, "Pending"),
-            DataflowState::Transfer(transfer) => write!(f, "Transfer"),
+            DataflowState::Pending(_) => write!(f, "Pending"),
+            DataflowState::Transfer(_) => write!(f, "Transfer"),
         }
     }
 }
@@ -362,23 +341,11 @@ impl<'a, 'tcx: 'a> HasPcgDomainData<'a, 'tcx> for PcgDomain<'a, 'tcx> {
             _ => panic!("Expected analysis or results domain, got {:?}", self),
         }
     }
-
-    fn data_mut(&mut self) -> &mut PcgDomainData<'a, 'tcx> {
-        match self {
-            PcgDomain::Analysis(dataflow_state) => &mut dataflow_state.expect_transfer_mut().data,
-            PcgDomain::Results(data) => &mut data.data,
-            _ => panic!("Expected analysis or results domain, got {:?}", self),
-        }
-    }
 }
 
 impl<'a, 'tcx: 'a, T> HasPcgDomainData<'a, 'tcx> for DomainDataWithCtxt<'a, 'tcx, T> {
     fn data(&self) -> &PcgDomainData<'a, 'tcx> {
         &self.data
-    }
-
-    fn data_mut(&mut self) -> &mut PcgDomainData<'a, 'tcx> {
-        &mut self.data
     }
 }
 
@@ -401,7 +368,6 @@ impl<'a, 'tcx, T> PartialEq for DomainDataWithCtxt<'a, 'tcx, T> {
 }
 
 impl<'a, 'tcx, T: Eq> Eq for DomainDataWithCtxt<'a, 'tcx, T> {}
-
 
 #[derive(From, Clone)]
 pub enum PcgDomain<'a, 'tcx> {
@@ -496,24 +462,15 @@ impl<'a, 'tcx: 'a> HasCompilerCtxt<'a, 'tcx> for ResultsCtxt<'a, 'tcx> {
 }
 
 impl<'a, 'tcx> CapabilityOps<ResultsCtxt<'a, 'tcx>> for SymbolicCapability<'a> {
-    fn minimum(self, other: impl Into<Self>, ctxt: ResultsCtxt<'a, 'tcx>) -> Option<Self> {
+    fn minimum(self, other: impl Into<Self>, _ctxt: ResultsCtxt<'a, 'tcx>) -> Option<Self> {
         self.expect_concrete()
             .minimum(other.into().expect_concrete())
             .map(SymbolicCapability::Concrete)
     }
 }
 
-mod private {
-    
-
-    
-
-    
-}
-
 pub(crate) trait HasPcgDomainData<'a, 'tcx: 'a> {
     fn data(&self) -> &PcgDomainData<'a, 'tcx>;
-    fn data_mut(&mut self) -> &mut PcgDomainData<'a, 'tcx>;
 
     fn pcg(&self, phase: impl Into<DomainDataIndex>) -> &Pcg<'a, 'tcx> {
         &self.data().pcg[phase.into()]
@@ -663,13 +620,6 @@ impl<'a, 'tcx> PcgDomain<'a, 'tcx> {
             _ => panic!("Expected results or error domain, got {:?}", self),
         }
     }
-
-    pub(crate) fn expect_results(&self) -> &DomainDataWithCtxt<'a, 'tcx, ResultsCtxt<'a, 'tcx>> {
-        match self {
-            PcgDomain::Results(dataflow_state) => dataflow_state,
-            _ => panic!("Expected results domain, got {:?}", self),
-        }
-    }
 }
 
 impl JoinSemiLattice for PcgDomain<'_, '_> {
@@ -688,16 +638,16 @@ impl JoinSemiLattice for PcgDomain<'_, '_> {
                             PcgDomain::Analysis(DataflowState::Pending(vec![other.clone()].into()));
                         true
                     }
-                    PcgDomain::Error(pcg_error) => false,
+                    PcgDomain::Error(_) => false,
                     PcgDomain::Analysis(dataflow_state) => {
                         let self_dataflow_state = dataflow_state.expect_pending_mut();
                         self_dataflow_state.push(other.clone());
                         false
                     }
-                    PcgDomain::Results(domain_data_with_ctxt) => unreachable!(),
+                    PcgDomain::Results(_) => unreachable!(),
                 }
             }
-            PcgDomain::Results(domain_data_with_ctxt) => unreachable!(),
+            PcgDomain::Results(_) => unreachable!(),
         }
     }
 }

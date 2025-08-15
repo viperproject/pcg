@@ -17,17 +17,12 @@ use crate::pcg::place_capabilities::{
     BlockType, PlaceCapabilitiesInterface, PlaceCapabilitiesReader, SymbolicPlaceCapabilities,
 };
 use crate::pcg::{CapabilityKind, CapabilityOps, SymbolicCapability};
-use crate::pcg::{
-    EvalStmtPhase, PCGNodeLike, PcgNode, PcgRef,
-    PcgRefLike,
-};
+use crate::pcg::{EvalStmtPhase, PCGNodeLike, PcgNode, PcgRef, PcgRefLike};
 use crate::rustc_interface::middle::mir;
 use crate::utils::data_structures::HashSet;
 use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::maybe_old::MaybeLabelledPlace;
-use crate::utils::{
-    CompilerCtxt, DataflowCtxt, HasPlace, ToGraph,
-};
+use crate::utils::{CompilerCtxt, DataflowCtxt, HasPlace, ToGraph};
 use std::cmp::Ordering;
 
 use crate::utils::{Place, SnapshotLocation};
