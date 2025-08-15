@@ -80,7 +80,11 @@ impl<'a, 'tcx> PcgAnalysis<'a, 'tcx> {
 
         self.cursor.seek_after_primary_effect(location);
 
-        let state = self.cursor.get().expect_results();
+        let state = match self.cursor.get() {
+            crate::pcg::PcgDomain::Error(pcg_error) => return Err(pcg_error.clone()),
+            crate::pcg::PcgDomain::Results(results) => results,
+            other => unreachable!("Expected results domain, got {:?}", other),
+        };
 
         let result = PcgLocation {
             location,

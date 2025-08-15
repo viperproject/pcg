@@ -661,23 +661,8 @@ impl<'a, 'tcx> PcgDomain<'a, 'tcx> {
             _ => false,
         }
     }
-    pub(crate) fn expect_analysis(&self) -> &DataflowState<'a, 'tcx, AnalysisCtxt<'a, 'tcx>> {
-        match self {
-            PcgDomain::Analysis(dataflow_state) => dataflow_state,
-            _ => panic!("Expected analysis domain, got {:?}", self),
-        }
-    }
 
     pub(crate) fn take_analysis(self) -> DataflowState<'a, 'tcx, AnalysisCtxt<'a, 'tcx>> {
-        match self {
-            PcgDomain::Analysis(dataflow_state) => dataflow_state,
-            _ => panic!("Expected analysis domain, got {:?}", self),
-        }
-    }
-
-    pub(crate) fn expect_analysis_mut(
-        &mut self,
-    ) -> &mut DataflowState<'a, 'tcx, AnalysisCtxt<'a, 'tcx>> {
         match self {
             PcgDomain::Analysis(dataflow_state) => dataflow_state,
             _ => panic!("Expected analysis domain, got {:?}", self),
