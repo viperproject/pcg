@@ -9,7 +9,6 @@ use crate::borrow_pcg::graph::Conditioned;
 use crate::borrow_pcg::has_pcs_elem::LabelLifetimeProjectionPredicate;
 use crate::borrow_pcg::state::{BorrowStateMutRef, BorrowsStateLike};
 use crate::owned_pcg::RepackOp;
-use crate::pcg::ctxt::AnalysisCtxt;
 use crate::pcg::obtain::{
     ActionApplier, HasSnapshotLocation, ObtainType, PlaceCollapser, PlaceExpander, PlaceObtainer,
     RenderDebugGraph,
@@ -19,7 +18,7 @@ use crate::pcg::place_capabilities::{
 };
 use crate::pcg::{CapabilityKind, CapabilityOps, SymbolicCapability};
 use crate::pcg::{
-    EvalStmtPhase, PCGNodeLike, PcgBlockDebugVisualizationGraphs, PcgMutRef, PcgNode, PcgRef,
+    EvalStmtPhase, PCGNodeLike, PcgNode, PcgRef,
     PcgRefLike,
 };
 use crate::rustc_interface::middle::mir;
@@ -27,7 +26,7 @@ use crate::utils::data_structures::HashSet;
 use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::maybe_old::MaybeLabelledPlace;
 use crate::utils::{
-    CompilerCtxt, DataflowCtxt, HasBorrowCheckerCtxt, HasCompilerCtxt, HasPlace, ToGraph,
+    CompilerCtxt, DataflowCtxt, HasPlace, ToGraph,
 };
 use std::cmp::Ordering;
 

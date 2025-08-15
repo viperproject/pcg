@@ -4,7 +4,7 @@ use crate::pcg::place_capabilities::{
 };
 use crate::pcg::{
     BodyAnalysis, CapabilityConstraint, CapabilityKind, CapabilityRule, CapabilityRules,
-    CapabilityVar, Choice, ChoiceIdx, DataflowStmtPhase, IntroduceConstraints, PcgArena,
+    CapabilityVar, Choice, DataflowStmtPhase, IntroduceConstraints, PcgArena,
     PcgBlockDebugVisualizationGraphs, PcgRef, SymbolicCapability, SymbolicCapabilityCtxt,
 };
 use crate::rustc_interface::middle::{mir, ty};

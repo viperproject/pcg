@@ -6,7 +6,7 @@ use crate::{
         place_capabilities::PlaceCapabilitiesInterface,
         triple::{PlaceCondition, Triple},
     },
-    utils::{DataflowCtxt, HasBorrowCheckerCtxt},
+    utils::DataflowCtxt,
 };
 
 use super::PcgVisitor;

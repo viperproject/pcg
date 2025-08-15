@@ -17,7 +17,7 @@ use crate::{
         place_capabilities::{BlockType, PlaceCapabilitiesReader},
     },
     utils::{
-        DataflowCtxt, HasBorrowCheckerCtxt, Place, data_structures::HashSet,
+        DataflowCtxt, Place, data_structures::HashSet,
         display::DisplayWithCompilerCtxt,
     },
 };

@@ -7,9 +7,8 @@
 use std::fmt::{Debug, Formatter, Result};
 
 use crate::{
-    owned_pcg::RepackOp,
     pcg::{
-        CapabilityKind, CapabilityOps, PcgError,
+        CapabilityKind,
         ctxt::AnalysisCtxt,
         place_capabilities::{
             PlaceCapabilities, PlaceCapabilitiesInterface, SymbolicPlaceCapabilities,

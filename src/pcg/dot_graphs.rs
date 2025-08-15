@@ -1,12 +1,9 @@
-use std::collections::BTreeMap;
 
-use serde_derive::Serialize;
 
-use crate::pcg::{DataflowStmtPhase, EvalStmtPhase, PcgBlockDebugVisualizationGraphs, PcgRef};
+use crate::pcg::{DataflowStmtPhase, EvalStmtPhase};
 use crate::pcg_validity_assert;
 use crate::rustc_interface::middle::mir::{self, BasicBlock};
-use crate::utils::{CompilerCtxt, HasBorrowCheckerCtxt, StmtGraphs};
-use crate::visualization::write_pcg_dot_graph_to_file;
+use crate::utils::{CompilerCtxt, StmtGraphs};
 
 #[derive(Clone, Debug)]
 pub(crate) struct PcgDotGraphsForBlock {

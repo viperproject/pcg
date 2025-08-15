@@ -6,13 +6,13 @@ use crate::borrow_pcg::edge::abstraction::function::{FunctionCallAbstraction, Fu
 use crate::borrow_pcg::edge::abstraction::{AbstractionBlockEdge, AbstractionType};
 use crate::borrow_pcg::has_pcs_elem::LabelLifetimeProjectionPredicate;
 use crate::pcg::obtain::{HasSnapshotLocation, PlaceExpander};
-use crate::pcg::{CapabilityOps, SymbolicCapability, SymbolicCapabilityCtxt};
+use crate::pcg::{CapabilityOps, SymbolicCapability};
 use crate::rustc_interface::middle::mir::{Location, Operand};
 use crate::utils::display::DisplayWithCompilerCtxt;
 
 use super::PcgError;
 use crate::rustc_interface::middle::ty::{self};
-use crate::utils::{self, DataflowCtxt, HasBorrowCheckerCtxt, HasCompilerCtxt, SnapshotLocation};
+use crate::utils::{self, DataflowCtxt, HasCompilerCtxt, SnapshotLocation};
 
 fn get_function_data<'a, 'tcx: 'a>(
     func: &Operand<'tcx>,

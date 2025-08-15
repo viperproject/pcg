@@ -6,13 +6,13 @@ use crate::borrow_pcg::has_pcs_elem::LabelLifetimeProjectionPredicate;
 use crate::borrow_pcg::region_projection::{LifetimeProjection, MaybeRemoteRegionProjectionBase};
 use crate::pcg::obtain::{ActionApplier, HasSnapshotLocation, PlaceExpander};
 use crate::pcg::place_capabilities::PlaceCapabilitiesInterface;
-use crate::pcg::{CapabilityKind, CapabilityOps, SymbolicCapabilityCtxt};
+use crate::pcg::{CapabilityKind, CapabilityOps};
 use crate::pcg::{EvalStmtPhase, SymbolicCapability};
 use crate::rustc_interface::middle::mir::{self, Operand, Rvalue};
 
 use crate::rustc_interface::middle::ty::{self};
 use crate::utils::maybe_old::MaybeLabelledPlace;
-use crate::utils::{self, AnalysisLocation, DataflowCtxt, HasBorrowCheckerCtxt, SnapshotLocation};
+use crate::utils::{self, AnalysisLocation, DataflowCtxt, SnapshotLocation};
 
 use super::{PcgError, PcgUnsupportedError};
 

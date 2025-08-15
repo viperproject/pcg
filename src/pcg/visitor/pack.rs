@@ -13,7 +13,7 @@ use crate::utils::data_structures::{HashMap, HashSet};
 use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::maybe_old::MaybeLabelledPlace;
 use crate::utils::{DataflowCtxt, Place};
-use crate::utils::{HasBorrowCheckerCtxt, HasPlace};
+use crate::utils::HasPlace;
 
 type Reason = Cow<'static, str>;
 

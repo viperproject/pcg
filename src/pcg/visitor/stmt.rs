@@ -10,7 +10,7 @@ use crate::pcg_validity_assert;
 use crate::rustc_interface::middle::mir::{Statement, StatementKind};
 
 use crate::utils::visitor::FallableVisitor;
-use crate::utils::{self, DataflowCtxt, HasBorrowCheckerCtxt};
+use crate::utils::{self, DataflowCtxt};
 
 use super::{EvalStmtPhase, PcgError};
 

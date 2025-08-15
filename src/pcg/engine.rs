@@ -5,7 +5,7 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 use std::{
-    cell::{Cell, RefCell},
+    cell::RefCell,
     fs::create_dir_all,
     rc::Rc,
 };
@@ -27,7 +27,7 @@ use crate::{
     rustc_interface::{
         borrowck::{self, BorrowSet, LocationTable, PoloniusInput, RegionInferenceContext},
         dataflow::Analysis,
-        index::{Idx, IndexVec},
+        index::IndexVec,
         middle::{
             mir::{
                 self, BasicBlock, Body, Location, Promoted, START_BLOCK, Statement, Terminator,
@@ -38,8 +38,7 @@ use crate::{
         mir_dataflow::{Forward, move_paths::MoveData},
     },
     utils::{
-        AnalysisLocation, DataflowCtxt, HasBorrowCheckerCtxt, MAX_NODES,
-        domain_data::DomainDataIndex, visitor::FallableVisitor,
+        AnalysisLocation, DataflowCtxt, visitor::FallableVisitor,
     },
 };
 use crate::{

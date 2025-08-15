@@ -10,7 +10,7 @@ use crate::{
     borrows_imgcat_debug,
     owned_pcg::{OwnedPcg, join::data::JoinOwnedData},
     pcg::{
-        BodyAnalysis, CapabilityKind, CapabilityOps, PcgError, SymbolicCapability,
+        CapabilityKind, CapabilityOps, PcgError, SymbolicCapability,
         ctxt::AnalysisCtxt,
         place_capabilities::{
             PlaceCapabilities, PlaceCapabilitiesReader, SymbolicPlaceCapabilities,

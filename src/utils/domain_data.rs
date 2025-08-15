@@ -1,7 +1,6 @@
 use derive_more::From;
 
 use crate::pcg::EvalStmtPhase;
-use crate::utils::incoming_states::IncomingStates;
 
 use super::arena::PcgArenaRef;
 use super::eval_stmt_data::EvalStmtData;

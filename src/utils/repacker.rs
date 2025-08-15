@@ -6,7 +6,6 @@
 
 use std::collections::BTreeMap;
 
-use serde::Serialize;
 use serde_derive::Serialize;
 
 use crate::{
@@ -14,7 +13,7 @@ use crate::{
     borrow_pcg::borrow_pcg_expansion::PlaceExpansion,
     owned_pcg::RepackGuide,
     pcg::{
-        DataflowStmtPhase, EvalStmtPhase, PcgBlockDebugVisualizationGraphs, PcgRef,
+        DataflowStmtPhase, EvalStmtPhase,
         ctxt::AnalysisCtxt,
     },
     pcg_validity_assert,
@@ -30,7 +29,6 @@ use crate::{
         },
     },
     validity_checks_enabled,
-    visualization::write_pcg_dot_graph_to_file,
 };
 
 use crate::rustc_interface::mir_dataflow;

@@ -3,7 +3,7 @@
 use crate::{
     borrow_pcg::graph::join::JoinBorrowsArgs,
     pcg::{
-        CapabilityConstraint, CapabilityOps, SymbolicCapability,
+        CapabilityOps, SymbolicCapability,
         place_capabilities::{PlaceCapabilitiesReader, SymbolicPlaceCapabilities},
     },
     utils::HasBorrowCheckerCtxt,
@@ -25,11 +25,7 @@ use crate::{
     },
     pcg::{PcgError, ctxt::AnalysisCtxt, place_capabilities::PlaceCapabilitiesInterface},
     pcg_validity_assert,
-    utils::{
-        display::DisplayWithCompilerCtxt,
-        logging::{self, LogPredicate},
-        place::maybe_remote::MaybeRemotePlace,
-    },
+    utils::place::maybe_remote::MaybeRemotePlace,
 };
 use crate::{
     borrow_pcg::edge::kind::BorrowPcgEdgeKind, utils::place::maybe_old::MaybeLabelledPlace,

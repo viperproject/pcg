@@ -22,7 +22,7 @@ use crate::visualization::generate_borrows_dot_graph;
 use crate::{
     borrow_pcg::path_condition::ValidityConditions,
     rustc_interface::middle::{mir, mir::BasicBlock},
-    utils::{display::DisplayDiff, validity::HasValidityCheck},
+    utils::validity::HasValidityCheck,
     validity_checks_enabled,
 };
 

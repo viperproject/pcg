@@ -23,7 +23,7 @@ use crate::{
     r#loop::PlaceUsageType,
     owned_pcg::{ExpandedPlace, LocalExpansions, RepackCollapse, RepackOp},
     pcg::{
-        CapabilityKind, PCGNodeLike, PcgBlockDebugVisualizationGraphs, PcgError, PcgMutRef,
+        CapabilityKind, PCGNodeLike, PcgError, PcgMutRef,
         PcgRefLike,
         ctxt::AnalysisCtxt,
         place_capabilities::{

@@ -1,14 +1,10 @@
 use crate::{
-    pcg::place_capabilities::{
-        PlaceCapabilitiesInterface, PlaceCapabilitiesReader, SymbolicPlaceCapabilities,
-    },
     pcg_validity_assert,
     rustc_interface::index::{Idx, IndexVec},
-    rustc_interface::middle::mir,
-    utils::{HasCompilerCtxt, data_structures::HashMap},
+    utils::data_structures::HashMap,
 };
 use std::{
-    cell::{Cell, RefCell},
+    cell::RefCell,
     cmp::Ordering,
     fmt::{Debug, Formatter, Result},
 };

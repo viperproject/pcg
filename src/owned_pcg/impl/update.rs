@@ -8,7 +8,6 @@ use crate::{
     owned_pcg::{LocalExpansions, OwnedPcgLocal},
     pcg::{
         CapabilityKind, CapabilityOps, SymbolicCapability,
-        ctxt::AnalysisCtxt,
         place_capabilities::{
             PlaceCapabilitiesInterface, PlaceCapabilitiesReader, SymbolicPlaceCapabilities,
         },
@@ -16,7 +15,7 @@ use crate::{
     },
     pcg_validity_assert,
     utils::{
-        CompilerCtxt, HasBorrowCheckerCtxt, HasCompilerCtxt, LocalMutationIsAllowed,
+        HasBorrowCheckerCtxt, LocalMutationIsAllowed,
         display::DisplayWithCompilerCtxt,
     },
 };

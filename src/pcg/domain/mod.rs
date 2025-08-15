@@ -7,12 +7,10 @@
 use std::{
     cell::RefCell,
     fmt::{Debug, Formatter},
-    marker::PhantomData,
     rc::Rc,
 };
 
-use derive_more::{From, TryInto};
-use serde::{Serialize, Serializer};
+use derive_more::From;
 
 use crate::{
     AnalysisEngine,
@@ -20,7 +18,7 @@ use crate::{
     borrow_checker::BorrowCheckerInterface,
     r#loop::{LoopAnalysis, LoopPlaceUsageAnalysis, PlaceUsages},
     pcg::{
-        CapabilityOps, PcgArena, SymbolicCapability, ctxt::AnalysisCtxt,
+        CapabilityOps, SymbolicCapability, ctxt::AnalysisCtxt,
         dot_graphs::PcgDotGraphsForBlock, place_capabilities::SymbolicPlaceCapabilities,
     },
     pcg_validity_assert,
@@ -29,17 +27,13 @@ use crate::{
         mir_dataflow::{JoinSemiLattice, fmt::DebugWithContext, move_paths::MoveData},
     },
     utils::{
-        CompilerCtxt, DataflowCtxt, HasBorrowCheckerCtxt, HasCompilerCtxt, PANIC_ON_ERROR, Place,
-        StmtGraphs, ToGraph,
+        CompilerCtxt, DataflowCtxt, HasBorrowCheckerCtxt, HasCompilerCtxt, PANIC_ON_ERROR, Place, ToGraph,
         arena::PcgArenaRef,
-        data_structures::HashSet,
         domain_data::{DomainData, DomainDataIndex},
         eval_stmt_data::EvalStmtData,
-        incoming_states::IncomingStates,
         initialized::DefinitelyInitialized,
         liveness::PlaceLiveness,
     },
-    visualization::write_pcg_dot_graph_to_file,
 };
 
 mod dataflow_stmt_phase;
@@ -51,7 +45,6 @@ pub use eval_stmt_phase::*;
 pub use pcg::*;
 
 use super::PcgEngine;
-use crate::owned_pcg::OwnedPcg;
 
 #[derive(Copy, Clone)]
 pub struct DataflowIterationDebugInfo {
@@ -409,7 +402,6 @@ impl<'a, 'tcx, T> PartialEq for DomainDataWithCtxt<'a, 'tcx, T> {
 
 impl<'a, 'tcx, T: Eq> Eq for DomainDataWithCtxt<'a, 'tcx, T> {}
 
-use private::*;
 
 #[derive(From, Clone)]
 pub enum PcgDomain<'a, 'tcx> {
@@ -459,7 +451,7 @@ impl<'a, 'tcx: 'a> PcgDomain<'a, 'tcx> {
         if self.is_bottom() || self.is_error() {
             return;
         }
-        let mut domain = self.take();
+        let domain = self.take();
         *self = PcgDomain::Results(
             domain
                 .take_analysis()
@@ -512,18 +504,11 @@ impl<'a, 'tcx> CapabilityOps<ResultsCtxt<'a, 'tcx>> for SymbolicCapability<'a> {
 }
 
 mod private {
-    use std::rc::Rc;
+    
 
-    use derive_more::From;
+    
 
-    use crate::{
-        pcg::{
-            BodyAnalysis, DataflowStmtPhase, Pcg, PcgBlockDebugVisualizationGraphs, PcgDomainData,
-            PcgError, ResultsCtxt, ctxt::AnalysisCtxt,
-            place_capabilities::SymbolicPlaceCapabilities,
-        },
-        utils::{CompilerCtxt, domain_data::DomainDataIndex},
-    };
+    
 }
 
 pub(crate) trait HasPcgDomainData<'a, 'tcx: 'a> {
