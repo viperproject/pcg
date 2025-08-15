@@ -320,7 +320,7 @@ where
     }
 }
 
-impl<'state, 'a, 'tcx: 'a, Ctxt: DataflowCtxt<'a, 'tcx>> PlaceObtainer<'state, 'a, 'tcx, Ctxt>
+impl<'a, 'tcx: 'a, Ctxt: DataflowCtxt<'a, 'tcx>> PlaceObtainer<'_, 'a, 'tcx, Ctxt>
 where
     SymbolicCapability<'a>: CapabilityOps<Ctxt>,
 {

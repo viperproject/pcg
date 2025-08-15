@@ -263,7 +263,7 @@ pub struct CompilerCtxt<'a, 'tcx, T = &'a dyn BorrowCheckerInterface<'tcx>> {
     pub(crate) bc: T,
 }
 
-impl<'a, 'tcx, T: Copy> std::fmt::Debug for CompilerCtxt<'a, 'tcx, T> {
+impl<T: Copy> std::fmt::Debug for CompilerCtxt<'_, '_, T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "CompilerCtxt",)
     }

@@ -183,7 +183,7 @@ pub(crate) struct PendingDataflowState<'a, 'tcx, T> {
     pending: Vec<DomainDataWithCtxt<'a, 'tcx, T>>,
 }
 
-impl<'a, 'tcx, T> PartialEq for PendingDataflowState<'a, 'tcx, T> {
+impl<T> PartialEq for PendingDataflowState<'_, '_, T> {
     fn eq(&self, other: &Self) -> bool {
         self.pending == other.pending
     }
@@ -306,7 +306,7 @@ impl<'a, 'tcx, T> DataflowState<'a, 'tcx, T> {
     }
 }
 
-impl<'a, 'tcx, T> PartialEq for DataflowState<'a, 'tcx, T> {
+impl<T> PartialEq for DataflowState<'_, '_, T> {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (DataflowState::Pending(d1), DataflowState::Pending(d2)) => d1 == d2,
@@ -316,9 +316,9 @@ impl<'a, 'tcx, T> PartialEq for DataflowState<'a, 'tcx, T> {
     }
 }
 
-impl<'a, 'tcx, T> Eq for DataflowState<'a, 'tcx, T> {}
+impl<T> Eq for DataflowState<'_, '_, T> {}
 
-impl<'a, 'tcx, T> std::fmt::Debug for DataflowState<'a, 'tcx, T> {
+impl<T> std::fmt::Debug for DataflowState<'_, '_, T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             DataflowState::Pending(_) => write!(f, "Pending"),
@@ -361,13 +361,13 @@ impl<'a, 'tcx, T> DomainDataWithCtxt<'a, 'tcx, T> {
     }
 }
 
-impl<'a, 'tcx, T> PartialEq for DomainDataWithCtxt<'a, 'tcx, T> {
+impl<T> PartialEq for DomainDataWithCtxt<'_, '_, T> {
     fn eq(&self, other: &Self) -> bool {
         self.data == other.data
     }
 }
 
-impl<'a, 'tcx, T: Eq> Eq for DomainDataWithCtxt<'a, 'tcx, T> {}
+impl<T: Eq> Eq for DomainDataWithCtxt<'_, '_, T> {}
 
 #[derive(From, Clone)]
 pub enum PcgDomain<'a, 'tcx> {
@@ -377,9 +377,9 @@ pub enum PcgDomain<'a, 'tcx> {
     Results(DomainDataWithCtxt<'a, 'tcx, ResultsCtxt<'a, 'tcx>>),
 }
 
-impl<'a, 'tcx> Eq for PcgDomain<'a, 'tcx> {}
+impl Eq for PcgDomain<'_, '_> {}
 
-impl<'a, 'tcx> PartialEq for PcgDomain<'a, 'tcx> {
+impl PartialEq for PcgDomain<'_, '_> {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
             (PcgDomain::Bottom, PcgDomain::Bottom) => true,
@@ -628,7 +628,7 @@ impl JoinSemiLattice for PcgDomain<'_, '_> {
             PcgDomain::Bottom => false,
             PcgDomain::Error(e) => {
                 self.record_error(e.clone());
-                return false;
+                false
             }
             PcgDomain::Analysis(dataflow_state) => {
                 let other = dataflow_state.expect_transfer();

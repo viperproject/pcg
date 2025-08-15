@@ -218,7 +218,7 @@ impl<'a, 'tcx: 'a> PcgEngine<'a, 'tcx> {
                 eval_stmt_phase: phase,
             };
             domain.actions[phase] =
-                PcgVisitor::visit(curr, &tw, analysis_location, object, state.ctxt)?;
+                PcgVisitor::visit(curr, tw, analysis_location, object, state.ctxt)?;
             if let Some(next_phase) = phase.next() {
                 domain.pcg.states.0[next_phase] = domain.pcg.states.0[phase].clone();
             }
@@ -309,7 +309,7 @@ impl<'a, 'tcx: 'a> PcgEngine<'a, 'tcx> {
                 );
             PCGEngineDebugData {
                 debug_output_dir: arena.alloc(dir_path.to_string()),
-                dot_graphs: dot_graphs,
+                dot_graphs,
             }
         });
         let mut reachable_blocks = BitSet::default();
@@ -346,13 +346,10 @@ impl<'a, 'tcx: 'a> Analysis<'tcx> for PcgEngine<'a, 'tcx> {
 
     fn initialize_start_block(&self, _body: &Body<'tcx>, state: &mut Self::Domain) {
         if state.is_bottom() {
-            *state = PcgDomain::Analysis(
-                DataflowState::Transfer(DomainDataWithCtxt::new(
-                    PcgDomainData::start_block(self.analysis_ctxt(START_BLOCK)),
-                    self.analysis_ctxt(START_BLOCK),
-                ))
-                .into(),
-            );
+            *state = PcgDomain::Analysis(DataflowState::Transfer(DomainDataWithCtxt::new(
+                PcgDomainData::start_block(self.analysis_ctxt(START_BLOCK)),
+                self.analysis_ctxt(START_BLOCK),
+            )));
         } else {
             pcg_validity_assert!(state.is_results(), "unexpected state: {:?}", state);
         }

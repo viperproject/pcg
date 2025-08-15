@@ -59,7 +59,7 @@ impl<'a, 'tcx: 'a> AnalysisCtxt<'a, 'tcx> {
         }
         if let Some(debug_data) = self.graphs {
             let relative_filename = StmtGraphs::relative_filename(location, to_graph);
-            let filename = dot_filename_for(&debug_data.dot_output_dir, &relative_filename);
+            let filename = dot_filename_for(debug_data.dot_output_dir, &relative_filename);
             match to_graph {
                 ToGraph::Action(phase, action_idx) => {
                     debug_data.dot_graphs.borrow_mut().insert_for_action(
@@ -131,10 +131,7 @@ impl<'a, 'tcx: 'a> AnalysisCtxt<'a, 'tcx> {
         if let Some(cap) = capabilities.get(place, self) {
             cap
         } else {
-            let var = self
-                .symbolic_capability_ctxt
-                .introduce_var(place, location)
-                .into();
+            let var = self.symbolic_capability_ctxt.introduce_var(place, location);
             capabilities.insert(place, var, self);
             SymbolicCapability::Variable(var)
         }

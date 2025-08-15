@@ -342,7 +342,7 @@ pub(crate) enum CapabilityRules<'a, 'tcx> {
 
 impl<'a, 'tcx> CapabilityRules<'a, 'tcx> {
     pub(crate) fn one_of(rules: Vec<CapabilityRule<'a, 'tcx>>) -> Self {
-        Self::OneOf(IndexVec::from_iter(rules.into_iter()))
+        Self::OneOf(IndexVec::from_iter(rules))
     }
 }
 
@@ -420,7 +420,7 @@ impl CapabilityLike for CapabilityKind {
     }
 }
 
-impl<'a> CapabilityLike for SymbolicCapability<'a> {
+impl CapabilityLike for SymbolicCapability<'_> {
     fn expect_concrete(self) -> CapabilityKind {
         match self {
             SymbolicCapability::Concrete(c) => c,
@@ -455,7 +455,7 @@ impl<T> CapabilityOps<T> for CapabilityKind {
     }
 }
 
-impl<'a> SymbolicCapability<'a> {
+impl SymbolicCapability<'_> {
     pub(crate) fn expect_concrete(self) -> CapabilityKind {
         match self {
             SymbolicCapability::Concrete(c) => c,
