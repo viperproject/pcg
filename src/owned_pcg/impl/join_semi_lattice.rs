@@ -65,10 +65,8 @@ impl<'pcg, 'a, 'tcx> JoinOwnedData<'pcg, 'a, 'tcx, &'pcg mut OwnedPcg<'tcx>> {
         let mut changed = false;
         for local in 0..self.owned.num_locals() {
             let local: mir::Local = local.into();
-            let mut owned_local_data =
-                self.map_owned(|owned| owned.get_mut(local).unwrap());
-            let other_owned_local_data =
-                other.map_owned(|owned| owned.get(local).unwrap());
+            let mut owned_local_data = self.map_owned(|owned| owned.get_mut(local).unwrap());
+            let other_owned_local_data = other.map_owned(|owned| owned.get(local).unwrap());
             let local_changed = owned_local_data.join(other_owned_local_data, ctxt)?;
             changed = changed || local_changed;
         }

@@ -369,9 +369,9 @@ impl<'tcx> BorrowsState<'tcx> {
         args: JoinBorrowsArgs<'_, 'a, 'tcx>,
         ctxt: AnalysisCtxt<'a, 'tcx>,
     ) -> Result<(), PcgError> {
-        self.graph.join(&other.graph, &self.validity_conditions, args, ctxt)?;
-        self
-            .validity_conditions
+        self.graph
+            .join(&other.graph, &self.validity_conditions, args, ctxt)?;
+        self.validity_conditions
             .join(&other.validity_conditions, ctxt.body());
         Ok(())
     }

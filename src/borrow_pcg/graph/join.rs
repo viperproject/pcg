@@ -116,13 +116,10 @@ impl<'tcx> BorrowsGraph<'tcx> {
             if borrows_imgcat_debug(self_block, Some(DebugImgcat::JoinLoop))
                 && let Ok(dot_graph) = generate_borrows_dot_graph(ctxt, args.capabilities, self)
             {
-                DotGraph::render_with_imgcat(
-                    &dot_graph,
-                    &format!("After join (loop):"),
-                )
-                .unwrap_or_else(|e| {
-                    eprintln!("Error rendering self graph: {e}");
-                });
+                DotGraph::render_with_imgcat(&dot_graph, &format!("After join (loop):"))
+                    .unwrap_or_else(|e| {
+                        eprintln!("Error rendering self graph: {e}");
+                    });
             }
             pcg_validity_assert!(
                 self.is_valid(ctxt),

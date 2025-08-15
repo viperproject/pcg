@@ -13,16 +13,21 @@ use crate::{
     borrow_checker::BorrowCheckerInterface,
     borrow_pcg::borrow_pcg_expansion::PlaceExpansion,
     owned_pcg::RepackGuide,
-    pcg::{ctxt::AnalysisCtxt, DataflowStmtPhase, EvalStmtPhase, PcgBlockDebugVisualizationGraphs, PcgRef},
+    pcg::{
+        DataflowStmtPhase, EvalStmtPhase, PcgBlockDebugVisualizationGraphs, PcgRef,
+        ctxt::AnalysisCtxt,
+    },
     pcg_validity_assert,
     rustc_interface::{
-        index::Idx, middle::{
+        FieldIdx, PlaceTy, RustBitSet,
+        index::Idx,
+        middle::{
             mir::{
                 self, BasicBlock, Body, HasLocalDecls, Local, Mutability, Place as MirPlace,
                 PlaceElem, ProjectionElem, VarDebugInfoContents,
             },
             ty::{TyCtxt, TyKind},
-        }, FieldIdx, PlaceTy, RustBitSet
+        },
     },
     validity_checks_enabled,
     visualization::write_pcg_dot_graph_to_file,

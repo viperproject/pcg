@@ -12,10 +12,13 @@ use crate::{
         region_projection::LifetimeProjection,
     },
     pcg::{
-        obtain::{HasSnapshotLocation, PlaceObtainer}, place_capabilities::{BlockType, PlaceCapabilitiesReader}, CapabilityKind, CapabilityOps, PcgError, PcgNode, SymbolicCapability
+        CapabilityKind, CapabilityOps, PcgError, PcgNode, SymbolicCapability,
+        obtain::{HasSnapshotLocation, PlaceObtainer},
+        place_capabilities::{BlockType, PlaceCapabilitiesReader},
     },
     utils::{
-        data_structures::HashSet, display::DisplayWithCompilerCtxt, DataflowCtxt, HasBorrowCheckerCtxt, Place
+        DataflowCtxt, HasBorrowCheckerCtxt, Place, data_structures::HashSet,
+        display::DisplayWithCompilerCtxt,
     },
 };
 

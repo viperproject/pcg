@@ -7,12 +7,18 @@
 use crate::{
     owned_pcg::{LocalExpansions, OwnedPcgLocal},
     pcg::{
-        ctxt::AnalysisCtxt, place_capabilities::{
+        CapabilityKind, CapabilityOps, SymbolicCapability,
+        ctxt::AnalysisCtxt,
+        place_capabilities::{
             PlaceCapabilitiesInterface, PlaceCapabilitiesReader, SymbolicPlaceCapabilities,
-        }, triple::{PlaceCondition, Triple}, CapabilityKind, CapabilityOps, SymbolicCapability
+        },
+        triple::{PlaceCondition, Triple},
     },
     pcg_validity_assert,
-    utils::{display::DisplayWithCompilerCtxt, CompilerCtxt, HasBorrowCheckerCtxt, HasCompilerCtxt, LocalMutationIsAllowed},
+    utils::{
+        CompilerCtxt, HasBorrowCheckerCtxt, HasCompilerCtxt, LocalMutationIsAllowed,
+        display::DisplayWithCompilerCtxt,
+    },
 };
 
 use crate::rustc_interface::middle::mir::RETURN_PLACE;
@@ -25,7 +31,9 @@ impl<'tcx> OwnedPcg<'tcx> {
         pre: PlaceCondition<'tcx>,
         capabilities: &SymbolicPlaceCapabilities<'a, 'tcx>,
         ctxt: impl HasBorrowCheckerCtxt<'a, 'tcx>,
-    ) where 'tcx: 'a{
+    ) where
+        'tcx: 'a,
+    {
         match pre {
             PlaceCondition::ExpandTwoPhase(_place) => {}
             PlaceCondition::Unalloc(local) => {

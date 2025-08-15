@@ -57,8 +57,3 @@ impl PcgDotGraphsForBlock {
         self.graphs[statement_index].insert_for_phase(phase, filename);
     }
 }
-
-
-
-
-

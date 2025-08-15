@@ -23,14 +23,19 @@ use crate::{
     r#loop::PlaceUsageType,
     owned_pcg::{ExpandedPlace, LocalExpansions, RepackCollapse, RepackOp},
     pcg::{
-        ctxt::AnalysisCtxt, place_capabilities::{
+        CapabilityKind, PCGNodeLike, PcgBlockDebugVisualizationGraphs, PcgError, PcgMutRef,
+        PcgRefLike,
+        ctxt::AnalysisCtxt,
+        place_capabilities::{
             BlockType, PlaceCapabilitiesInterface, PlaceCapabilitiesReader,
             SymbolicPlaceCapabilities,
-        }, CapabilityKind, PCGNodeLike, PcgBlockDebugVisualizationGraphs, PcgError, PcgMutRef, PcgRefLike
+        },
     },
     rustc_interface::middle::mir,
     utils::{
-        data_structures::HashSet, display::DisplayWithCompilerCtxt, CompilerCtxt, DataflowCtxt, DebugImgcat, HasBorrowCheckerCtxt, HasCompilerCtxt, HasPlace, Place, ProjectionKind, ShallowExpansion, SnapshotLocation
+        CompilerCtxt, DataflowCtxt, DebugImgcat, HasBorrowCheckerCtxt, HasCompilerCtxt, HasPlace,
+        Place, ProjectionKind, ShallowExpansion, SnapshotLocation, data_structures::HashSet,
+        display::DisplayWithCompilerCtxt,
     },
 };
 

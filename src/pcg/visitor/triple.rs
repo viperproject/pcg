@@ -1,7 +1,10 @@
 use crate::{
     owned_pcg::{LocalExpansions, OwnedPcgLocal},
     pcg::{
-        obtain::ObtainType, place_capabilities::PlaceCapabilitiesInterface, triple::{PlaceCondition, Triple}, CapabilityKind, CapabilityOps, PcgError, PcgUnsupportedError, SymbolicCapability
+        CapabilityKind, CapabilityOps, PcgError, PcgUnsupportedError, SymbolicCapability,
+        obtain::ObtainType,
+        place_capabilities::PlaceCapabilitiesInterface,
+        triple::{PlaceCondition, Triple},
     },
     utils::{DataflowCtxt, HasBorrowCheckerCtxt},
 };
@@ -30,8 +33,7 @@ where
                     .obtain(place, ObtainType::Capability(capability))?;
             }
             PlaceCondition::AllocateOrDeallocate(local) => {
-                self.pcg.owned[local] =
-                    OwnedPcgLocal::Allocated(LocalExpansions::new(local));
+                self.pcg.owned[local] = OwnedPcgLocal::Allocated(LocalExpansions::new(local));
                 self.pcg
                     .capabilities
                     .insert(local.into(), CapabilityKind::Write, self.ctxt);
