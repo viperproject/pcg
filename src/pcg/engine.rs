@@ -195,9 +195,6 @@ impl<'a, 'tcx: 'a> PcgEngine<'a, 'tcx> {
             )
         })
     }
-    fn debug_output_dir(&self) -> Option<&'a str> {
-        self.debug_graphs.as_ref().map(|data| data.debug_output_dir)
-    }
 
     pub(crate) fn analysis_ctxt(&self, block: BasicBlock) -> AnalysisCtxt<'a, 'tcx> {
         AnalysisCtxt::new(
@@ -227,13 +224,8 @@ impl<'a, 'tcx: 'a> PcgEngine<'a, 'tcx> {
                 location,
                 eval_stmt_phase: phase,
             };
-            domain.actions[phase] = PcgVisitor::visit(
-                curr,
-                &tw,
-                analysis_location,
-                object,
-                state.ctxt,
-            )?;
+            domain.actions[phase] =
+                PcgVisitor::visit(curr, &tw, analysis_location, object, state.ctxt)?;
             if let Some(next_phase) = phase.next() {
                 domain.pcg.states.0[next_phase] = domain.pcg.states.0[phase].clone();
             }
@@ -349,10 +341,6 @@ impl<'a, 'tcx: 'a> PcgEngine<'a, 'tcx> {
             self.first_error.record_error(error.clone());
         }
     }
-
-    fn analysis_complete(&self) -> bool {
-        self.analyzed_blocks == self.reachable_blocks
-    }
 }
 
 impl<'a, 'tcx: 'a> Analysis<'tcx> for PcgEngine<'a, 'tcx> {
@@ -368,8 +356,9 @@ impl<'a, 'tcx: 'a> Analysis<'tcx> for PcgEngine<'a, 'tcx> {
             *state = PcgDomain::Analysis(
                 DataflowState::Transfer(DomainDataWithCtxt::new(
                     PcgDomainData::start_block(self.analysis_ctxt(START_BLOCK)),
-                    self.analysis_ctxt(START_BLOCK)))
-                    .into(),
+                    self.analysis_ctxt(START_BLOCK),
+                ))
+                .into(),
             );
         } else {
             pcg_validity_assert!(state.is_results(), "unexpected state: {:?}", state);

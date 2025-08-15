@@ -297,7 +297,7 @@ impl<'a, 'tcx: 'a> Pcg<'a, 'tcx> {
         self_block: mir::BasicBlock,
         other_block: mir::BasicBlock,
         ctxt: AnalysisCtxt<'a, 'tcx>,
-    ) -> std::result::Result<bool, PcgError> {
+    ) -> std::result::Result<(), PcgError> {
         let mut other_capabilities = other.capabilities.clone();
         let mut other_borrows = other.borrow.clone();
         let mut self_owned_data = JoinOwnedData {
@@ -312,14 +312,14 @@ impl<'a, 'tcx: 'a> Pcg<'a, 'tcx> {
             capabilities: &mut other_capabilities,
             block: other_block,
         };
-        let mut res = self_owned_data.join(other_owned_data, ctxt)?;
+        self_owned_data.join(other_owned_data, ctxt)?;
         // For edges in the other graph that actually belong to it,
         // add the path condition that leads them to this block
         let mut other = other.clone();
         other
             .borrow
             .add_cfg_edge(other_block, self_block, ctxt.ctxt);
-        res |= self.capabilities.join(&other_capabilities, ctxt);
+        self.capabilities.join(&other_capabilities, ctxt);
         let borrow_args = JoinBorrowsArgs {
             self_block,
             other_block,
@@ -327,8 +327,8 @@ impl<'a, 'tcx: 'a> Pcg<'a, 'tcx> {
             capabilities: &mut self.capabilities,
             owned: &mut self.owned,
         };
-        res |= self.borrow.join(&other.borrow, borrow_args, ctxt)?;
-        Ok(res)
+        self.borrow.join(&other.borrow, borrow_args, ctxt)?;
+        Ok(())
     }
 
     pub(crate) fn debug_lines(&self, repacker: CompilerCtxt<'a, 'tcx>) -> Vec<String> {

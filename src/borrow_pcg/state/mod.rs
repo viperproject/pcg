@@ -368,15 +368,12 @@ impl<'tcx> BorrowsState<'tcx> {
         other: &Self,
         args: JoinBorrowsArgs<'_, 'a, 'tcx>,
         ctxt: AnalysisCtxt<'a, 'tcx>,
-    ) -> Result<bool, PcgError> {
-        let mut changed = false;
-        changed |= self
-            .graph
-            .join(&other.graph, &self.validity_conditions, args, ctxt)?;
-        changed |= self
+    ) -> Result<(), PcgError> {
+        self.graph.join(&other.graph, &self.validity_conditions, args, ctxt)?;
+        self
             .validity_conditions
             .join(&other.validity_conditions, ctxt.body());
-        Ok(changed)
+        Ok(())
     }
 
     pub(crate) fn add_cfg_edge(

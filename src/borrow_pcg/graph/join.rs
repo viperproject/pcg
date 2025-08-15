@@ -100,7 +100,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         validity_conditions: &'slf ValidityConditions,
         mut args: JoinBorrowsArgs<'slf, 'a, 'tcx>,
         ctxt: AnalysisCtxt<'a, 'tcx>,
-    ) -> Result<bool, PcgError> {
+    ) -> Result<(), PcgError> {
         let other_block = args.other_block;
         let self_block = args.self_block;
         pcg_validity_assert!(other_graph.is_valid(ctxt), [ctxt], "Other graph is invalid");
@@ -113,27 +113,23 @@ impl<'tcx> BorrowsGraph<'tcx> {
 
         if let Some(used_places) = args.body_analysis.get_places_used_in_loop(self_block) {
             self.join_loop(used_places, validity_conditions, args.reborrow(), ctxt)?;
-            let result = *self != old_self;
             if borrows_imgcat_debug(self_block, Some(DebugImgcat::JoinLoop))
                 && let Ok(dot_graph) = generate_borrows_dot_graph(ctxt, args.capabilities, self)
             {
                 DotGraph::render_with_imgcat(
                     &dot_graph,
-                    &format!("After join (loop, changed={result:?}):"),
+                    &format!("After join (loop):"),
                 )
                 .unwrap_or_else(|e| {
                     eprintln!("Error rendering self graph: {e}");
                 });
-                if result {
-                    eprintln!("{}", old_self.fmt_diff(self, ctxt.ctxt))
-                }
             }
             pcg_validity_assert!(
                 self.is_valid(ctxt),
                 [ctxt],
                 "Graph became invalid after join"
             );
-            return Ok(result);
+            return Ok(());
         }
         for other_edge in other_graph.edges() {
             self.insert(other_edge.to_owned_edge(), ctxt);
@@ -153,8 +149,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
         }
 
         self.apply_placeholder_labels(args.capabilities, ctxt);
-
-        let changed = old_self != *self;
 
         if validity_checks_enabled() && !self.is_valid(ctxt) {
             pcg_validity_assert!(
@@ -181,7 +175,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 });
             }
         }
-        Ok(changed)
+        Ok(())
     }
 
     fn join_loop<'mir>(

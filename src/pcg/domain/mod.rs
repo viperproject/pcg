@@ -224,10 +224,18 @@ impl<'a, 'tcx> PendingDataflowState<'a, 'tcx, AnalysisCtxt<'a, 'tcx>> {
         let (first, rest) = self.take_first();
         let mut result: DomainDataWithCtxt<'a, 'tcx, AnalysisCtxt<'a, 'tcx>> =
             DomainDataWithCtxt::new(PcgDomainData::from_incoming(ctxt.block, &first), ctxt);
-        let to_join = Rc::make_mut(&mut result.data.pcg.entry_state);
+        let curr = Rc::make_mut(&mut result.data.pcg.entry_state);
+        if ctxt.body_analysis.is_loop_head(ctxt.block) {
+            curr.join(
+                &first.data.pcg.states.0.post_main,
+                ctxt.block,
+                first.ctxt.block,
+                result.ctxt,
+            )?;
+        }
         for other in rest {
             if !ctxt.ctxt.is_back_edge(other.ctxt.block, ctxt.block) {
-                to_join.join(
+                curr.join(
                     &other.data.pcg.states.0.post_main,
                     ctxt.block,
                     other.ctxt.block,
@@ -531,8 +539,7 @@ pub(crate) trait HasPcgDomainData<'a, 'tcx: 'a> {
         phase: DataflowStmtPhase,
         location: mir::Location,
         ctxt: AnalysisCtxt<'a, 'tcx>,
-    )
-    {
+    ) {
         let index = match phase {
             DataflowStmtPhase::EvalStmt(phase) => DomainDataIndex::Eval(phase),
             _ => DomainDataIndex::Initial,
