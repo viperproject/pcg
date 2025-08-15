@@ -1,7 +1,10 @@
 use crate::{
+    pcg::place_capabilities::{
+        PlaceCapabilitiesInterface, PlaceCapabilitiesReader,
+    },
     pcg_validity_assert,
     rustc_interface::index::{Idx, IndexVec},
-    utils::data_structures::HashMap,
+    utils::{HasCompilerCtxt, data_structures::HashMap},
 };
 use std::{
     cell::RefCell,

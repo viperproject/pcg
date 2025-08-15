@@ -15,7 +15,7 @@ use crate::{
     },
     pcg_validity_assert,
     utils::{
-        HasBorrowCheckerCtxt, LocalMutationIsAllowed,
+        HasBorrowCheckerCtxt, HasCompilerCtxt, LocalMutationIsAllowed,
         display::DisplayWithCompilerCtxt,
     },
 };
