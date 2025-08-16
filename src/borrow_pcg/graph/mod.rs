@@ -11,14 +11,15 @@ use crate::{
         has_pcs_elem::{LabelLifetimeProjection, LabelLifetimeProjectionPredicate},
         region_projection::LifetimeProjectionLabel,
     },
+    error::PcgUnsupportedError,
     owned_pcg::ExpandedPlace,
-    pcg::{PCGNodeLike, PcgNode, PcgUnsupportedError},
+    pcg::{PCGNodeLike, PcgNode},
     rustc_interface::{
         data_structures::fx::{FxHashMap, FxHashSet},
         middle::mir::{self},
     },
     utils::{
-        DEBUG_BLOCK, DEBUG_IMGCAT, DebugImgcat, Place,
+        DEBUG_BLOCK, DEBUG_IMGCAT, DebugImgcat, HasBorrowCheckerCtxt, HasCompilerCtxt, Place,
         data_structures::HashSet,
         display::{DebugLines, DisplayWithCompilerCtxt},
         maybe_old::MaybeLabelledPlace,
@@ -120,7 +121,10 @@ pub(crate) fn borrows_imgcat_debug(
 }
 
 impl<'tcx> BorrowsGraph<'tcx> {
-    pub(crate) fn places(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> HashSet<Place<'tcx>> {
+    pub(crate) fn places<'a>(&self, ctxt: impl HasCompilerCtxt<'a, 'tcx>) -> HashSet<Place<'tcx>>
+    where
+        'tcx: 'a,
+    {
         self.nodes(ctxt)
             .into_iter()
             .filter_map(|node| match node {
@@ -130,19 +134,28 @@ impl<'tcx> BorrowsGraph<'tcx> {
             .collect()
     }
 
-    pub(crate) fn label_region_projection(
+    pub(crate) fn label_region_projection<'a>(
         &mut self,
         predicate: &LabelLifetimeProjectionPredicate<'tcx>,
         label: Option<LifetimeProjectionLabel>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> bool {
+        ctxt: impl HasBorrowCheckerCtxt<'a, 'tcx>,
+    ) -> bool
+    where
+        'tcx: 'a,
+    {
         self.filter_mut_edges(|edge| {
-            edge.label_lifetime_projection(predicate, label, ctxt)
+            edge.label_lifetime_projection(predicate, label, ctxt.bc_ctxt())
                 .to_filter_mut_result()
         })
     }
 
-    pub(crate) fn leaf_places(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> HashSet<Place<'tcx>> {
+    pub(crate) fn leaf_places<'a>(
+        &self,
+        ctxt: impl HasBorrowCheckerCtxt<'a, 'tcx>,
+    ) -> HashSet<Place<'tcx>>
+    where
+        'tcx: 'a,
+    {
         self.frozen_graph()
             .leaf_nodes(ctxt)
             .into_iter()
@@ -163,11 +176,14 @@ impl<'tcx> BorrowsGraph<'tcx> {
         })
     }
 
-    pub(crate) fn contains_borrow_pcg_expansion(
+    pub(crate) fn contains_borrow_pcg_expansion<'a>(
         &self,
         expanded_place: &ExpandedPlace<'tcx>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> Result<bool, PcgUnsupportedError> {
+        ctxt: impl HasBorrowCheckerCtxt<'a, 'tcx>,
+    ) -> Result<bool, PcgUnsupportedError>
+    where
+        'tcx: 'a,
+    {
         let expanded_places = expanded_place.expansion_places(ctxt)?;
         let nodes = self.nodes(ctxt);
         Ok(expanded_places
@@ -210,17 +226,23 @@ impl<'tcx> BorrowsGraph<'tcx> {
         None
     }
 
-    pub(crate) fn contains<T: Into<PcgNode<'tcx>>>(
+    pub(crate) fn contains<'a, T: Into<PcgNode<'tcx>>>(
         &self,
         node: T,
-        repacker: CompilerCtxt<'_, 'tcx>,
-    ) -> bool {
+        repacker: impl HasBorrowCheckerCtxt<'a, 'tcx>,
+    ) -> bool
+    where
+        'tcx: 'a,
+    {
         let node = node.into();
         self.edges().any(|edge| {
-            edge.blocks_node(node, repacker)
+            edge.blocks_node(node, repacker.bc_ctxt())
                 || node
                     .as_blocking_node(repacker)
-                    .map(|blocking| edge.blocked_by_nodes(repacker).contains(&blocking))
+                    .map(|blocking| {
+                        edge.blocked_by_nodes(repacker.bc_ctxt())
+                            .contains(&blocking)
+                    })
                     .unwrap_or(false)
         })
     }
@@ -267,38 +289,44 @@ impl<'tcx> BorrowsGraph<'tcx> {
     /// `blocking_map` can be provided to use a shared cache for computation
     /// of blocking calculations. The argument should be used if this function
     /// is to be called multiple times on the same graph.
-    pub(crate) fn is_leaf_edge<'graph, 'mir: 'graph, 'bc: 'graph>(
+    pub(crate) fn is_leaf_edge<'graph, 'a: 'graph, 'bc: 'graph>(
         &'graph self,
         edge: &impl BorrowPcgEdgeLike<'tcx>,
-        ctxt: CompilerCtxt<'mir, 'tcx>,
+        ctxt: impl HasBorrowCheckerCtxt<'a, 'tcx>,
         blocking_map: &FrozenGraphRef<'graph, 'tcx>,
-    ) -> bool {
-        for n in edge.blocked_by_nodes(ctxt) {
-            if blocking_map.has_edge_blocking(n.into(), ctxt) {
+    ) -> bool
+    where
+        'tcx: 'a,
+    {
+        for n in edge.blocked_by_nodes(ctxt.bc_ctxt()) {
+            if blocking_map.has_edge_blocking(n.into(), ctxt.bc_ctxt()) {
                 return false;
             }
         }
         true
     }
 
-    pub(crate) fn leaf_edges_set<'slf, 'mir: 'slf, 'bc: 'slf>(
+    pub(crate) fn leaf_edges_set<'slf, 'a: 'slf, 'bc: 'slf>(
         &'slf self,
-        repacker: CompilerCtxt<'mir, 'tcx>,
+        repacker: impl HasBorrowCheckerCtxt<'a, 'tcx>,
         frozen_graph: &FrozenGraphRef<'slf, 'tcx>,
-    ) -> CachedLeafEdges<'slf, 'tcx> {
+    ) -> CachedLeafEdges<'slf, 'tcx>
+    where
+        'tcx: 'a,
+    {
         self.edges()
             .filter(move |edge| self.is_leaf_edge(edge, repacker, frozen_graph))
             .collect()
     }
 
-    pub(crate) fn nodes<BC: Copy>(
-        &self,
-        ctxt: CompilerCtxt<'_, 'tcx, BC>,
-    ) -> FxHashSet<PcgNode<'tcx>> {
+    pub(crate) fn nodes<'a>(&self, ctxt: impl HasCompilerCtxt<'a, 'tcx>) -> FxHashSet<PcgNode<'tcx>>
+    where
+        'tcx: 'a,
+    {
         self.edges()
             .flat_map(|edge| {
-                edge.blocked_nodes(ctxt)
-                    .chain(edge.blocked_by_nodes(ctxt).map(|node| node.into()))
+                edge.blocked_nodes(ctxt.ctxt())
+                    .chain(edge.blocked_by_nodes(ctxt.ctxt()).map(|node| node.into()))
                     .collect::<Vec<_>>()
             })
             .collect()
@@ -336,16 +364,18 @@ impl<'tcx> BorrowsGraph<'tcx> {
         self.edges().any(|edge| edge.is_blocked_by(node, repacker))
     }
 
-    pub fn edges_blocked_by<'graph, 'mir: 'graph, BC: Copy>(
+    pub fn edges_blocked_by<'graph, 'a: 'graph>(
         &'graph self,
         node: LocalNode<'tcx>,
-        ctxt: CompilerCtxt<'mir, 'tcx, BC>,
-    ) -> impl Iterator<Item = BorrowPcgEdgeRef<'tcx, 'graph>> {
+        ctxt: impl HasCompilerCtxt<'a, 'tcx>,
+    ) -> impl Iterator<Item = BorrowPcgEdgeRef<'tcx, 'graph>>
+    where
+        'tcx: 'a,
+    {
         self.edges()
-            .filter(move |edge| edge.blocked_by_nodes(ctxt).contains(&node))
+            .filter(move |edge| edge.blocked_by_nodes(ctxt.ctxt()).contains(&node))
     }
 
-    #[allow(unused)]
     pub(crate) fn nodes_blocked_by<'graph, 'mir: 'graph, 'bc: 'graph>(
         &'graph self,
         node: LocalNode<'tcx>,
@@ -357,19 +387,23 @@ impl<'tcx> BorrowsGraph<'tcx> {
     }
 
     /// Returns true iff `edge` connects two nodes within an abstraction edge
-    fn is_encapsulated_by_abstraction(
+    fn is_encapsulated_by_abstraction<'a>(
         &self,
         edge: &impl BorrowPcgEdgeLike<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx>,
-    ) -> bool {
+        ctxt: impl HasBorrowCheckerCtxt<'a, 'tcx>,
+    ) -> bool
+    where
+        'tcx: 'a,
+    {
+        let ctxt = ctxt.bc_ctxt();
         'outer: for abstraction in self.abstraction_edge_kinds() {
-            for blocked in edge.blocked_nodes(repacker) {
-                if !abstraction.blocks_node(blocked, repacker) {
+            for blocked in edge.blocked_nodes(ctxt) {
+                if !abstraction.blocks_node(blocked, ctxt) {
                     continue 'outer;
                 }
             }
-            for blocked_by in edge.blocked_by_nodes(repacker) {
-                if !abstraction.is_blocked_by(blocked_by, repacker) {
+            for blocked_by in edge.blocked_by_nodes(ctxt) {
+                if !abstraction.is_blocked_by(blocked_by, ctxt) {
                     continue 'outer;
                 }
             }
@@ -378,11 +412,14 @@ impl<'tcx> BorrowsGraph<'tcx> {
         false
     }
 
-    pub(crate) fn insert(
+    pub(crate) fn insert<'a>(
         &mut self,
         edge: BorrowPcgEdge<'tcx>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> bool {
+        ctxt: impl HasCompilerCtxt<'a, 'tcx>,
+    ) -> bool
+    where
+        'tcx: 'a,
+    {
         if let Some(conditions) = self.edges.get_mut(edge.kind()) {
             conditions.join(&edge.conditions, ctxt.body())
         } else {
@@ -391,20 +428,26 @@ impl<'tcx> BorrowsGraph<'tcx> {
         }
     }
 
-    pub(crate) fn edges_blocking<'slf, 'mir: 'slf, 'bc: 'slf>(
+    pub(crate) fn edges_blocking<'slf, 'a: 'slf, 'bc: 'slf>(
         &'slf self,
         node: BlockedNode<'tcx>,
-        ctxt: CompilerCtxt<'mir, 'tcx>,
-    ) -> impl Iterator<Item = BorrowPcgEdgeRef<'tcx, 'slf>> {
+        ctxt: impl HasBorrowCheckerCtxt<'a, 'tcx>,
+    ) -> impl Iterator<Item = BorrowPcgEdgeRef<'tcx, 'slf>>
+    where
+        'tcx: 'a,
+    {
         self.edges()
-            .filter(move |edge| edge.blocks_node(node, ctxt))
+            .filter(move |edge| edge.blocks_node(node, ctxt.bc_ctxt()))
     }
 
-    pub(crate) fn edges_blocking_set<'slf, 'mir: 'slf, 'bc: 'slf>(
+    pub(crate) fn edges_blocking_set<'slf, 'a: 'slf, 'bc: 'slf>(
         &'slf self,
         node: BlockedNode<'tcx>,
-        ctxt: CompilerCtxt<'mir, 'tcx>,
-    ) -> Vec<BorrowPcgEdgeRef<'tcx, 'slf>> {
+        ctxt: impl HasBorrowCheckerCtxt<'a, 'tcx>,
+    ) -> Vec<BorrowPcgEdgeRef<'tcx, 'slf>>
+    where
+        'tcx: 'a,
+    {
         self.edges_blocking(node, ctxt).collect()
     }
 

@@ -6,7 +6,8 @@ use crate::borrow_pcg::region_projection::{
     RegionProjectionBaseLike,
 };
 use crate::borrow_pcg::visitor::extract_regions;
-use crate::pcg::{LocalNodeLike, MaybeHasLocation, PCGNodeLike, PcgError, PcgNode};
+use crate::error::PcgError;
+use crate::pcg::{LocalNodeLike, MaybeHasLocation, PCGNodeLike, PcgNode};
 use crate::rustc_interface::PlaceTy;
 use crate::rustc_interface::index::IndexVec;
 use crate::rustc_interface::middle::mir;
@@ -15,7 +16,9 @@ use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::json::ToJsonWithCompilerCtxt;
 use crate::utils::maybe_remote::MaybeRemotePlace;
 use crate::utils::validity::HasValidityCheck;
-use crate::utils::{CompilerCtxt, HasPlace, LabelledPlace, Place, SnapshotLocation};
+use crate::utils::{
+    CompilerCtxt, HasCompilerCtxt, HasPlace, LabelledPlace, Place, SnapshotLocation,
+};
 use derive_more::{From, TryInto};
 use serde_json::json;
 
@@ -36,7 +39,10 @@ impl<'tcx> MaybeLabelledPlace<'tcx> {
         }
     }
 
-    pub fn is_mutable(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
+    pub fn is_mutable<'a>(&self, ctxt: impl HasCompilerCtxt<'a, 'tcx>) -> bool
+    where
+        'tcx: 'a,
+    {
         self.place()
             .is_mutable(crate::utils::LocalMutationIsAllowed::Yes, ctxt)
             .is_ok()
@@ -254,10 +260,13 @@ impl<'tcx> MaybeLabelledPlace<'tcx> {
         }
     }
 
-    pub(crate) fn base_lifetime_projection<C: Copy>(
+    pub(crate) fn base_lifetime_projection<'a>(
         &self,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
-    ) -> Option<LifetimeProjection<'tcx, Self>> {
+        repacker: impl HasCompilerCtxt<'a, 'tcx>,
+    ) -> Option<LifetimeProjection<'tcx, Self>>
+    where
+        'tcx: 'a,
+    {
         self.place()
             .base_lifetime_projection(repacker)
             .map(|rp| rp.with_base(*self))
@@ -287,10 +296,13 @@ impl<'tcx> MaybeLabelledPlace<'tcx> {
         }
     }
 
-    pub(crate) fn with_inherent_region(
+    pub(crate) fn with_inherent_region<'a>(
         &self,
-        repacker: CompilerCtxt<'_, 'tcx>,
-    ) -> MaybeLabelledPlace<'tcx> {
+        repacker: impl HasCompilerCtxt<'a, 'tcx>,
+    ) -> MaybeLabelledPlace<'tcx>
+    where
+        'tcx: 'a,
+    {
         match self {
             MaybeLabelledPlace::Current(place) => place.with_inherent_region(repacker).into(),
             MaybeLabelledPlace::Labelled(snapshot) => {
@@ -299,10 +311,13 @@ impl<'tcx> MaybeLabelledPlace<'tcx> {
         }
     }
 
-    pub(crate) fn lifetime_projections(
+    pub(crate) fn lifetime_projections<'a>(
         &self,
-        repacker: CompilerCtxt<'_, 'tcx>,
-    ) -> Vec<LifetimeProjection<'tcx, Self>> {
+        repacker: impl HasCompilerCtxt<'a, 'tcx>,
+    ) -> Vec<LifetimeProjection<'tcx, Self>>
+    where
+        'tcx: 'a,
+    {
         let place = self.with_inherent_region(repacker);
         extract_regions(place.ty(repacker).ty, repacker)
             .iter()
@@ -318,8 +333,11 @@ impl<'tcx> MaybeLabelledPlace<'tcx> {
         }
     }
 
-    pub fn ty<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> PlaceTy<'tcx> {
-        self.place().ty(repacker)
+    pub fn ty<'a>(&self, ctxt: impl HasCompilerCtxt<'a, 'tcx>) -> PlaceTy<'tcx>
+    where
+        'tcx: 'a,
+    {
+        self.place().ty(ctxt)
     }
 
     pub(crate) fn project_deref<BC: Copy>(

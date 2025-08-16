@@ -3,22 +3,25 @@ use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::borrow_pcg::graph::loop_abstraction::ConstructAbstractionGraphResult;
 use crate::borrow_pcg::has_pcs_elem::{LabelLifetimeProjection, LabelLifetimeProjectionPredicate};
 use crate::borrow_pcg::region_projection::LifetimeProjectionLabel;
+use crate::error::{PcgError, PcgUnsupportedError};
 use crate::r#loop::PlaceUsages;
 use crate::owned_pcg::OwnedPcg;
 use crate::pcg::ctxt::AnalysisCtxt;
-use crate::pcg::place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface};
-use crate::pcg::{BodyAnalysis, PCGNodeLike, PcgError, PcgNode, PcgUnsupportedError};
+use crate::pcg::place_capabilities::{
+    PlaceCapabilitiesInterface, PlaceCapabilitiesReader, SymbolicPlaceCapabilities,
+};
+use crate::pcg::{BodyAnalysis, PCGNodeLike, PcgNode, SymbolicCapability};
 use crate::pcg_validity_assert;
 use crate::utils::data_structures::HashSet;
 use crate::utils::display::DisplayWithCompilerCtxt;
 use crate::utils::logging::LogPredicate;
-use crate::utils::{CompilerCtxt, DebugImgcat, SnapshotLocation, logging};
+use crate::utils::{CompilerCtxt, DebugImgcat, HasBorrowCheckerCtxt, SnapshotLocation, logging};
 use crate::visualization::dot_graph::DotGraph;
 use crate::visualization::generate_borrows_dot_graph;
 use crate::{
     borrow_pcg::path_condition::ValidityConditions,
     rustc_interface::middle::{mir, mir::BasicBlock},
-    utils::{display::DisplayDiff, validity::HasValidityCheck},
+    utils::validity::HasValidityCheck,
     validity_checks_enabled,
 };
 
@@ -28,7 +31,7 @@ pub(crate) struct JoinBorrowsArgs<'pcg, 'a, 'tcx> {
     pub(crate) self_block: BasicBlock,
     pub(crate) other_block: BasicBlock,
     pub(crate) body_analysis: &'pcg BodyAnalysis<'a, 'tcx>,
-    pub(crate) capabilities: &'pcg mut PlaceCapabilities<'tcx>,
+    pub(crate) capabilities: &'pcg mut SymbolicPlaceCapabilities<'tcx>,
     pub(crate) owned: &'pcg mut OwnedPcg<'tcx>,
 }
 
@@ -45,14 +48,16 @@ impl<'mir, 'tcx> JoinBorrowsArgs<'_, 'mir, 'tcx> {
 }
 
 impl<'tcx> BorrowsGraph<'tcx> {
-    pub(crate) fn render_debug_graph(
+    pub(crate) fn render_debug_graph<'a>(
         &self,
         block: mir::BasicBlock,
         debug_imgcat: Option<DebugImgcat>,
-        capabilities: &PlaceCapabilities<'tcx>,
+        capabilities: &impl PlaceCapabilitiesReader<'tcx>,
         comment: &str,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) {
+        ctxt: CompilerCtxt<'a, 'tcx>,
+    ) where
+        'tcx: 'a,
+    {
         if borrows_imgcat_debug(block, debug_imgcat)
             && let Ok(dot_graph) = generate_borrows_dot_graph(ctxt, capabilities, self)
         {
@@ -64,26 +69,23 @@ impl<'tcx> BorrowsGraph<'tcx> {
 
     fn apply_placeholder_labels<'mir>(
         &mut self,
-        _capabilities: &PlaceCapabilities<'tcx>,
-        ctxt: CompilerCtxt<'mir, 'tcx>,
-    ) {
+        _capabilities: &impl PlaceCapabilitiesReader<'tcx, SymbolicCapability>,
+        ctxt: impl HasBorrowCheckerCtxt<'mir, 'tcx>,
+    ) where
+        'tcx: 'mir,
+    {
         let nodes = self.nodes(ctxt);
         for node in nodes {
             if let PcgNode::LifetimeProjection(rp) = node
                 && rp.is_future()
                 && let Some(PcgNode::LifetimeProjection(local_rp)) = rp.try_to_local_node(ctxt)
             {
-                // if let MaybeOldPlace::Current(place) = local_rp.base
-                //     && capabilities.get(place).is_some()
-                // {
-                //     self.mut_edges(|edge| edge.label_region_projection(&local_rp, None, ctxt));
-                // } else {
                 let orig_rp = local_rp.with_label(None, ctxt);
                 self.filter_mut_edges(|edge| {
                     edge.label_lifetime_projection(
                         &LabelLifetimeProjectionPredicate::Equals(orig_rp),
                         Some(LifetimeProjectionLabel::Future),
-                        ctxt,
+                        ctxt.bc_ctxt(),
                     )
                     .to_filter_mut_result()
                 });
@@ -96,51 +98,35 @@ impl<'tcx> BorrowsGraph<'tcx> {
         other_graph: &'slf BorrowsGraph<'tcx>,
         validity_conditions: &'slf ValidityConditions,
         mut args: JoinBorrowsArgs<'slf, 'a, 'tcx>,
-        ctxt: CompilerCtxt<'a, 'tcx>,
-    ) -> Result<bool, PcgError> {
+        ctxt: AnalysisCtxt<'a, 'tcx>,
+    ) -> Result<(), PcgError> {
         let other_block = args.other_block;
         let self_block = args.self_block;
         pcg_validity_assert!(other_graph.is_valid(ctxt), [ctxt], "Other graph is invalid");
         pcg_validity_assert!(
-            !ctxt.is_back_edge(other_block, self_block),
+            !ctxt.ctxt.is_back_edge(other_block, self_block),
             [ctxt],
             "Joining back edge from {other_block:?} to {self_block:?}"
         );
         let old_self = self.clone();
 
         if let Some(used_places) = args.body_analysis.get_places_used_in_loop(self_block) {
-            // self.render_debug_graph(ctxt, &format!("Self graph: {self_block:?}"));
-            // other.render_debug_graph(ctxt, &format!("Other graph: {other_block:?}"));
-
-            let analysis_ctxt = AnalysisCtxt::new(ctxt, self_block);
-
-            self.join_loop(
-                used_places,
-                validity_conditions,
-                args.reborrow(),
-                analysis_ctxt,
-            )?;
-            let result = *self != old_self;
+            self.join_loop(used_places, validity_conditions, args.reborrow(), ctxt)?;
             if borrows_imgcat_debug(self_block, Some(DebugImgcat::JoinLoop))
                 && let Ok(dot_graph) = generate_borrows_dot_graph(ctxt, args.capabilities, self)
             {
-                DotGraph::render_with_imgcat(
-                    &dot_graph,
-                    &format!("After join (loop, changed={result:?}):"),
-                )
-                .unwrap_or_else(|e| {
-                    eprintln!("Error rendering self graph: {e}");
-                });
-                if result {
-                    eprintln!("{}", old_self.fmt_diff(self, ctxt))
-                }
+                DotGraph::render_with_imgcat(&dot_graph, "After join (loop):").unwrap_or_else(
+                    |e| {
+                        eprintln!("Error rendering self graph: {e}");
+                    },
+                );
             }
             pcg_validity_assert!(
                 self.is_valid(ctxt),
                 [ctxt],
                 "Graph became invalid after join"
             );
-            return Ok(result);
+            return Ok(());
         }
         for other_edge in other_graph.edges() {
             self.insert(other_edge.to_owned_edge(), ctxt);
@@ -160,8 +146,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
         }
 
         self.apply_placeholder_labels(args.capabilities, ctxt);
-
-        let changed = old_self != *self;
 
         if validity_checks_enabled() && !self.is_valid(ctxt) {
             pcg_validity_assert!(
@@ -188,7 +172,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 });
             }
         }
-        Ok(changed)
+        Ok(())
     }
 
     fn join_loop<'mir>(
@@ -265,9 +249,9 @@ impl<'tcx> BorrowsGraph<'tcx> {
             &expand_places,
             validity_conditions,
             args.reborrow(),
-            ctxt.ctxt,
+            ctxt,
         );
-        let capabilities = &mut args.capabilities;
+        let capabilities = args.capabilities;
         self.render_debug_graph(
             loop_head,
             Some(DebugImgcat::JoinLoop),

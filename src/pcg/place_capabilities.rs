@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use itertools::Itertools;
 
 use crate::{
@@ -6,79 +8,231 @@ use crate::{
         has_pcs_elem::LabelLifetimeProjectionPredicate,
         state::{BorrowStateMutRef, BorrowsStateLike},
     },
-    pcg::CapabilityKind,
-    pcg::{PcgError, ctxt::AnalysisCtxt},
-    pcg_validity_assert,
-    rustc_interface::{data_structures::fx::FxHashMap, middle::mir},
+    error::PcgError,
+    pcg::{CapabilityKind, CapabilityLike, SymbolicCapability, ctxt::AnalysisCtxt},
+    rustc_interface::middle::mir,
     utils::{
-        CompilerCtxt, HasPlace, Place,
+        CompilerCtxt, HasBorrowCheckerCtxt, HasCompilerCtxt, HasPlace, Place,
         display::{DebugLines, DisplayWithCompilerCtxt},
-        logging::{self, LogPredicate},
         validity::HasValidityCheck,
     },
 };
 
-pub(crate) trait PlaceCapabilitiesInterface<'tcx> {
-    fn get(&self, place: Place<'tcx>, ctxt: CompilerCtxt<'_, 'tcx>) -> Option<CapabilityKind>;
+mod private {
+    use crate::pcg::SymbolicCapability;
+    use crate::rustc_interface::middle::mir;
 
-    fn insert(
-        &mut self,
-        place: Place<'tcx>,
-        capability: CapabilityKind,
-        ctxt: AnalysisCtxt<'_, 'tcx>,
-    ) -> bool;
+    use crate::utils::{HasCompilerCtxt, Place};
 
-    fn remove(
-        &mut self,
-        place: Place<'tcx>,
-        ctxt: AnalysisCtxt<'_, 'tcx>,
-    ) -> Option<CapabilityKind>;
+    pub trait PlaceCapabilitiesReader<'tcx, T = SymbolicCapability> {
+        fn get(&self, place: Place<'tcx>, ctxt: impl HasCompilerCtxt<'_, 'tcx>) -> Option<T>;
+
+        fn iter(&self) -> impl Iterator<Item = (Place<'tcx>, T)> + '_;
+
+        fn capabilities_for_strict_postfixes_of<'slf>(
+            &'slf self,
+            place: Place<'tcx>,
+        ) -> impl Iterator<Item = (Place<'tcx>, T)> + 'slf
+        where
+            'tcx: 'slf,
+        {
+            self.iter().filter_map(move |(p, c)| {
+                if place.is_strict_prefix_of(p) {
+                    Some((p, c))
+                } else {
+                    None
+                }
+            })
+        }
+    }
+
+    pub trait PlaceCapabilitiesInterface<'tcx, C = SymbolicCapability>:
+        PlaceCapabilitiesReader<'tcx, C>
+    {
+        fn insert<Ctxt>(
+            &mut self,
+            place: Place<'tcx>,
+            capability: impl Into<C>,
+            ctxt: Ctxt,
+        ) -> bool;
+
+        fn remove<Ctxt>(&mut self, place: Place<'tcx>, ctxt: Ctxt) -> Option<C>;
+
+        fn retain(&mut self, predicate: impl Fn(Place<'tcx>, C) -> bool);
+
+        fn iter_mut<'slf>(
+            &'slf mut self,
+        ) -> impl Iterator<Item = (&'slf Place<'tcx>, &'slf mut C)> + 'slf
+        where
+            C: 'slf,
+            'tcx: 'slf;
+
+        fn owned_capabilities<'a: 'slf, 'slf, Ctxt: HasCompilerCtxt<'a, 'tcx> + 'slf>(
+            &'slf mut self,
+            local: mir::Local,
+            ctxt: Ctxt,
+        ) -> impl Iterator<Item = (Place<'tcx>, &'slf mut C)> + 'slf
+        where
+            C: 'static,
+            'tcx: 'a,
+        {
+            self.iter_mut().filter_map(move |(place, capability)| {
+                if place.local == local && place.is_owned(ctxt) {
+                    Some((*place, capability))
+                } else {
+                    None
+                }
+            })
+        }
+
+        fn remove_all_postfixes(
+            &mut self,
+            place: Place<'tcx>,
+            _ctxt: impl HasCompilerCtxt<'_, 'tcx>,
+        ) {
+            self.retain(|p, _| !place.is_prefix_of(p));
+        }
+    }
 }
+pub(crate) use private::*;
 
-impl<'tcx> PlaceCapabilitiesInterface<'tcx> for PlaceCapabilities<'tcx> {
-    fn get(&self, place: Place<'tcx>, _ctxt: CompilerCtxt<'_, 'tcx>) -> Option<CapabilityKind> {
+impl<'tcx, T: Copy> PlaceCapabilitiesReader<'tcx, T> for PlaceCapabilities<'tcx, T> {
+    fn get(&self, place: Place<'tcx>, _ctxt: impl HasCompilerCtxt<'_, 'tcx>) -> Option<T> {
         self.0.get(&place).copied()
     }
 
-    fn remove(
-        &mut self,
-        place: Place<'tcx>,
-        ctxt: AnalysisCtxt<'_, 'tcx>,
-    ) -> Option<CapabilityKind> {
-        logging::log!(
-            LogPredicate::DebugBlock,
-            ctxt,
-            "Removing capability for {}",
-            place.to_short_string(ctxt.ctxt)
-        );
-        self.0.remove(&place)
-    }
-
-    fn insert(
-        &mut self,
-        place: Place<'tcx>,
-        capability: CapabilityKind,
-        ctxt: AnalysisCtxt<'_, 'tcx>,
-    ) -> bool {
-        pcg_validity_assert!(
-            !place.projects_shared_ref(ctxt.ctxt) || capability.is_read(),
-            "Place {} projects a shared ref, but has capability {:?}",
-            place.to_short_string(ctxt.ctxt),
-            capability
-        );
-        logging::log!(
-            LogPredicate::DebugBlock,
-            ctxt,
-            "Inserting capability {:?} for {}",
-            capability,
-            place.to_short_string(ctxt.ctxt)
-        );
-        self.0.insert(place, capability) != Some(capability)
+    fn iter(&self) -> impl Iterator<Item = (Place<'tcx>, T)> + '_ {
+        self.0.iter().map(|(k, v)| (*k, *v))
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Default)]
-pub struct PlaceCapabilities<'tcx>(pub(crate) FxHashMap<Place<'tcx>, CapabilityKind>);
+impl<'tcx, C: Copy> PlaceCapabilitiesInterface<'tcx, C> for PlaceCapabilities<'tcx, C> {
+    fn insert<Ctxt>(&mut self, place: Place<'tcx>, capability: impl Into<C>, _ctxt: Ctxt) -> bool {
+        self.0.insert(place, capability.into()).is_some()
+    }
+
+    fn remove<Ctxt>(&mut self, place: Place<'tcx>, _ctxt: Ctxt) -> Option<C> {
+        self.0.remove(&place)
+    }
+
+    fn retain(&mut self, predicate: impl Fn(Place<'tcx>, C) -> bool) {
+        self.0.retain(|place, cap| predicate(*place, *cap));
+    }
+
+    fn iter_mut<'slf>(
+        &'slf mut self,
+    ) -> impl Iterator<Item = (&'slf Place<'tcx>, &'slf mut C)> + 'slf
+    where
+        C: 'slf,
+        'tcx: 'slf,
+    {
+        self.0.iter_mut()
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PlaceCapabilities<'tcx, T = CapabilityKind>(pub(crate) HashMap<Place<'tcx>, T>);
+
+impl<T> PlaceCapabilities<'_, T> {}
+
+impl<T> Default for PlaceCapabilities<'_, T> {
+    fn default() -> Self {
+        Self(HashMap::default())
+    }
+}
+
+pub(crate) type SymbolicPlaceCapabilities<'tcx> = PlaceCapabilities<'tcx, SymbolicCapability>;
+
+impl<'a, 'tcx: 'a> SymbolicPlaceCapabilities<'tcx> {
+    pub(crate) fn to_concrete(
+        &self,
+        ctxt: impl HasCompilerCtxt<'_, 'tcx>,
+    ) -> PlaceCapabilities<'tcx, CapabilityKind> {
+        let mut concrete = PlaceCapabilities::default();
+        for (place, cap) in self.iter() {
+            concrete.insert(place, cap.expect_concrete(), ctxt);
+        }
+        concrete
+    }
+
+    pub(crate) fn update_for_deref<Ctxt: HasBorrowCheckerCtxt<'a, 'tcx>>(
+        &mut self,
+        ref_place: Place<'tcx>,
+        capability: CapabilityKind,
+        ctxt: Ctxt,
+    ) -> Result<bool, PcgError> {
+        if capability.is_read() || ref_place.is_shared_ref(ctxt.bc_ctxt()) {
+            self.insert(
+                ref_place,
+                SymbolicCapability::Concrete(CapabilityKind::Read),
+                ctxt,
+            );
+            self.insert(
+                ref_place.project_deref(ctxt.bc_ctxt()),
+                SymbolicCapability::Concrete(CapabilityKind::Read),
+                ctxt,
+            );
+        } else {
+            self.insert(
+                ref_place,
+                SymbolicCapability::Concrete(CapabilityKind::Write),
+                ctxt,
+            );
+            self.insert(
+                ref_place.project_deref(ctxt.bc_ctxt()),
+                SymbolicCapability::Concrete(CapabilityKind::Exclusive),
+                ctxt,
+            );
+        }
+        Ok(true)
+    }
+
+    pub(crate) fn update_for_expansion<Ctxt: HasBorrowCheckerCtxt<'a, 'tcx>>(
+        &mut self,
+        expansion: &BorrowPcgExpansion<'tcx>,
+        block_type: BlockType,
+        ctxt: Ctxt,
+    ) -> Result<bool, PcgError> {
+        let mut changed = false;
+        // We dont change if only expanding region projections
+        if expansion.base.is_place() {
+            let base = expansion.base;
+            let base_capability = self.get(base.place(), ctxt);
+            let expanded_capability = if let Some(capability) = base_capability {
+                let concrete_cap = capability.expect_concrete();
+                let expanded = block_type.expansion_capability(base.place(), concrete_cap, ctxt);
+                SymbolicCapability::Concrete(expanded)
+            } else {
+                return Ok(true);
+            };
+
+            changed |= self.update_capabilities_for_block_of_place(base.place(), block_type, ctxt);
+
+            for p in expansion.expansion.iter() {
+                changed |= self.insert(p.place(), expanded_capability, ctxt);
+            }
+        }
+        Ok(changed)
+    }
+
+    pub(crate) fn update_capabilities_for_block_of_place<Ctxt: HasBorrowCheckerCtxt<'a, 'tcx>>(
+        &mut self,
+        blocked_place: Place<'tcx>,
+        block_type: BlockType,
+        ctxt: Ctxt,
+    ) -> bool {
+        let retained_capability = block_type.blocked_place_maximum_retained_capability();
+        if let Some(capability) = retained_capability {
+            self.insert(
+                blocked_place,
+                SymbolicCapability::Concrete(capability),
+                ctxt,
+            )
+        } else {
+            self.remove(blocked_place, ctxt).is_some()
+        }
+    }
+}
 
 impl<'tcx> HasValidityCheck<'tcx> for PlaceCapabilities<'tcx> {
     fn check_validity(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Result<(), String> {
@@ -137,11 +291,15 @@ impl<'tcx> HasValidityCheck<'tcx> for PlaceCapabilities<'tcx> {
     }
 }
 
-impl<'tcx> DebugLines<CompilerCtxt<'_, 'tcx>> for PlaceCapabilities<'tcx> {
+impl<'tcx> DebugLines<CompilerCtxt<'_, 'tcx>> for SymbolicPlaceCapabilities<'tcx> {
     fn debug_lines(&self, repacker: CompilerCtxt<'_, 'tcx>) -> Vec<String> {
         self.iter()
             .map(|(node, capability)| {
-                format!("{}: {:?}", node.to_short_string(repacker), capability)
+                format!(
+                    "{}: {:?}",
+                    node.to_short_string(repacker),
+                    capability.expect_concrete()
+                )
             })
             .sorted()
             .collect()
@@ -174,7 +332,7 @@ impl BlockType {
         self,
         _blocked_place: Place<'tcx>,
         blocked_capability: CapabilityKind,
-        _ctxt: CompilerCtxt<'_, 'tcx>,
+        _ctxt: impl HasCompilerCtxt<'_, 'tcx>,
     ) -> CapabilityKind {
         match self {
             BlockType::DerefMutRefUnderSharedRef => CapabilityKind::Read,
@@ -186,44 +344,71 @@ impl BlockType {
     }
 }
 
-impl<'tcx> PlaceCapabilities<'tcx> {
-    pub(crate) fn capabilities_for_strict_postfixes_of(
-        &self,
-        place: Place<'tcx>,
-    ) -> impl Iterator<Item = (Place<'tcx>, CapabilityKind)> + '_ {
-        self.0.iter().filter_map(move |(p, c)| {
-            if place.is_strict_prefix_of(*p) {
-                Some((*p, *c))
-            } else {
-                None
-            }
-        })
-    }
-    pub(crate) fn retain(&mut self, predicate: impl Fn(&Place<'tcx>, &CapabilityKind) -> bool) {
-        self.0.retain(|place, cap| predicate(place, cap));
-    }
-    pub(crate) fn regain_loaned_capability(
+impl<'tcx, C: CapabilityLike> PlaceCapabilities<'tcx, C>
+where
+    Self: PlaceCapabilitiesInterface<'tcx, C>,
+{
+    pub(crate) fn regain_loaned_capability<'a, Ctxt: HasBorrowCheckerCtxt<'a, 'tcx>>(
         &mut self,
         place: Place<'tcx>,
-        capability: CapabilityKind,
+        capability: C,
         mut borrows: BorrowStateMutRef<'_, 'tcx>,
-        ctxt: AnalysisCtxt<'_, 'tcx>,
-    ) -> Result<(), PcgError> {
+        ctxt: Ctxt,
+    ) -> Result<(), PcgError>
+    where
+        'tcx: 'a,
+        C: 'static,
+    {
         self.insert((*place).into(), capability, ctxt);
-        if capability == CapabilityKind::Exclusive {
+        if capability == CapabilityKind::Exclusive.into() {
             borrows.label_region_projection(
                 &LabelLifetimeProjectionPredicate::AllFuturePostfixes(place),
                 None,
-                ctxt.ctxt,
+                ctxt,
             );
         }
         Ok(())
     }
-    pub(crate) fn uniform_capability(
+
+    pub(crate) fn remove_all_for_local(
+        &mut self,
+        local: mir::Local,
+        _ctxt: impl HasCompilerCtxt<'_, 'tcx>,
+    ) {
+        self.0.retain(|place, _| place.local != local);
+    }
+}
+
+impl<C: CapabilityLike> PlaceCapabilities<'_, C> {
+    pub(crate) fn join<Ctxt: Copy>(&mut self, other: &Self, ctxt: Ctxt) -> bool
+    where
+        C: 'static,
+    {
+        let mut changed = false;
+        self.0.retain(|place, _| other.0.contains_key(place));
+        for (place, other_capability) in other.iter() {
+            if let Some(self_capability) = self.0.get(&place) {
+                if let Some(c) = self_capability.minimum(other_capability, ctxt) {
+                    changed |= self.0.insert(place, c) != Some(c);
+                } else {
+                    self.0.remove(&place);
+                    changed = true;
+                }
+            }
+        }
+        changed
+    }
+}
+
+impl<'tcx, C: Copy + PartialEq> PlaceCapabilities<'tcx, C> {
+    pub(crate) fn uniform_capability<'a>(
         &self,
         mut places: impl Iterator<Item = Place<'tcx>>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> Option<CapabilityKind> {
+        ctxt: impl HasCompilerCtxt<'a, 'tcx>,
+    ) -> Option<C>
+    where
+        'tcx: 'a,
+    {
         let cap = self.get(places.next()?, ctxt)?;
         for p in places {
             if self.get(p, ctxt) != Some(cap) {
@@ -232,28 +417,21 @@ impl<'tcx> PlaceCapabilities<'tcx> {
         }
         Some(cap)
     }
-    pub(crate) fn remove_all_postfixes(
-        &mut self,
-        place: Place<'tcx>,
-        _ctxt: CompilerCtxt<'_, 'tcx>,
-    ) {
-        self.0.retain(|p, _| !place.is_prefix_of(*p));
-    }
 
-    pub(crate) fn remove_all_strict_postfixes(
+    pub(crate) fn remove_all_strict_postfixes<'a>(
         &mut self,
         place: Place<'tcx>,
-        _ctxt: CompilerCtxt<'_, 'tcx>,
-    ) {
+        _ctxt: impl HasCompilerCtxt<'a, 'tcx>,
+    ) where
+        'tcx: 'a,
+    {
         self.0.retain(|p, _| !place.is_strict_prefix_of(*p));
     }
+}
 
-    pub(crate) fn remove_all_for_local(
-        &mut self,
-        local: mir::Local,
-        _ctxt: CompilerCtxt<'_, 'tcx>,
-    ) {
-        self.0.retain(|place, _| place.local != local);
+impl<'tcx> PlaceCapabilities<'tcx> {
+    pub(crate) fn retain(&mut self, predicate: impl Fn(&Place<'tcx>, &CapabilityKind) -> bool) {
+        self.0.retain(|place, cap| predicate(place, cap));
     }
 
     pub(crate) fn update_for_deref(
@@ -336,39 +514,5 @@ impl<'tcx> PlaceCapabilities<'tcx> {
         self.get(place, ctxt)
             .map(|c| c == CapabilityKind::Exclusive)
             .unwrap_or(false)
-    }
-
-    pub(crate) fn owned_capabilities<'mir: 'slf, 'slf, 'bc: 'slf>(
-        &'slf mut self,
-        local: mir::Local,
-        ctxt: CompilerCtxt<'mir, 'tcx>,
-    ) -> impl Iterator<Item = (Place<'tcx>, &'slf mut CapabilityKind)> + use<'tcx, 'slf, 'mir> {
-        self.0.iter_mut().filter_map(move |(place, capability)| {
-            if place.local == local && place.is_owned(ctxt) {
-                Some((*place, capability))
-            } else {
-                None
-            }
-        })
-    }
-
-    pub fn iter(&self) -> impl Iterator<Item = (Place<'tcx>, CapabilityKind)> + '_ {
-        self.0.iter().map(|(k, v)| (*k, *v))
-    }
-
-    pub(crate) fn join(&mut self, other: &Self) -> bool {
-        let mut changed = false;
-        self.0.retain(|place, _| other.0.contains_key(place));
-        for (place, other_capability) in other.iter() {
-            if let Some(self_capability) = self.0.get(&place) {
-                if let Some(c) = self_capability.minimum(other_capability) {
-                    changed |= self.0.insert(place, c) != Some(c);
-                } else {
-                    self.0.remove(&place);
-                    changed = true;
-                }
-            }
-        }
-        changed
     }
 }

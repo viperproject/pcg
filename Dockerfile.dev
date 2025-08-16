@@ -1,9 +1,9 @@
 # Development Dockerfile with standard Rust setup
-FROM rust:1.75
+FROM rust:1.89
 
 # Install required dependencies for development
 # Use -o Acquire::Check-Valid-Until=false to handle time sync issues in Docker
-RUN apt-get -o Acquire::Check-Valid-Until=false update && apt-get install -y \
+RUN apt-get -o Acquire::Check-Date=false -o Acquire::Check-Valid-Until=false update && apt-get install -y \
     pkg-config \
     tmux \
     vim \

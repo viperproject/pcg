@@ -16,12 +16,12 @@ use crate::borrow_pcg::has_pcs_elem::{
     LabelLifetimeProjectionPredicate, LabelLifetimeProjectionResult, LabelNodeContext,
     LabelPlaceWithContext, PlaceLabeller,
 };
-use crate::pcg::{PcgError, PcgInternalError};
+use crate::error::{PcgError, PcgInternalError};
 use crate::utils::json::ToJsonWithCompilerCtxt;
 use crate::utils::place::maybe_old::MaybeLabelledPlace;
 use crate::utils::place::maybe_remote::MaybeRemotePlace;
 use crate::utils::remote::RemotePlace;
-use crate::utils::{CompilerCtxt, SnapshotLocation};
+use crate::utils::{CompilerCtxt, HasBorrowCheckerCtxt, HasCompilerCtxt, SnapshotLocation};
 use crate::{
     pcg::{LocalNodeLike, PCGNodeLike, PcgNode},
     rustc_interface::{
@@ -152,13 +152,19 @@ impl<'tcx> MaybeRemoteRegionProjectionBase<'tcx> {
             MaybeRemoteRegionProjectionBase::Const(_) => None,
         }
     }
-    pub(crate) fn is_mutable(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
+    pub(crate) fn is_mutable<'a>(&self, ctxt: impl HasCompilerCtxt<'a, 'tcx>) -> bool
+    where
+        'tcx: 'a,
+    {
         match self {
             MaybeRemoteRegionProjectionBase::Place(p) => p.is_mutable(ctxt),
             MaybeRemoteRegionProjectionBase::Const(_) => false,
         }
     }
-    pub(crate) fn base_ty<C: Copy>(self, ctxt: CompilerCtxt<'_, 'tcx, C>) -> ty::Ty<'tcx> {
+    pub(crate) fn base_ty<'a>(self, ctxt: impl HasCompilerCtxt<'a, 'tcx>) -> ty::Ty<'tcx>
+    where
+        'tcx: 'a,
+    {
         match self {
             MaybeRemoteRegionProjectionBase::Place(maybe_remote_place) => {
                 let local_place: Place<'tcx> =
@@ -407,9 +413,12 @@ impl<'tcx> TypeVisitor<ty::TyCtxt<'tcx>> for TyVarianceVisitor<'_, 'tcx> {
 }
 
 impl<'tcx, T: RegionProjectionBaseLike<'tcx>> LifetimeProjection<'tcx, T> {
-    pub(crate) fn is_invariant_in_type(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
+    pub(crate) fn is_invariant_in_type<'a>(&self, ctxt: impl HasBorrowCheckerCtxt<'a, 'tcx>) -> bool
+    where
+        'tcx: 'a,
+    {
         let mut visitor = TyVarianceVisitor {
-            ctxt,
+            ctxt: ctxt.bc_ctxt(),
             target: self.region(ctxt),
             found: false,
         };
@@ -423,19 +432,25 @@ impl<'tcx, T: RegionProjectionBaseLike<'tcx>> LifetimeProjection<'tcx, T> {
 
 impl<'tcx, T: RegionProjectionBaseLike<'tcx>> LifetimeProjection<'tcx, T> {
     #[must_use]
-    pub(crate) fn with_placeholder_label(
+    pub(crate) fn with_placeholder_label<'a>(
         self,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> LifetimeProjection<'tcx, T> {
+        ctxt: impl HasCompilerCtxt<'a, 'tcx>,
+    ) -> LifetimeProjection<'tcx, T>
+    where
+        'tcx: 'a,
+    {
         self.with_label(Some(LifetimeProjectionLabel::Future), ctxt)
     }
 
     #[must_use]
-    pub(crate) fn with_label<BC: Copy>(
+    pub(crate) fn with_label<'a>(
         self,
         label: Option<LifetimeProjectionLabel>,
-        _ctxt: CompilerCtxt<'_, 'tcx, BC>,
-    ) -> LifetimeProjection<'tcx, T> {
+        _ctxt: impl HasCompilerCtxt<'a, 'tcx>,
+    ) -> LifetimeProjection<'tcx, T>
+    where
+        'tcx: 'a,
+    {
         LifetimeProjection {
             base: self.base,
             region_idx: self.region_idx,
@@ -727,14 +742,17 @@ impl<'tcx, T: RegionProjectionBaseLike<'tcx>> HasValidityCheck<'tcx>
 }
 
 impl<'tcx, T: RegionProjectionBaseLike<'tcx>> LifetimeProjection<'tcx, T> {
-    pub(crate) fn new<C: Copy>(
+    pub(crate) fn new<'a>(
         region: PcgRegion,
         base: T,
         label: Option<LifetimeProjectionLabel>,
-        ctxt: CompilerCtxt<'_, 'tcx, C>,
-    ) -> Result<Self, PcgInternalError> {
+        ctxt: impl HasCompilerCtxt<'a, 'tcx>,
+    ) -> Result<Self, PcgInternalError>
+    where
+        'tcx: 'a,
+    {
         let region_idx = base
-            .regions(ctxt)
+            .regions(ctxt.ctxt())
             .into_iter_enumerated()
             .find(|(_, r)| *r == region)
             .map(|(idx, _)| idx);
@@ -756,8 +774,11 @@ impl<'tcx, T: RegionProjectionBaseLike<'tcx>> LifetimeProjection<'tcx, T> {
         Ok(result)
     }
 
-    pub(crate) fn region<C: Copy>(&self, ctxt: CompilerCtxt<'_, 'tcx, C>) -> PcgRegion {
-        let regions = self.base.regions(ctxt);
+    pub(crate) fn region<'a>(&self, ctxt: impl HasCompilerCtxt<'a, 'tcx>) -> PcgRegion
+    where
+        'tcx: 'a,
+    {
+        let regions = self.base.regions(ctxt.ctxt());
         if self.region_idx.index() >= regions.len() {
             unreachable!()
         } else {

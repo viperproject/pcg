@@ -5,16 +5,16 @@ use crate::borrow_pcg::action::LabelPlaceReason;
 use crate::borrow_pcg::borrow_pcg_edge::BorrowPcgEdgeLike;
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::pcg::CapabilityKind;
-use crate::pcg::place_capabilities::PlaceCapabilitiesInterface;
+use crate::pcg::place_capabilities::PlaceCapabilitiesReader;
 use crate::pcg_validity_assert;
 use crate::rustc_interface::middle::mir::{Statement, StatementKind};
 
 use crate::utils::visitor::FallableVisitor;
-use crate::utils::{self};
+use crate::utils::{self, DataflowCtxt};
 
 use super::{EvalStmtPhase, PcgError};
 
-impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
+impl<'a, 'tcx: 'a, Ctxt: DataflowCtxt<'a, 'tcx>> PcgVisitor<'_, 'a, 'tcx, Ctxt> {
     pub(crate) fn perform_statement_actions(
         &mut self,
         statement: &Statement<'tcx>,
@@ -55,7 +55,13 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                     // The permission to the target may have been Read originally.
                     // Now, because it's been made old, the non-old place should be a leaf,
                     // and its permission should be Exclusive.
-                    if self.pcg.capabilities.get(target, self.ctxt) == Some(CapabilityKind::Read) {
+                    if self
+                        .pcg
+                        .capabilities
+                        .get(target, self.ctxt)
+                        .map(|c| c.expect_concrete())
+                        == Some(CapabilityKind::Read)
+                    {
                         self.record_and_apply_action(
                             BorrowPcgAction::restore_capability(
                                 target,
@@ -67,7 +73,8 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                     }
                 }
 
-                if let Some(target_cap) = self.pcg.capabilities.get(target, self.ctxt) {
+                if let Some(target_cap_sym) = self.pcg.capabilities.get(target, self.ctxt) {
+                    let target_cap = target_cap_sym.expect_concrete();
                     pcg_validity_assert!(
                         target_cap >= CapabilityKind::Write,
                         "target_cap: {:?}",

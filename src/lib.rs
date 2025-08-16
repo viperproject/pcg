@@ -22,6 +22,7 @@ may already be stabilized */
 pub mod action;
 pub mod borrow_checker;
 pub mod borrow_pcg;
+pub mod error;
 pub mod r#loop;
 pub mod owned_pcg;
 #[deprecated(note = "Use `owned_pcg` instead")]
@@ -56,7 +57,7 @@ use visualization::mir_graph::generate_json_from_mir;
 use utils::json::ToJsonWithCompilerCtxt;
 
 /// The result of the PCG analysis.
-pub type PcgOutput<'mir, 'tcx, A> = owned_pcg::PcgAnalysis<'mir, 'tcx, A>;
+pub type PcgOutput<'a, 'tcx> = owned_pcg::PcgAnalysis<'a, 'tcx>;
 /// Instructs that the current capability to the place (first [`CapabilityKind`]) should
 /// be weakened to the second given capability. We guarantee that `_.1 > _.2`.
 /// If `_.2` is `None`, the capability is removed.
@@ -81,12 +82,15 @@ impl<'tcx> Weaken<'tcx> {
         )
     }
 
-    pub(crate) fn new(
+    pub(crate) fn new<'a>(
         place: Place<'tcx>,
         from: CapabilityKind,
         to: Option<CapabilityKind>,
-        _ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> Self {
+        _ctxt: impl HasCompilerCtxt<'a, 'tcx>,
+    ) -> Self
+    where
+        'tcx: 'a,
+    {
         // TODO: Sometimes R can be downgraded to W
         // if let Some(to) = to {
         //     pcg_validity_assert!(
@@ -173,19 +177,7 @@ impl<'tcx> DebugLines<CompilerCtxt<'_, 'tcx>> for BorrowPcgActions<'tcx> {
 }
 
 use borrow_pcg::action::actions::BorrowPcgActions;
-use std::{alloc::Allocator, sync::Mutex};
 use utils::eval_stmt_data::EvalStmtData;
-
-lazy_static::lazy_static! {
-    /// Whether to record PCG information for each block. This is used for
-    /// debugging only. This is set to true when the PCG is initially
-    /// constructed, and then disabled after its construction. The reason for
-    /// using a global variable is that debugging information is written during
-    /// the dataflow operations of the PCG, which are also used when examining
-    /// PCG results. We don't want to write the debugging information to disk
-    /// during examination, of course.
-    static ref RECORD_PCG: Mutex<bool> = Mutex::new(false);
-}
 
 struct PCGStmtVisualizationData<'a, 'tcx> {
     actions: &'a EvalStmtData<PcgActions<'tcx>>,
@@ -272,6 +264,7 @@ impl<'tcx> BodyAndBorrows<'tcx> for borrowck::BodyWithBorrowckFacts<'tcx> {
 pub struct PcgCtxt<'mir, 'tcx> {
     compiler_ctxt: CompilerCtxt<'mir, 'tcx>,
     move_data: MoveData<'tcx>,
+    pub(crate) arena: bumpalo::Bump,
 }
 
 fn gather_moves<'tcx>(body: &Body<'tcx>, tcx: ty::TyCtxt<'tcx>) -> MoveData<'tcx> {
@@ -288,6 +281,7 @@ impl<'mir, 'tcx> PcgCtxt<'mir, 'tcx> {
         Self {
             compiler_ctxt: ctxt,
             move_data: gather_moves(ctxt.body(), ctxt.tcx()),
+            arena: bumpalo::Bump::new(),
         }
     }
 }
@@ -302,39 +296,40 @@ impl<'mir, 'tcx> PcgCtxt<'mir, 'tcx> {
 /// - `arena`: The arena to use for allocation. You can use [`std::alloc::Global`] if you don't
 ///   care to use a custom allocator.
 /// - `visualization_output_path`: The path to output debug visualization to.
-pub fn run_pcg<'a, 'tcx, A: Allocator + Copy + std::fmt::Debug>(
+pub fn run_pcg<'a, 'tcx>(
     pcg_ctxt: &'a PcgCtxt<'_, 'tcx>,
-    arena: A,
     visualization_output_path: Option<&str>,
-) -> PcgOutput<'a, 'tcx, A> {
+) -> PcgOutput<'a, 'tcx> {
     let engine = PcgEngine::new(
         pcg_ctxt.compiler_ctxt,
         &pcg_ctxt.move_data,
-        arena,
+        &pcg_ctxt.arena,
         visualization_output_path,
     );
-    {
-        let mut record_pcg = RECORD_PCG.lock().unwrap();
-        *record_pcg = true;
-    }
     let body = pcg_ctxt.compiler_ctxt.body();
     let tcx = pcg_ctxt.compiler_ctxt.tcx();
-    let analysis = compute_fixpoint(AnalysisEngine(engine), tcx, body);
-    {
-        let mut record_pcg = RECORD_PCG.lock().unwrap();
-        *record_pcg = false;
+    let mut analysis = compute_fixpoint(AnalysisEngine(engine), tcx, body);
+    for block in body.basic_blocks.indices() {
+        let engine = analysis.get_analysis();
+        let ctxt = engine.analysis_ctxt(block);
+        let state = analysis.entry_state_for_block_mut(block);
+        state.complete(ctxt);
     }
     if let Some(dir_path) = &visualization_output_path {
         for block in body.basic_blocks.indices() {
             let state = analysis.entry_set_for_block(block);
-            assert!(state.block() == block);
+            if state.is_bottom() {
+                continue;
+            }
             let block_iterations_json_file =
                 format!("{}/block_{}_iterations.json", dir_path, block.index());
-            state
-                .dot_graphs()
-                .unwrap()
-                .borrow()
-                .write_json_file(&block_iterations_json_file);
+            let ctxt = analysis.get_analysis().analysis_ctxt(block);
+            if let Some(graphs) = ctxt.graphs {
+                graphs
+                    .dot_graphs
+                    .borrow()
+                    .write_json_file(&block_iterations_json_file);
+            }
         }
     }
     let mut fpcs_analysis = owned_pcg::PcgAnalysis::new(analysis.into_results_cursor(body));
@@ -552,7 +547,7 @@ macro_rules! pcg_validity_assert {
 
     // Without brackets
     ($cond:expr) => {
-        pcg_validity_assert!($cond, "PCG Assertion Failed: {}", stringify!($cond));
+        pcg_validity_assert!($cond, "PCG Assertion Failed: {}", stringify!($cond))
     };
     ($cond:expr, $($arg:tt)*) => {
         if $crate::validity_checks_enabled() {
@@ -572,6 +567,7 @@ pub(crate) use pcg_validity_expect_ok;
 pub(crate) use pcg_validity_expect_some;
 
 use crate::owned_pcg::PcgLocation;
+use crate::utils::HasCompilerCtxt;
 
 pub(crate) fn validity_checks_enabled() -> bool {
     *VALIDITY_CHECKS

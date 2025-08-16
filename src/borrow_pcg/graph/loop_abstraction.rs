@@ -347,13 +347,13 @@ impl<'tcx> BorrowsGraph<'tcx> {
         result
     }
 
-    pub(crate) fn expand_places_for_abstraction<'mir>(
+    pub(crate) fn expand_places_for_abstraction<'a>(
         &mut self,
         loop_blocked_places: &PlaceUsages<'tcx>,
         to_expand: &PlaceUsages<'tcx>,
         validity_conditions: &ValidityConditions,
-        args: JoinBorrowsArgs<'_, 'mir, 'tcx>,
-        ctxt: CompilerCtxt<'mir, 'tcx>,
+        args: JoinBorrowsArgs<'_, 'a, 'tcx>,
+        ctxt: AnalysisCtxt<'a, 'tcx>,
     ) {
         let borrow = BorrowStateMutRef {
             graph: self,
@@ -370,7 +370,6 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 statement_index: 0,
             },
             snapshot_location,
-            None,
         );
         let mut to_obtain: Vec<PlaceUsage<'tcx>> = vec![];
         for place_usage in to_expand.iter() {
@@ -394,7 +393,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
                 Some(DebugImgcat::JoinLoop),
                 &format!(
                     "After obtaining (self) {}",
-                    place_usage.to_short_string(ctxt)
+                    place_usage.to_short_string(ctxt.ctxt)
                 ),
             );
         }
@@ -500,7 +499,7 @@ impl<'tcx> AbsExpander<'_, '_, 'tcx> {
 }
 
 impl<'tcx> ActionApplier<'tcx> for AbsExpander<'_, '_, 'tcx> {
-    fn apply_action(&mut self, action: PcgAction<'tcx>) -> Result<bool, crate::pcg::PcgError> {
+    fn apply_action(&mut self, action: PcgAction<'tcx>) -> Result<bool, crate::error::PcgError> {
         tracing::debug!("applying action: {}", action.debug_line(self.ctxt));
         match action {
             PcgAction::Borrow(action) => match action.kind {
@@ -555,7 +554,7 @@ impl<'mir, 'tcx> PlaceExpander<'mir, 'tcx> for AbsExpander<'_, 'mir, 'tcx> {
         _expansion: &crate::borrow_pcg::borrow_pcg_expansion::BorrowPcgExpansion<'tcx>,
         _block_type: crate::pcg::place_capabilities::BlockType,
         _ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> Result<bool, crate::pcg::PcgError> {
+    ) -> Result<bool, crate::error::PcgError> {
         Ok(true)
     }
     fn update_capabilities_for_deref(
@@ -563,7 +562,7 @@ impl<'mir, 'tcx> PlaceExpander<'mir, 'tcx> for AbsExpander<'_, 'mir, 'tcx> {
         _ref_place: Place<'tcx>,
         _capability: CapabilityKind,
         _ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> Result<bool, crate::pcg::PcgError> {
+    ) -> Result<bool, crate::error::PcgError> {
         Ok(true)
     }
 

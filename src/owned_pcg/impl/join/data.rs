@@ -1,10 +1,11 @@
+use crate::borrow_pcg::state::BorrowsState;
+use crate::pcg::place_capabilities::SymbolicPlaceCapabilities;
 use crate::rustc_interface::middle::mir;
-use crate::{borrow_pcg::state::BorrowsState, pcg::place_capabilities::PlaceCapabilities};
 
 pub(crate) struct JoinOwnedData<'pcg, 'tcx, T> {
     pub(crate) owned: T,
     pub(crate) borrows: &'pcg mut BorrowsState<'tcx>,
-    pub(crate) capabilities: &'pcg mut PlaceCapabilities<'tcx>,
+    pub(crate) capabilities: &'pcg mut SymbolicPlaceCapabilities<'tcx>,
     pub(crate) block: mir::BasicBlock,
 }
 

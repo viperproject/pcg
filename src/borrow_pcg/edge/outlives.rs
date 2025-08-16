@@ -12,7 +12,9 @@ use crate::{
     },
     pcg::{PCGNodeLike, PcgNode},
     pcg_validity_assert,
-    utils::{CompilerCtxt, display::DisplayWithCompilerCtxt, validity::HasValidityCheck},
+    utils::{
+        CompilerCtxt, HasCompilerCtxt, display::DisplayWithCompilerCtxt, validity::HasValidityCheck,
+    },
 };
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq, Hash)]
@@ -123,13 +125,16 @@ impl<'tcx> HasValidityCheck<'tcx> for BorrowFlowEdge<'tcx> {
 }
 
 impl<'tcx> BorrowFlowEdge<'tcx> {
-    pub(crate) fn new(
+    pub(crate) fn new<'a>(
         long: LifetimeProjection<'tcx>,
         short: LocalLifetimeProjection<'tcx>,
         kind: BorrowFlowEdgeKind,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> Self {
-        pcg_validity_assert!(long.to_pcg_node(ctxt) != short.to_pcg_node(ctxt));
+        ctxt: impl HasCompilerCtxt<'a, 'tcx>,
+    ) -> Self
+    where
+        'tcx: 'a,
+    {
+        pcg_validity_assert!(long.to_pcg_node(ctxt.ctxt()) != short.to_pcg_node(ctxt.ctxt()));
         Self { long, short, kind }
     }
 

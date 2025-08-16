@@ -9,7 +9,9 @@ use rustc_interface::middle::mir::{Local, PlaceElem};
 use crate::{
     pcg::CapabilityKind,
     rustc_interface::{self, VariantIdx, span::Symbol},
-    utils::{CompilerCtxt, ConstantIndex, Place, display::DisplayWithCompilerCtxt},
+    utils::{
+        CompilerCtxt, ConstantIndex, HasCompilerCtxt, Place, display::DisplayWithCompilerCtxt,
+    },
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
@@ -98,7 +100,10 @@ impl<'tcx> RepackExpand<'tcx> {
         self.from.local
     }
 
-    pub fn target_places(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Vec<Place<'tcx>> {
+    pub fn target_places<'a>(&self, ctxt: impl HasCompilerCtxt<'a, 'tcx>) -> Vec<Place<'tcx>>
+    where
+        'tcx: 'a,
+    {
         let expansion = self.from.expansion(self.guide, ctxt);
         self.from.expansion_places(&expansion, ctxt).unwrap()
     }
@@ -201,11 +206,11 @@ impl<'tcx, BC: Copy> DisplayWithCompilerCtxt<'tcx, BC> for RepackOp<'tcx> {
 }
 
 impl<'tcx> RepackOp<'tcx> {
-    pub(crate) fn expand(
+    pub(crate) fn expand<'a>(
         from: Place<'tcx>,
         guide: Option<RepackGuide>,
         for_cap: CapabilityKind,
-        _ctxt: CompilerCtxt<'_, 'tcx>,
+        _ctxt: impl HasCompilerCtxt<'a, 'tcx>,
     ) -> Self {
         // Note that we might generate expand annotations with `Write` capability for
         // the `bridge` operation to generate annotations between basic blocks.

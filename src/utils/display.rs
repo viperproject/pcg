@@ -142,7 +142,7 @@ impl<'tcx> Place<'tcx> {
                 ProjectionElem::Deref => (ElemPosition::Prefix, "*".into()),
 
                 ProjectionElem::Field(field, _) => {
-                    let ty = place.ty(&repacker.mir.local_decls, repacker.tcx).ty;
+                    let ty = place.ty(&repacker.mir.local_decls, repacker.tcx()).ty;
 
                     let field_name = match ty.kind() {
                         TyKind::Adt(def, _substs) => {
@@ -158,14 +158,14 @@ impl<'tcx> Place<'tcx> {
                                 }
                             };
 
-                            fields[field].ident(repacker.tcx).to_string()
+                            fields[field].ident(repacker.tcx()).to_string()
                         }
 
                         TyKind::Tuple(_) => field.as_usize().to_string(),
 
                         TyKind::Closure(def_id, _substs) => match def_id.as_local() {
                             Some(local_def_id) => {
-                                let captures = repacker.tcx.closure_captures(local_def_id);
+                                let captures = repacker.tcx().closure_captures(local_def_id);
                                 captures[field.as_usize()].var_ident.to_string()
                             }
                             None => field.as_usize().to_string(),
@@ -218,33 +218,6 @@ impl<'tcx> Place<'tcx> {
     }
 }
 
-pub(crate) trait DisplayDiff<Ctxt> {
-    #[must_use]
-    fn fmt_diff(&self, to: &Self, ctxt: Ctxt) -> String;
-}
-
 pub(crate) trait DebugLines<Ctxt> {
     fn debug_lines(&self, ctxt: Ctxt) -> Vec<String>;
-}
-
-impl<Ctxt: Copy, T: DebugLines<Ctxt>> DisplayDiff<Ctxt> for T {
-    fn fmt_diff(&self, to: &Self, ctxt: Ctxt) -> String {
-        let self_lines = self.debug_lines(ctxt);
-        let to_lines = to.debug_lines(ctxt);
-        let mut result = Vec::new();
-
-        for line in self_lines.iter() {
-            if !to_lines.contains(line) {
-                result.push(format!("-{line}"));
-            }
-        }
-
-        for line in to_lines.iter() {
-            if !self_lines.contains(line) {
-                result.push(format!("+{line}"));
-            }
-        }
-
-        result.join("\n")
-    }
 }

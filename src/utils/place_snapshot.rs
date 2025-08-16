@@ -6,6 +6,7 @@ use crate::borrow_pcg::region_projection::{
     MaybeRemoteRegionProjectionBase, PcgRegion, RegionIdx, RegionProjectionBaseLike,
 };
 use crate::pcg::{EvalStmtPhase, PCGNodeLike, PcgNode};
+use crate::utils::HasCompilerCtxt;
 use crate::utils::json::ToJsonWithCompilerCtxt;
 use crate::{
     borrow_pcg::borrow_pcg_edge::LocalNode,
@@ -99,7 +100,10 @@ impl SnapshotLocation {
         })
     }
 
-    pub fn after_statement_at(location: Location, ctxt: CompilerCtxt<'_, '_>) -> Self {
+    pub fn after_statement_at<'a, 'tcx: 'a>(
+        location: Location,
+        ctxt: impl HasCompilerCtxt<'a, 'tcx>,
+    ) -> Self {
         let analysis_location = AnalysisLocation {
             location,
             eval_stmt_phase: EvalStmtPhase::last(),
@@ -207,10 +211,13 @@ impl<'tcx> LabelledPlace<'tcx> {
         self.at
     }
 
-    pub(crate) fn with_inherent_region(
+    pub(crate) fn with_inherent_region<'a>(
         &self,
-        repacker: CompilerCtxt<'_, 'tcx>,
-    ) -> LabelledPlace<'tcx> {
+        repacker: impl HasCompilerCtxt<'a, 'tcx>,
+    ) -> LabelledPlace<'tcx>
+    where
+        'tcx: 'a,
+    {
         LabelledPlace {
             place: self.place.with_inherent_region(repacker),
             at: self.at,

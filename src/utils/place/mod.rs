@@ -15,8 +15,8 @@ use derive_more::{Deref, DerefMut};
 
 use crate::{
     borrow_pcg::borrow_pcg_expansion::PlaceExpansion,
+    error::{PcgError, PcgUnsupportedError},
     owned_pcg::RepackGuide,
-    pcg::{PcgError, PcgUnsupportedError},
     rustc_interface::{
         VariantIdx,
         ast::Mutability,
@@ -27,7 +27,7 @@ use crate::{
             ty::{self, Ty, TyKind},
         },
     },
-    utils::data_structures::HashSet,
+    utils::{HasCompilerCtxt, data_structures::HashSet},
 };
 
 use super::{CompilerCtxt, display::DisplayWithCompilerCtxt, validity::HasValidityCheck};
@@ -205,12 +205,15 @@ impl<'tcx> Place<'tcx> {
     /// Returns an error if the projection would be illegal
     ///
     /// ```
-    pub(crate) fn project_deeper<C: Copy>(
+    pub(crate) fn project_deeper<'a>(
         self,
         elem: PlaceElem<'tcx>,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
-    ) -> std::result::Result<Self, PcgUnsupportedError> {
-        let base_ty = self.ty(repacker);
+        ctxt: impl HasCompilerCtxt<'a, 'tcx>,
+    ) -> std::result::Result<Self, PcgUnsupportedError>
+    where
+        'tcx: 'a,
+    {
+        let base_ty = self.ty(ctxt);
         if matches!(
             elem,
             ProjectionElem::Index(_) | ProjectionElem::ConstantIndex { .. }
@@ -225,7 +228,7 @@ impl<'tcx> Place<'tcx> {
                         Some(v) => def.variant(v),
                         None => def.non_enum_variant(),
                     };
-                    variant.fields[field_idx].ty(repacker.tcx(), substs)
+                    variant.fields[field_idx].ty(ctxt.tcx(), substs)
                 }
                 ty::TyKind::Tuple(tys) => tys[field_idx.as_usize()],
                 _ => proj_ty,
@@ -234,19 +237,22 @@ impl<'tcx> Place<'tcx> {
         } else {
             elem
         };
-        Ok(self
-            .0
-            .project_deeper(&[corrected_elem], repacker.tcx())
-            .into())
+        Ok(self.0.project_deeper(&[corrected_elem], ctxt.tcx()).into())
     }
 
     #[rustversion::since(2025-05-24)]
-    pub(crate) fn is_raw_ptr(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
+    pub(crate) fn is_raw_ptr<'a>(&self, ctxt: impl HasCompilerCtxt<'a, 'tcx>) -> bool
+    where
+        'tcx: 'a,
+    {
         self.ty(ctxt).ty.is_raw_ptr()
     }
 
     #[rustversion::before(2025-05-24)]
-    pub(crate) fn is_raw_ptr(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
+    pub(crate) fn is_raw_ptr<'a>(&self, ctxt: impl HasCompilerCtxt<'a, 'tcx>) -> bool
+    where
+        'tcx: 'a,
+    {
         self.ty(ctxt).ty.is_unsafe_ptr()
     }
 
@@ -270,11 +276,14 @@ impl<'tcx> Place<'tcx> {
         Self(PlaceRef { local, projection })
     }
 
-    pub(crate) fn expansion(
+    pub(crate) fn expansion<'a>(
         self,
         guide: Option<RepackGuide>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> PlaceExpansion<'tcx> {
+        ctxt: impl HasCompilerCtxt<'a, 'tcx>,
+    ) -> PlaceExpansion<'tcx>
+    where
+        'tcx: 'a,
+    {
         if let Some(guide) = guide {
             guide.into()
         } else if self.ty(ctxt).ty.is_box() {
@@ -306,11 +315,14 @@ impl<'tcx> Place<'tcx> {
         }
     }
 
-    pub(crate) fn expansion_places(
+    pub(crate) fn expansion_places<'a>(
         self,
         expansion: &PlaceExpansion<'tcx>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> std::result::Result<Vec<Place<'tcx>>, PcgUnsupportedError> {
+        ctxt: impl HasCompilerCtxt<'a, 'tcx>,
+    ) -> std::result::Result<Vec<Place<'tcx>>, PcgUnsupportedError>
+    where
+        'tcx: 'a,
+    {
         let mut places = Vec::new();
         for elem in expansion.elems() {
             places.push(self.project_deeper(elem, ctxt)?);
@@ -318,10 +330,13 @@ impl<'tcx> Place<'tcx> {
         Ok(places)
     }
 
-    pub(crate) fn base_lifetime_projection<C: Copy>(
+    pub(crate) fn base_lifetime_projection<'a>(
         self,
-        ctxt: CompilerCtxt<'_, 'tcx, C>,
-    ) -> Option<LifetimeProjection<'tcx, Self>> {
+        ctxt: impl HasCompilerCtxt<'a, 'tcx>,
+    ) -> Option<LifetimeProjection<'tcx, Self>>
+    where
+        'tcx: 'a,
+    {
         self.ty_region(ctxt)
             .map(|region| LifetimeProjection::new(region, self, None, ctxt).unwrap())
     }
@@ -330,8 +345,11 @@ impl<'tcx> Place<'tcx> {
         self.0.projection
     }
 
-    pub(crate) fn contains_unsafe_deref(&self, repacker: CompilerCtxt<'_, 'tcx>) -> bool {
-        for (p, proj) in self.iter_projections(repacker) {
+    pub(crate) fn contains_unsafe_deref<'a>(&self, repacker: impl HasCompilerCtxt<'a, 'tcx>) -> bool
+    where
+        'tcx: 'a,
+    {
+        for (p, proj) in self.iter_projections(repacker.ctxt()) {
             if p.is_raw_ptr(repacker) && matches!(proj, PlaceElem::Deref) {
                 return true;
             }
@@ -339,12 +357,21 @@ impl<'tcx> Place<'tcx> {
         false
     }
 
-    pub(crate) fn has_lifetimes_under_unsafe_ptr(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
-        fn ty_has_lifetimes_under_unsafe_ptr<'tcx>(
+    pub(crate) fn has_lifetimes_under_unsafe_ptr<'a>(
+        &self,
+        ctxt: impl HasCompilerCtxt<'a, 'tcx>,
+    ) -> bool
+    where
+        'tcx: 'a,
+    {
+        fn ty_has_lifetimes_under_unsafe_ptr<'a, 'tcx>(
             ty: Ty<'tcx>,
             seen: &mut HashSet<Ty<'tcx>>,
-            ctxt: CompilerCtxt<'_, 'tcx>,
-        ) -> bool {
+            ctxt: impl HasCompilerCtxt<'a, 'tcx>,
+        ) -> bool
+        where
+            'tcx: 'a,
+        {
             if seen.contains(&ty) {
                 return false;
             }
@@ -367,7 +394,7 @@ impl<'tcx> Place<'tcx> {
                         vec![substs.first().unwrap().expect_ty()]
                     } else {
                         def.all_fields()
-                            .map(|f| f.ty(ctxt.tcx, substs))
+                            .map(|f| f.ty(ctxt.tcx(), substs))
                             .collect::<Vec<_>>()
                     }
                 }
@@ -406,7 +433,10 @@ impl<'tcx> Place<'tcx> {
         ty_has_lifetimes_under_unsafe_ptr(self.ty(ctxt).ty, &mut HashSet::default(), ctxt)
     }
 
-    pub(crate) fn ty_region<C: Copy>(&self, ctxt: CompilerCtxt<'_, 'tcx, C>) -> Option<PcgRegion> {
+    pub(crate) fn ty_region<'a>(&self, ctxt: impl HasCompilerCtxt<'a, 'tcx>) -> Option<PcgRegion>
+    where
+        'tcx: 'a,
+    {
         match self.ty(ctxt).ty.kind() {
             TyKind::Ref(region, _, _) => Some((*region).into()),
             _ => None,
@@ -426,8 +456,11 @@ impl<'tcx> Place<'tcx> {
     /// This function converts the Place into a canonical form by re-projecting the place
     /// from its local, and using types derived from the root place as the types associated
     /// with Field region projections.
-    pub fn with_inherent_region<C: Copy>(self, repacker: CompilerCtxt<'_, 'tcx, C>) -> Self {
-        let mut proj_iter = self.iter_projections(repacker).into_iter();
+    pub fn with_inherent_region<'a>(self, repacker: impl HasCompilerCtxt<'a, 'tcx>) -> Self
+    where
+        'tcx: 'a,
+    {
+        let mut proj_iter = self.iter_projections(repacker.ctxt()).into_iter();
         let mut place = if let Some((place, elem)) = proj_iter.next() {
             place.project_deeper(elem, repacker).unwrap()
         } else {
@@ -454,17 +487,23 @@ impl<'tcx> Place<'tcx> {
         self.lifetime_projections(repacker)[idx]
     }
 
-    pub fn regions<C: Copy>(
+    pub fn regions<'a>(
         &self,
-        ctxt: CompilerCtxt<'_, 'tcx, C>,
-    ) -> IndexVec<RegionIdx, PcgRegion> {
+        ctxt: impl HasCompilerCtxt<'a, 'tcx>,
+    ) -> IndexVec<RegionIdx, PcgRegion>
+    where
+        'tcx: 'a,
+    {
         extract_regions(self.ty(ctxt).ty, ctxt)
     }
 
-    pub(crate) fn lifetime_projections<C: Copy>(
+    pub(crate) fn lifetime_projections<'a>(
         &self,
-        ctxt: CompilerCtxt<'_, 'tcx, C>,
-    ) -> IndexVec<RegionIdx, LifetimeProjection<'tcx, Self>> {
+        ctxt: impl HasCompilerCtxt<'a, 'tcx>,
+    ) -> IndexVec<RegionIdx, LifetimeProjection<'tcx, Self>>
+    where
+        'tcx: 'a,
+    {
         let place = self.with_inherent_region(ctxt);
         extract_regions(place.ty(ctxt).ty, ctxt)
             .iter()
@@ -483,36 +522,54 @@ impl<'tcx> Place<'tcx> {
             .map(|(idx, _)| idx)
     }
 
-    pub fn is_owned<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> bool {
+    pub fn is_owned<'a>(self, repacker: impl HasCompilerCtxt<'a, 'tcx>) -> bool
+    where
+        'tcx: 'a,
+    {
         !self
-            .iter_projections(repacker)
+            .iter_projections(repacker.ctxt())
             .into_iter()
             .any(|(place, elem)| elem == ProjectionElem::Deref && !place.ty(repacker).ty.is_box())
     }
 
-    pub fn is_mut_ref(&self, repacker: CompilerCtxt<'_, 'tcx>) -> bool {
+    pub fn is_mut_ref<'a>(&self, repacker: impl HasCompilerCtxt<'a, 'tcx>) -> bool
+    where
+        'tcx: 'a,
+    {
         matches!(
-            self.0.ty(repacker.mir, repacker.tcx).ty.kind(),
+            self.0.ty(repacker.body(), repacker.tcx()).ty.kind(),
             TyKind::Ref(_, _, Mutability::Mut)
         )
     }
 
-    pub(crate) fn is_shared_ref(self, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
+    pub(crate) fn is_shared_ref<'a>(self, ctxt: impl HasCompilerCtxt<'a, 'tcx>) -> bool
+    where
+        'tcx: 'a,
+    {
         matches!(self.ref_mutability(ctxt), Some(Mutability::Not))
     }
 
-    pub fn is_ref<C: Copy>(&self, ctxt: CompilerCtxt<'_, 'tcx, C>) -> bool {
-        self.0.ty(ctxt.mir, ctxt.tcx).ty.is_ref()
+    pub fn is_ref<'a>(self, ctxt: impl HasCompilerCtxt<'a, 'tcx>) -> bool
+    where
+        'tcx: 'a,
+    {
+        self.0.ty(ctxt.body(), ctxt.tcx()).ty.is_ref()
     }
 
-    pub fn ref_mutability<C: Copy>(
-        &self,
-        repacker: CompilerCtxt<'_, 'tcx, C>,
-    ) -> Option<Mutability> {
-        self.0.ty(repacker.mir, repacker.tcx).ty.ref_mutability()
+    pub fn ref_mutability<'a>(&self, repacker: impl HasCompilerCtxt<'a, 'tcx>) -> Option<Mutability>
+    where
+        'tcx: 'a,
+    {
+        self.0
+            .ty(repacker.body(), repacker.tcx())
+            .ty
+            .ref_mutability()
     }
 
-    pub fn project_deref<C: Copy>(&self, repacker: CompilerCtxt<'_, 'tcx, C>) -> Self {
+    pub fn project_deref<'a>(&self, repacker: impl HasCompilerCtxt<'a, 'tcx>) -> Self
+    where
+        'tcx: 'a,
+    {
         assert!(
             self.ty(repacker).ty.is_ref() || self.ty(repacker).ty.is_box(),
             "Expected ref or box, got {:?}",
@@ -670,25 +727,31 @@ impl<'tcx> Place<'tcx> {
         }
     }
 
-    pub(crate) fn projects_indirection_from(
+    pub(crate) fn projects_indirection_from<'a>(
         self,
         other: Self,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> bool {
+        ctxt: impl HasCompilerCtxt<'a, 'tcx>,
+    ) -> bool
+    where
+        'tcx: 'a,
+    {
         let Some(mut projections_after) = self.iter_projections_after(other, ctxt) else {
             return false;
         };
         projections_after.any(|(p, elem)| matches!(elem, ProjectionElem::Deref) && p.is_ref(ctxt))
     }
 
-    pub(crate) fn iter_projections_after(
+    pub(crate) fn iter_projections_after<'a>(
         self,
         other: Self,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> Option<impl Iterator<Item = (Self, PlaceElem<'tcx>)>> {
+        ctxt: impl HasCompilerCtxt<'a, 'tcx>,
+    ) -> Option<impl Iterator<Item = (Self, PlaceElem<'tcx>)>>
+    where
+        'tcx: 'a,
+    {
         if other.is_prefix_of(self) {
             Some(
-                self.iter_projections(ctxt)
+                self.iter_projections(ctxt.ctxt())
                     .into_iter()
                     .skip(other.projection.len()),
             )

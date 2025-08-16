@@ -5,8 +5,7 @@ use crate::{
         edge_data::EdgeData,
         graph::materialize::{MaterializedEdge, SyntheticEdge},
     },
-    pcg::CapabilityKind,
-    pcg::{MaybeHasLocation, PCGNodeLike, PcgNode},
+    pcg::{MaybeHasLocation, PCGNodeLike, PcgNode, SymbolicCapability},
     rustc_interface::middle::mir,
     utils::{
         CompilerCtxt, HasPlace, Place, display::DisplayWithCompilerCtxt,
@@ -16,12 +15,12 @@ use crate::{
 
 use super::{GraphEdge, NodeId, graph_constructor::GraphConstructor};
 
-pub(super) trait CapabilityGetter<'tcx> {
-    fn get(&self, node: Place<'tcx>) -> Option<CapabilityKind>;
+pub(super) trait CapabilityGetter<'a, 'tcx: 'a> {
+    fn get(&self, node: Place<'tcx>) -> Option<SymbolicCapability>;
 }
 
-pub(super) trait Grapher<'state, 'mir: 'state, 'tcx: 'mir> {
-    fn capability_getter(&self) -> impl CapabilityGetter<'tcx> + 'state;
+pub(super) trait Grapher<'state, 'a: 'state, 'tcx: 'a> {
+    fn capability_getter(&self) -> impl CapabilityGetter<'a, 'tcx> + 'state;
     fn insert_maybe_old_place(&mut self, place: MaybeLabelledPlace<'tcx>) -> NodeId {
         let capability_getter = self.capability_getter();
         let constructor = self.constructor();
@@ -41,14 +40,14 @@ pub(super) trait Grapher<'state, 'mir: 'state, 'tcx: 'mir> {
         }
     }
 
-    fn constructor(&mut self) -> &mut GraphConstructor<'mir, 'tcx>;
-    fn ctxt(&self) -> CompilerCtxt<'mir, 'tcx>;
+    fn constructor(&mut self) -> &mut GraphConstructor<'a, 'tcx>;
+    fn ctxt(&self) -> CompilerCtxt<'a, 'tcx>;
     fn draw_materialized_edge<'graph>(
         &mut self,
         edge: MaterializedEdge<'tcx, 'graph>,
         edge_idx: usize,
     ) where
-        'mir: 'graph,
+        'a: 'graph,
     {
         match edge {
             MaterializedEdge::Real(edge) => {
@@ -72,7 +71,7 @@ pub(super) trait Grapher<'state, 'mir: 'state, 'tcx: 'mir> {
     fn draw_borrow_pcg_edge(
         &mut self,
         edge: impl BorrowPcgEdgeLike<'tcx>,
-        capabilities: &impl CapabilityGetter<'tcx>,
+        capabilities: &impl CapabilityGetter<'a, 'tcx>,
         edge_idx: usize,
     ) {
         let path_conditions = edge.conditions().to_short_string(self.ctxt());

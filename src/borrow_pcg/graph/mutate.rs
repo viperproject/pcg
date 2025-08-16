@@ -6,19 +6,22 @@ use crate::{
         path_condition::{PathCondition, ValidityConditions},
     },
     rustc_interface::middle::mir::BasicBlock,
-    utils::{CompilerCtxt, FilterMutResult, Place},
+    utils::{CompilerCtxt, FilterMutResult, HasBorrowCheckerCtxt, Place},
 };
 
 use super::BorrowsGraph;
 
 impl<'tcx> BorrowsGraph<'tcx> {
-    pub(crate) fn label_place(
+    pub(crate) fn label_place<'a>(
         &mut self,
         place: Place<'tcx>,
         reason: LabelPlaceReason,
         labeller: &impl PlaceLabeller<'tcx>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> bool {
+        ctxt: impl HasBorrowCheckerCtxt<'a, 'tcx>,
+    ) -> bool
+    where
+        'tcx: 'a,
+    {
         self.mut_edges(|edge| reason.apply_to_edge(place, edge, labeller, ctxt))
     }
 

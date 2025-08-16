@@ -11,10 +11,8 @@ use super::{
     path_condition::ValidityConditions,
     region_projection::{LifetimeProjection, LifetimeProjectionLabel, LocalLifetimeProjection},
 };
-use crate::borrow_pcg::{
-    edge::{deref::DerefEdge, kind::BorrowPcgEdgeKind},
-    edge_data::{LabelEdgePlaces, LabelPlacePredicate},
-};
+use crate::borrow_pcg::edge::abstraction::AbstractionType;
+use crate::error::PcgError;
 use crate::{
     borrow_checker::BorrowCheckerInterface,
     borrow_pcg::{
@@ -25,11 +23,17 @@ use crate::{
     },
     utils::place::maybe_old::MaybeLabelledPlace,
 };
-use crate::{borrow_pcg::edge::abstraction::AbstractionType, pcg::PcgError};
 use crate::{borrow_pcg::edge::borrow::BorrowEdge, utils::HasPlace};
 use crate::{
     borrow_pcg::has_pcs_elem::{LabelNodeContext, LabelPlaceWithContext},
     utils::place::maybe_remote::MaybeRemotePlace,
+};
+use crate::{
+    borrow_pcg::{
+        edge::{deref::DerefEdge, kind::BorrowPcgEdgeKind},
+        edge_data::{LabelEdgePlaces, LabelPlacePredicate},
+    },
+    utils::HasBorrowCheckerCtxt,
 };
 use crate::{
     pcg::PcgNode,
@@ -77,10 +81,9 @@ impl<'tcx> LabelLifetimeProjection<'tcx> for BorrowPcgEdge<'tcx> {
         &mut self,
         predicate: &LabelLifetimeProjectionPredicate<'tcx>,
         label: Option<LifetimeProjectionLabel>,
-        repacker: CompilerCtxt<'_, 'tcx>,
+        ctxt: CompilerCtxt<'_, 'tcx>,
     ) -> LabelLifetimeProjectionResult {
-        self.kind
-            .label_lifetime_projection(predicate, label, repacker)
+        self.kind.label_lifetime_projection(predicate, label, ctxt)
     }
 }
 
@@ -322,14 +325,23 @@ impl<'tcx> LocalNode<'tcx> {
 pub type BlockedNode<'tcx> = PcgNode<'tcx>;
 
 impl<'tcx> PcgNode<'tcx> {
-    pub(crate) fn as_blocking_node(
+    pub(crate) fn as_blocking_node<'a>(
         &self,
-        repacker: CompilerCtxt<'_, 'tcx>,
-    ) -> Option<BlockingNode<'tcx>> {
+        repacker: impl HasBorrowCheckerCtxt<'a, 'tcx>,
+    ) -> Option<BlockingNode<'tcx>>
+    where
+        'tcx: 'a,
+    {
         self.as_local_node(repacker)
     }
 
-    pub(crate) fn as_local_node(&self, _ctxt: CompilerCtxt<'_, 'tcx>) -> Option<LocalNode<'tcx>> {
+    pub(crate) fn as_local_node<'a>(
+        &self,
+        _repacker: impl HasBorrowCheckerCtxt<'a, 'tcx>,
+    ) -> Option<LocalNode<'tcx>>
+    where
+        'tcx: 'a,
+    {
         match self {
             PcgNode::Place(MaybeRemotePlace::Local(maybe_old_place)) => {
                 Some(LocalNode::Place(*maybe_old_place))

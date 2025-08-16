@@ -1,5 +1,7 @@
 use std::cell::RefMut;
 
+use derive_more::Deref;
+
 use super::mir_dataflow::{self, ResultsCursor};
 
 use super::mir_dataflow::Analysis as MirAnalysis;
@@ -17,13 +19,23 @@ where
     A: mir_dataflow::Analysis<'tcx>,
 {
     analysis: A,
-    results: mir_dataflow::Results<A::Domain>,
+    pub(crate) results: mir_dataflow::Results<A::Domain>,
 }
 
 impl<'tcx, A> AnalysisAndResults<'tcx, A>
 where
     A: mir_dataflow::Analysis<'tcx>,
 {
+    #[rustversion::since(2025-05-24)]
+    pub fn get_analysis(&self) -> &A {
+        &self.analysis
+    }
+
+    #[rustversion::before(2025-05-24)]
+    pub fn get_analysis(&self) -> &A {
+        &self.results.analysis
+    }
+
     #[rustversion::since(2025-05-24)]
     pub fn into_results_cursor<'mir>(
         self,
@@ -37,9 +49,19 @@ where
         &self.results[block]
     }
 
+    #[rustversion::since(2025-05-24)]
+    pub fn entry_state_for_block_mut(&mut self, block: BasicBlock) -> &mut A::Domain {
+        &mut self.results[block]
+    }
+
     #[rustversion::before(2025-05-24)]
     pub fn entry_set_for_block(&self, block: BasicBlock) -> &A::Domain {
         self.results.entry_set_for_block(block)
+    }
+
+    #[rustversion::before(2025-05-24)]
+    pub fn entry_state_for_block_mut(&mut self, block: BasicBlock) -> &mut A::Domain {
+        &mut self.results.entry_states[block]
     }
 
     #[rustversion::before(2025-05-24)]
@@ -56,7 +78,7 @@ pub struct AnalysisAndResults<'tcx, A>
 where
     A: mir_dataflow::Analysis<'tcx>,
 {
-    results: mir_dataflow::Results<'tcx, A>,
+    pub(crate) results: mir_dataflow::Results<'tcx, A>,
 }
 pub trait Analysis<'tcx> {
     const NAME: &'static str;
@@ -129,7 +151,7 @@ where
     }
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Deref, Debug, Eq, PartialEq)]
 pub struct AnalysisEngine<T>(pub(crate) T);
 
 impl<'tcx, T: Analysis<'tcx>> mir_dataflow::Analysis<'tcx> for AnalysisEngine<T> {

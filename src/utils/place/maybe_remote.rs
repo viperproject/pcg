@@ -1,5 +1,6 @@
 use derive_more::From;
 
+use crate::HasCompilerCtxt;
 use crate::borrow_pcg::edge_data::LabelPlacePredicate;
 use crate::borrow_pcg::graph::loop_abstraction::MaybeRemoteCurrentPlace;
 use crate::borrow_pcg::has_pcs_elem::{LabelNodeContext, LabelPlaceWithContext, PlaceLabeller};
@@ -52,7 +53,10 @@ impl<'tcx> MaybeRemotePlace<'tcx> {
         }
     }
 
-    pub(crate) fn is_mutable(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
+    pub(crate) fn is_mutable<'a>(&self, ctxt: impl HasCompilerCtxt<'a, 'tcx>) -> bool
+    where
+        'tcx: 'a,
+    {
         match self {
             MaybeRemotePlace::Local(p) => p.is_mutable(ctxt),
             MaybeRemotePlace::Remote(_) => false,

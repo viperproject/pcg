@@ -4,8 +4,6 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-use std::alloc::Allocator;
-
 use derive_more::Deref;
 
 use crate::{
@@ -14,10 +12,8 @@ use crate::{
         borrow_pcg_edge::{BorrowPcgEdge, BorrowPcgEdgeRef},
         region_projection::MaybeRemoteRegionProjectionBase,
     },
-    pcg::{
-        EvalStmtPhase, Pcg, PcgEngine, PcgError, PcgNode, PcgSuccessor, ctxt::AnalysisCtxt,
-        successor_blocks,
-    },
+    error::PcgError,
+    pcg::{EvalStmtPhase, Pcg, PcgEngine, PcgNode, PcgSuccessor, successor_blocks},
     rustc_interface::{
         data_structures::fx::FxHashSet,
         dataflow::AnalysisEngine,
@@ -40,16 +36,14 @@ use crate::{owned_pcg::RepackOp, utils::CompilerCtxt};
 type Cursor<'mir, 'tcx, E> = ResultsCursor<'mir, 'tcx, E>;
 
 /// The result of the PCG analysis.
-pub struct PcgAnalysis<'mir, 'tcx: 'mir, A: Allocator + Copy> {
-    pub cursor: Cursor<'mir, 'tcx, AnalysisEngine<PcgEngine<'mir, 'tcx, A>>>,
+pub struct PcgAnalysis<'a, 'tcx: 'a> {
+    pub cursor: Cursor<'a, 'tcx, AnalysisEngine<PcgEngine<'a, 'tcx>>>,
     curr_stmt: Option<Location>,
     end_stmt: Option<Location>,
 }
 
-impl<'mir, 'tcx, A: Allocator + Copy> PcgAnalysis<'mir, 'tcx, A> {
-    pub(crate) fn new(
-        cursor: Cursor<'mir, 'tcx, AnalysisEngine<PcgEngine<'mir, 'tcx, A>>>,
-    ) -> Self {
+impl<'a, 'tcx> PcgAnalysis<'a, 'tcx> {
+    pub(crate) fn new(cursor: Cursor<'a, 'tcx, AnalysisEngine<PcgEngine<'a, 'tcx>>>) -> Self {
         Self {
             cursor,
             curr_stmt: None,
@@ -67,11 +61,11 @@ impl<'mir, 'tcx, A: Allocator + Copy> PcgAnalysis<'mir, 'tcx, A> {
         self.end_stmt = Some(end_stmt);
     }
 
-    fn body(&self) -> &'mir Body<'tcx> {
+    fn body(&self) -> &'a Body<'tcx> {
         self.ctxt().body()
     }
 
-    pub fn ctxt(&self) -> CompilerCtxt<'mir, 'tcx> {
+    pub fn ctxt(&self) -> CompilerCtxt<'a, 'tcx> {
         self.cursor.analysis().0.ctxt
     }
 
@@ -87,14 +81,12 @@ impl<'mir, 'tcx, A: Allocator + Copy> PcgAnalysis<'mir, 'tcx, A> {
 
         self.cursor.seek_after_primary_effect(location);
 
-        let state = self.cursor.get();
-
-        let data = state.data.as_ref().map_err(|e| e.clone())?;
+        let state = self.cursor.get().expect_results_or_error()?;
 
         let result = PcgLocation {
             location,
-            actions: data.actions.clone(),
-            states: data.pcg.states.to_owned(),
+            actions: state.data.actions.clone(),
+            states: state.data.pcg.states.to_owned(),
         };
 
         self.curr_stmt = Some(location.successor_within_block());
@@ -103,12 +95,12 @@ impl<'mir, 'tcx, A: Allocator + Copy> PcgAnalysis<'mir, 'tcx, A> {
     }
     pub(crate) fn terminator(&mut self) -> Result<PcgTerminator<'tcx>, PcgError> {
         let location = self.curr_stmt.unwrap();
-        let analysis_ctxt = AnalysisCtxt::new(self.ctxt(), location.block);
         assert!(location == self.end_stmt.unwrap());
         self.curr_stmt = None;
         self.end_stmt = None;
 
-        let from_pcg = &self.cursor.get().data()?.pcg;
+        let state = self.cursor.get().expect_results_or_error()?;
+        let from_pcg = &state.data.pcg;
         let from_post_main = from_pcg.states[EvalStmtPhase::PostMain].clone();
         let self_abstraction_edges = from_post_main
             .borrow
@@ -133,15 +125,17 @@ impl<'mir, 'tcx, A: Allocator + Copy> PcgAnalysis<'mir, 'tcx, A> {
             .into_iter()
             .map(|succ| {
                 self.cursor.seek_to_block_start(succ);
-                let to = &self.cursor.get().data()?.pcg;
+                let to = self
+                    .cursor
+                    .get()
+                    .expect_results_or_error()?
+                    .data
+                    .pcg
+                    .clone();
 
                 let owned_bridge = from_post_main
                     .owned
-                    .bridge(
-                        &to.entry_state.owned,
-                        &from_post_main.capabilities,
-                        analysis_ctxt,
-                    )
+                    .bridge(&to.entry_state.owned, &from_post_main.capabilities, ctxt)
                     .unwrap();
 
                 let mut borrow_actions = BorrowPcgActions::new();
@@ -186,12 +180,13 @@ impl<'mir, 'tcx, A: Allocator + Copy> PcgAnalysis<'mir, 'tcx, A> {
     pub fn results_for_all_blocks(&mut self) -> Result<PcgBasicBlocks<'tcx>, PcgError> {
         let mut result = IndexVec::new();
         for block in self.body().basic_blocks.indices() {
-            result.push(self.get_all_for_bb(block)?);
+            let pcg_block = self.get_all_for_bb(block)?;
+            result.push(pcg_block);
         }
         Ok(PcgBasicBlocks(result))
     }
 
-    fn analysis(&self) -> &PcgEngine<'mir, 'tcx, A> {
+    fn analysis(&self) -> &PcgEngine<'a, 'tcx> {
         &self.cursor.analysis().0
     }
 
@@ -241,7 +236,7 @@ impl<'tcx> PcgBasicBlocks<'tcx> {
         }
     }
 
-    fn aggregate<'mir, T: std::hash::Hash + std::cmp::Eq>(
+    fn aggregate<T: std::hash::Hash + std::cmp::Eq>(
         &self,
         f: impl Fn(&PcgLocation<'tcx>) -> FxHashSet<T>,
     ) -> FxHashSet<T> {

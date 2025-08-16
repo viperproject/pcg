@@ -5,18 +5,22 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 use crate::{
-    owned_pcg::{LocalExpansions, OwnedPcgData, OwnedPcgLocal, RepackOp},
-    pcg::{CapabilityKind, PcgError, ctxt::AnalysisCtxt, place_capabilities::PlaceCapabilities},
-    utils::CompilerCtxt,
+    error::PcgError,
+    owned_pcg::{LocalExpansions, OwnedPcg, OwnedPcgLocal, RepackOp},
+    pcg::{CapabilityKind, place_capabilities::PlaceCapabilitiesInterface},
+    utils::HasCompilerCtxt,
 };
 
-impl<'tcx> OwnedPcgData<'tcx> {
-    pub(crate) fn bridge(
+impl<'tcx> OwnedPcg<'tcx> {
+    pub(crate) fn bridge<'a, Ctxt: HasCompilerCtxt<'a, 'tcx>>(
         &self,
         other: &Self,
-        place_capabilities: &PlaceCapabilities<'tcx>,
-        ctxt: AnalysisCtxt<'_, 'tcx>,
-    ) -> std::result::Result<Vec<RepackOp<'tcx>>, PcgError> {
+        place_capabilities: &(impl PlaceCapabilitiesInterface<'tcx> + Clone),
+        ctxt: Ctxt,
+    ) -> std::result::Result<Vec<RepackOp<'tcx>>, PcgError>
+    where
+        'tcx: 'a,
+    {
         if self.len() != other.len() {
             return Err(PcgError::internal(format!(
                 "Capability summaries have different lengths: {} (previous) != {} (next)",
@@ -34,26 +38,33 @@ impl<'tcx> OwnedPcgData<'tcx> {
 }
 
 impl<'tcx> OwnedPcgLocal<'tcx> {
-    pub(crate) fn bridge(
+    pub(crate) fn bridge<'a, Ctxt: HasCompilerCtxt<'a, 'tcx>>(
         &self,
         other: &Self,
-        place_capabilities: &PlaceCapabilities<'tcx>,
-        ctxt: AnalysisCtxt<'_, 'tcx>,
-    ) -> std::result::Result<Vec<RepackOp<'tcx>>, PcgError> {
+        place_capabilities: &(impl PlaceCapabilitiesInterface<'tcx> + Clone),
+        ctxt: Ctxt,
+    ) -> std::result::Result<Vec<RepackOp<'tcx>>, PcgError>
+    where
+        'tcx: 'a,
+    {
         let mut place_capabilities = place_capabilities.clone();
         match (self, other) {
             (OwnedPcgLocal::Unallocated, OwnedPcgLocal::Unallocated) => Ok(Vec::new()),
             (OwnedPcgLocal::Allocated(from_places), OwnedPcgLocal::Allocated(to_places)) => {
-                from_places.bridge(to_places, &place_capabilities, ctxt.ctxt)
+                from_places.bridge(to_places, &place_capabilities, ctxt)
             }
             (OwnedPcgLocal::Allocated(cps), OwnedPcgLocal::Unallocated) => {
                 let mut cps = cps.clone();
                 let local = cps.get_local();
                 let mut repacks = Vec::new();
-                for (place, k) in place_capabilities.owned_capabilities(local, ctxt.ctxt) {
-                    if *k > CapabilityKind::Write {
-                        repacks.push(RepackOp::Weaken(place, *k, CapabilityKind::Write));
-                        *k = CapabilityKind::Write;
+                for (place, k) in place_capabilities.owned_capabilities(local, ctxt) {
+                    if k.expect_concrete() > CapabilityKind::Write {
+                        repacks.push(RepackOp::Weaken(
+                            place,
+                            k.expect_concrete(),
+                            CapabilityKind::Write,
+                        ));
+                        *k = CapabilityKind::Write.into();
                     }
                 }
                 if cps.contains_expansion_from(local.into()) {
@@ -77,11 +88,11 @@ impl<'tcx> OwnedPcgLocal<'tcx> {
 }
 
 impl<'tcx> LocalExpansions<'tcx> {
-    pub(crate) fn bridge(
+    pub(crate) fn bridge<Ctxt, C>(
         &self,
         _other: &Self,
-        _self_place_capabilities: &PlaceCapabilities<'tcx>,
-        _ctxt: CompilerCtxt<'_, 'tcx>,
+        _self_place_capabilities: &impl PlaceCapabilitiesInterface<'tcx, C>,
+        _ctxt: Ctxt,
     ) -> std::result::Result<Vec<RepackOp<'tcx>>, PcgError> {
         Ok(Vec::new())
     }

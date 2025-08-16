@@ -26,7 +26,8 @@ import {
   getPcgProgramPointData,
   getPaths,
   PcgBlockDotGraphs,
-  IterationActions,
+  StmtActions,
+  PcgStmt,
 } from "../api";
 import {
   filterNodesAndEdges,
@@ -56,14 +57,14 @@ function getPCGDotGraphFilename(
   currentPoint: CurrentPoint,
   selectedFunction: string,
   selected: number,
-  iterations: PcgBlockDotGraphs
+  graphs: PcgBlockDotGraphs
 ): string | null {
-  if (currentPoint.type !== "stmt" || iterations.length <= currentPoint.stmt) {
+  if (currentPoint.type !== "stmt" || graphs.length <= currentPoint.stmt) {
     return null;
   }
   const selectedAction = getSelectedAction(currentPoint);
   if (selectedAction) {
-    const iterationActions = getIterationActions(iterations, currentPoint);
+    const iterationActions = getIterationActions(graphs, currentPoint);
     const actionGraphFilenames = iterationActions[selectedAction.phase];
     return getActionGraphFilename(
       selectedFunction,
@@ -72,19 +73,17 @@ function getPCGDotGraphFilename(
     );
   }
 
-  const stmtIterations = iterations[currentPoint.stmt].iterations.flatMap(
-    (phases) => phases.at_phase
-  );
+  const phases: [string, string][] = graphs[currentPoint.stmt].at_phase;
 
   // Handle deselection case
   if (selected < 0) {
     return null;
   }
 
-  const filename =
-    selected >= stmtIterations.length
-      ? stmtIterations[stmtIterations.length - 1][1]
-      : stmtIterations[selected][1];
+  const filename: string =
+    selected >= phases.length
+      ? phases[phases.length - 1][1]
+      : phases[selected][1];
   return `data/${selectedFunction}/${filename}`;
 }
 
@@ -274,9 +273,7 @@ export const App: React.FC<AppProps> = ({
     currentPoint.type === "stmt" &&
     iterations.length > currentPoint.stmt ? (
       <PCGGraphSelector
-        iterations={iterations[currentPoint.stmt].iterations.flatMap(
-          (iteration) => iteration.at_phase
-        )}
+        iterations={iterations[currentPoint.stmt].at_phase}
         // If there's a selected action, we're not currently associated with a phase
         selected={getSelectedAction(currentPoint) === null ? selected : null}
         onSelect={(newIdx) => {
@@ -472,11 +469,10 @@ export const App: React.FC<AppProps> = ({
 function getIterationActions(
   dotGraphs: PcgBlockDotGraphs,
   currentPoint: CurrentPoint
-): IterationActions {
+): StmtActions {
   if (currentPoint.type !== "stmt" || dotGraphs.length <= currentPoint.stmt) {
     return {};
   }
-  const iterations = dotGraphs[currentPoint.stmt].iterations;
-  console.log(iterations);
-  return iterations[iterations.length - 1].actions;
+  const stmt = dotGraphs[currentPoint.stmt];
+  return stmt.actions;
 }

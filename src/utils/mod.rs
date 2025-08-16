@@ -10,7 +10,6 @@ pub mod arena;
 pub mod callbacks;
 pub mod display;
 pub mod eval_stmt_data;
-pub(crate) mod incoming_states;
 pub(crate) mod initialized;
 pub(crate) mod iter;
 pub mod json;

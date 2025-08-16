@@ -11,6 +11,8 @@ use super::{
     has_pcs_elem::LabelLifetimeProjection,
     region_projection::LifetimeProjectionLabel,
 };
+use crate::error::PcgUnsupportedError;
+use crate::utils::place::corrected::CorrectedPlace;
 use crate::{
     borrow_checker::BorrowCheckerInterface,
     borrow_pcg::{
@@ -20,18 +22,17 @@ use crate::{
             LabelPlaceWithContext, PlaceLabeller,
         },
     },
+    error::PcgError,
     r#loop::PlaceUsageType,
     owned_pcg::RepackGuide,
-    pcg::CapabilityKind,
     pcg::{
-        MaybeHasLocation, PcgUnsupportedError,
+        CapabilityKind, MaybeHasLocation, SymbolicCapability,
         obtain::ObtainType,
-        place_capabilities::{BlockType, PlaceCapabilities, PlaceCapabilitiesInterface},
+        place_capabilities::{BlockType, PlaceCapabilitiesReader},
     },
     pcg_validity_assert,
-    utils::json::ToJsonWithCompilerCtxt,
+    utils::{HasBorrowCheckerCtxt, HasCompilerCtxt, json::ToJsonWithCompilerCtxt},
 };
-use crate::{pcg::PcgError, utils::place::corrected::CorrectedPlace};
 use crate::{
     pcg::{PCGNodeLike, PcgNode},
     rustc_interface::middle::{mir::PlaceElem, ty},
@@ -72,12 +73,15 @@ impl<'tcx> HasValidityCheck<'tcx> for PlaceExpansion<'tcx> {
 }
 
 impl<'tcx> PlaceExpansion<'tcx> {
-    pub(crate) fn block_type(
+    pub(crate) fn block_type<'a>(
         &self,
         base_place: Place<'tcx>,
         obtain_type: ObtainType,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> BlockType {
+        ctxt: impl HasCompilerCtxt<'a, 'tcx>,
+    ) -> BlockType
+    where
+        'tcx: 'a,
+    {
         if matches!(
             obtain_type,
             ObtainType::Capability(CapabilityKind::Read)
@@ -111,7 +115,13 @@ impl<'tcx> PlaceExpansion<'tcx> {
         }
     }
 
-    pub(crate) fn from_places(places: Vec<Place<'tcx>>, ctxt: CompilerCtxt<'_, 'tcx>) -> Self {
+    pub(crate) fn from_places<'a>(
+        places: Vec<Place<'tcx>>,
+        ctxt: impl HasCompilerCtxt<'a, 'tcx>,
+    ) -> Self
+    where
+        'tcx: 'a,
+    {
         let mut fields = BTreeMap::new();
 
         for place in places {
@@ -320,8 +330,8 @@ impl<'tcx> BorrowPcgExpansion<'tcx> {
     /// labels.
     pub(crate) fn is_packable(
         &self,
-        capabilities: &PlaceCapabilities<'tcx>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
+        capabilities: &impl PlaceCapabilitiesReader<'tcx, SymbolicCapability>,
+        ctxt: impl HasCompilerCtxt<'_, 'tcx>,
     ) -> bool {
         match self.base {
             PcgNode::Place(base_place) => {
@@ -356,12 +366,13 @@ impl<'tcx, P: PCGNodeLike<'tcx> + HasPlace<'tcx> + Into<BlockingNode<'tcx>>>
         &self.expansion
     }
 
-    pub(crate) fn new(
+    pub(crate) fn new<'a>(
         base: P,
         expansion: PlaceExpansion<'tcx>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
+        ctxt: impl HasBorrowCheckerCtxt<'a, 'tcx>,
     ) -> Result<Self, PcgError>
     where
+        'tcx: 'a,
         P: Ord + HasPlace<'tcx>,
     {
         let place_ty = base.place().ty(ctxt);
@@ -376,14 +387,14 @@ impl<'tcx, P: PCGNodeLike<'tcx> + HasPlace<'tcx> + Into<BlockingNode<'tcx>>>
             !(base.is_place() && base.place().is_ref(ctxt) && expansion == PlaceExpansion::Deref),
             [ctxt],
             "Deref expansion of {} should be a Deref edge, not an expansion",
-            base.place().to_short_string(ctxt)
+            base.place().to_short_string(ctxt.ctxt())
         );
         let result = Self {
             base,
             expansion: expansion
                 .elems()
                 .into_iter()
-                .map(|elem| base.project_deeper(elem, ctxt))
+                .map(|elem| base.project_deeper(elem, ctxt.ctxt()))
                 .collect::<Result<Vec<_>, _>>()?,
             _marker: PhantomData,
         };

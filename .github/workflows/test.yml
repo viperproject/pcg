@@ -13,7 +13,8 @@ env:
 
 jobs:
   check_warnings:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.RUNNER || 'ubuntu-latest' }}
+    container: ${{ fromJSON(vars.CONTAINER || 'null') }}
     steps:
     - uses: actions/checkout@v4
     - name: Check for warnings
@@ -22,35 +23,39 @@ jobs:
       run: cargo check --all-targets --lib --bins --tests --examples --benches --message-format=json
 
   clippy:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.RUNNER || 'ubuntu-latest' }}
+    container: ${{ fromJSON(vars.CONTAINER || 'null') }}
     steps:
     - uses: actions/checkout@v4
     - name: Run Clippy
       run: cargo clippy -- -D warnings
 
   rustfmt:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.RUNNER || 'ubuntu-latest' }}
+    container: ${{ fromJSON(vars.CONTAINER || 'null') }}
     steps:
     - uses: actions/checkout@v4
     - name: Check code formatting
       run: cargo fmt --all -- --check
 
   test_files:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.RUNNER || 'ubuntu-latest' }}
+    container: ${{ fromJSON(vars.CONTAINER || 'null') }}
     steps:
     - uses: actions/checkout@v4
     - name: Run tests on files
       run: cargo test --test test_files
 
   build_2025_07_21:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.RUNNER || 'ubuntu-latest' }}
+    container: ${{ fromJSON(vars.CONTAINER || 'null') }}
     steps:
     - uses: actions/checkout@v4
     - name: Build using Rust Nightly 2025-07-21
       run: cp rust-toolchain-2025-07-21 rust-toolchain && cargo build --no-default-features
 
   # bench_test_files:
-  #   runs-on: ubuntu-latest
+  #   runs-on: ${{ vars.RUNNER || 'ubuntu-latest' }}
   #   steps:
   #   - uses: actions/checkout@v4
   #   - name: Install valgrind
@@ -59,28 +64,32 @@ jobs:
   #     run: cargo test --test bench_test_files -- --nocapture --show-output
 
   test_crates:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.RUNNER || 'ubuntu-latest' }}
+    container: ${{ fromJSON(vars.CONTAINER || 'null') }}
     steps:
     - uses: actions/checkout@v4
     - name: Run tests on selected crates
       run: cargo test --test selected_crates
 
   unit_tests:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.RUNNER || 'ubuntu-latest' }}
+    container: ${{ fromJSON(vars.CONTAINER || 'null') }}
     steps:
     - uses: actions/checkout@v4
     - name: Run unit tests
       run: cargo test --lib
 
   doc_tests:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.RUNNER || 'ubuntu-latest' }}
+    container: ${{ fromJSON(vars.CONTAINER || 'null') }}
     steps:
     - uses: actions/checkout@v4
     - name: Run unit tests
       run: cargo test --doc
 
   prusti_purification_tests:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.RUNNER || 'ubuntu-latest' }}
+    container: ${{ fromJSON(vars.CONTAINER || 'null') }}
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
@@ -119,7 +128,8 @@ jobs:
       run: ./x.py setup && python3 test-rpe.py --no-server
 
   mutation_tests:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.RUNNER || 'ubuntu-latest' }}
+    container: ${{ fromJSON(vars.CONTAINER || 'null') }}
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
@@ -129,7 +139,7 @@ jobs:
     - name: Checkout mutation testing repository
       uses: actions/checkout@v4
       with:
-        repository: zgrannan/pcg-mutation-testing
+        repository: prusti/pcg-mutation-testing
         ref: zgrannan/update-pcg
         path: pcg-mutation-testing
 
@@ -138,7 +148,8 @@ jobs:
       run: cargo build
 
   flowistry_tests:
-    runs-on: ubuntu-latest
+    runs-on: ${{ vars.RUNNER || 'ubuntu-latest' }}
+    container: ${{ fromJSON(vars.CONTAINER || 'null') }}
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
@@ -155,41 +166,3 @@ jobs:
     - name: Run flowistry tests
       working-directory: flowistry/crates/flowistry
       run: cargo test
-
-  # build-docker-image:
-  #   runs-on: ubuntu-latest
-  #   needs: [check_warnings, clippy, test_files, test_crates, unit_tests, doc_tests, flowistry_tests]
-  #   permissions:
-  #     contents: read
-  #     packages: write
-
-  #   steps:
-  #     - name: Checkout repository
-  #       uses: actions/checkout@v4
-
-  #     - name: Log in to the Container registry
-  #       uses: docker/login-action@v3
-  #       with:
-  #         registry: ${{ env.REGISTRY }}
-  #         username: ${{ github.actor }}
-  #         password: ${{ secrets.GITHUB_TOKEN }}
-
-  #     - name: Extract metadata (tags, labels) for Docker
-  #       id: meta
-  #       uses: docker/metadata-action@v5
-  #       with:
-  #         images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-  #         tags: |
-  #           type=sha,format=long
-  #           type=ref,event=branch
-  #           type=ref,event=pr
-  #           type=semver,pattern={{version}}
-  #           type=semver,pattern={{major}}.{{minor}}
-
-  #     - name: Build and push Docker image
-  #       uses: docker/build-push-action@v5
-  #       with:
-  #         context: .
-  #         push: ${{ github.ref == 'refs/heads/main' }}
-  #         tags: ${{ steps.meta.outputs.tags }}
-  #         labels: ${{ steps.meta.outputs.labels }}

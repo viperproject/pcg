@@ -4,27 +4,27 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-use std::{
-    alloc::Allocator,
-    cell::{Cell, RefCell},
-    fs::create_dir_all,
-    rc::Rc,
-};
+use std::{cell::RefCell, fs::create_dir_all, rc::Rc};
 
 use bit_set::BitSet;
 use derive_more::From;
 
 use super::{
-    DataflowStmtPhase, ErrorState, EvalStmtPhase, PcgDebugData, PcgError, domain::PcgDomain,
-    visitor::PcgVisitor,
+    DataflowStmtPhase, ErrorState, EvalStmtPhase, PcgBlockDebugVisualizationGraphs,
+    domain::PcgDomain, visitor::PcgVisitor,
 };
+use crate::error::PcgError;
 use crate::{
     BodyAndBorrows,
-    pcg::{PcgUnsupportedError, triple::TripleWalker},
+    pcg::{
+        DataflowState, DomainDataWithCtxt, HasPcgDomainData, PcgDomainData, SymbolicCapabilityCtxt,
+        ctxt::AnalysisCtxt, triple::TripleWalker,
+    },
+    pcg_validity_assert,
     rustc_interface::{
         borrowck::{self, BorrowSet, LocationTable, PoloniusInput, RegionInferenceContext},
         dataflow::Analysis,
-        index::{Idx, IndexVec},
+        index::IndexVec,
         middle::{
             mir::{
                 self, BasicBlock, Body, Location, Promoted, START_BLOCK, Statement, Terminator,
@@ -34,11 +34,11 @@ use crate::{
         },
         mir_dataflow::{Forward, move_paths::MoveData},
     },
-    utils::{AnalysisLocation, MAX_NODES, domain_data::DomainDataIndex, visitor::FallableVisitor},
+    utils::{AnalysisLocation, DataflowCtxt, visitor::FallableVisitor},
 };
 use crate::{
     pcg::{BodyAnalysis, dot_graphs::PcgDotGraphsForBlock},
-    utils::{CompilerCtxt, arena::ArenaRef},
+    utils::{CompilerCtxt, arena::PcgArenaRef},
 };
 
 #[derive(Clone)]
@@ -111,22 +111,27 @@ impl<'tcx> From<borrowck::BodyWithBorrowckFacts<'tcx>> for BodyWithBorrowckFacts
     }
 }
 
-struct PCGEngineDebugData {
-    debug_output_dir: String,
-    dot_graphs: IndexVec<BasicBlock, Rc<RefCell<PcgDotGraphsForBlock>>>,
+struct PCGEngineDebugData<'a> {
+    debug_output_dir: &'a str,
+    dot_graphs: IndexVec<BasicBlock, &'a RefCell<PcgDotGraphsForBlock>>,
 }
 
 type Block = usize;
 
-pub struct PcgEngine<'a, 'tcx: 'a, A: Allocator + Clone> {
+pub(crate) type PcgArenaStore = bumpalo::Bump;
+pub(crate) type PcgArena<'a> = &'a PcgArenaStore;
+
+pub struct PcgEngine<'a, 'tcx: 'a> {
     pub(crate) ctxt: CompilerCtxt<'a, 'tcx>,
-    debug_data: Option<PCGEngineDebugData>,
-    curr_block: Cell<BasicBlock>,
-    body_analysis: Rc<BodyAnalysis<'a, 'tcx>>,
+    pub(crate) symbolic_capability_ctxt: SymbolicCapabilityCtxt<'a, 'tcx>,
+    debug_graphs: Option<PCGEngineDebugData<'a>>,
+    body_analysis: &'a BodyAnalysis<'a, 'tcx>,
     pub(crate) reachable_blocks: BitSet<Block>,
+    pub(crate) analyzed_blocks: BitSet<Block>,
     pub(crate) first_error: ErrorState,
-    pub(crate) arena: A,
+    pub(crate) arena: PcgArena<'a>,
 }
+
 pub(crate) fn edges_to_analyze<'tcx, 'mir>(
     terminator: &'mir Terminator<'tcx>,
 ) -> TerminatorEdges<'mir, 'tcx> {
@@ -174,55 +179,75 @@ pub(crate) enum AnalysisObject<'mir, 'tcx> {
     Terminator(&'mir Terminator<'tcx>),
 }
 
-impl<'a, 'tcx, A: Allocator + Clone> PcgEngine<'a, 'tcx, A> {
-    fn dot_graphs(&self, block: BasicBlock) -> Option<Rc<RefCell<PcgDotGraphsForBlock>>> {
-        self.debug_data
-            .as_ref()
-            .map(|data| data.dot_graphs[block].clone())
+impl<'a, 'tcx: 'a> PcgEngine<'a, 'tcx> {
+    fn dot_graphs(&self, block: BasicBlock) -> Option<PcgBlockDebugVisualizationGraphs<'a>> {
+        self.debug_graphs.as_ref().map(|data| {
+            PcgBlockDebugVisualizationGraphs::new(
+                block,
+                data.debug_output_dir,
+                data.dot_graphs[block],
+            )
+        })
     }
-    fn debug_output_dir(&self) -> Option<String> {
-        self.debug_data
-            .as_ref()
-            .map(|data| data.debug_output_dir.clone())
+
+    pub(crate) fn analysis_ctxt(&self, block: BasicBlock) -> AnalysisCtxt<'a, 'tcx> {
+        AnalysisCtxt::new(
+            self.ctxt,
+            block,
+            self.body_analysis,
+            self.symbolic_capability_ctxt,
+            self.arena,
+            self.dot_graphs(block),
+        )
     }
-    fn initialize(&self, state: &mut PcgDomain<'a, 'tcx, A>, block: BasicBlock) {
-        if let Some(existing_block) = state.block {
-            assert!(existing_block == block);
-            return;
+
+    fn visit_all_phases<Ctxt: DataflowCtxt<'a, 'tcx>>(
+        &mut self,
+        state: &mut DomainDataWithCtxt<'a, 'tcx, Ctxt>,
+        object: AnalysisObject<'_, 'tcx>,
+        tw: &TripleWalker<'a, 'tcx>,
+        location: Location,
+    ) -> Result<(), PcgError> {
+        let domain = &mut state.data;
+        for phase in EvalStmtPhase::phases() {
+            let curr = PcgArenaRef::make_mut(&mut domain.pcg.states.0[phase]);
+            let analysis_location = AnalysisLocation {
+                location,
+                eval_stmt_phase: phase,
+            };
+            domain.actions[phase] =
+                PcgVisitor::visit(curr, tw, analysis_location, object, state.ctxt)?;
+            if let Some(next_phase) = phase.next() {
+                domain.pcg.states.0[next_phase] = domain.pcg.states.0[phase].clone();
+            }
         }
-        state.set_block(block);
-        if let Some(debug_data) = &self.debug_data {
-            state.set_debug_data(
-                debug_data.debug_output_dir.clone(),
-                debug_data.dot_graphs[block].clone(),
-            );
-        }
-        assert!(state.is_initialized());
+        Ok(())
     }
 
     #[tracing::instrument(skip(self, state, object))]
-    fn analyze(
+    fn analyze<'obj>(
         &mut self,
-        state: &mut PcgDomain<'a, 'tcx, A>,
-        object: AnalysisObject<'_, 'tcx>,
+        state: &mut PcgDomain<'a, 'tcx>,
+        object: AnalysisObject<'obj, 'tcx>,
         location: Location,
     ) -> Result<(), PcgError> {
-        if self.reachable_blocks.contains(location.block.index()) {
-            state.reachable = true;
-        } else {
+        if !self.reachable_blocks.contains(location.block.index()) {
             return Ok(());
         }
+        pcg_validity_assert!(!state.is_bottom(), "unexpected state: {:?}", state);
+        if let PcgDomain::Analysis(state) = state {
+            state.ensure_transfer(self.analysis_ctxt(location.block))?;
 
-        if let AnalysisObject::Terminator(t) = object {
-            for block in successor_blocks(t) {
-                self.reachable_blocks.insert(block.index());
+            if let AnalysisObject::Terminator(t) = object {
+                for block in successor_blocks(t) {
+                    self.reachable_blocks.insert(block.index());
+                }
             }
+
+            tracing::info!("Analyzing {:?}", location);
         }
 
-        self.initialize(state, location.block);
-        state.register_new_debug_iteration(location);
-
-        let pcg_data = state.data.as_mut().unwrap();
+        let pcg_data = state.data_mut();
 
         let pcg = &mut pcg_data.pcg;
         if location.statement_index != 0 {
@@ -240,37 +265,30 @@ impl<'a, 'tcx, A: Allocator + Clone> PcgEngine<'a, 'tcx, A> {
             }
         }
 
-        for phase in EvalStmtPhase::phases() {
-            let curr = ArenaRef::make_mut(&mut pcg.states.0[phase]);
-            let analysis_location = AnalysisLocation {
-                location,
-                eval_stmt_phase: phase,
-            };
-            pcg_data.actions[phase] = PcgVisitor::visit(
-                curr,
-                self.ctxt,
-                &tw,
-                analysis_location,
-                object,
-                state.debug_data.clone(),
-            )?;
-            if let Some(next_phase) = phase.next() {
-                pcg.states.0[next_phase] = pcg.states.0[phase].clone();
+        match state {
+            PcgDomain::Analysis(DataflowState::Transfer(state)) => {
+                self.visit_all_phases(state, object, &tw, location)?
             }
+            PcgDomain::Results(state) => self.visit_all_phases(state, object, &tw, location)?,
+            _ => todo!(),
         }
 
-        self.generate_dot_graph(state, DataflowStmtPhase::Initial, location.statement_index);
-        self.generate_dot_graph(state, EvalStmtPhase::PreOperands, location.statement_index);
-        self.generate_dot_graph(state, EvalStmtPhase::PostOperands, location.statement_index);
-        self.generate_dot_graph(state, EvalStmtPhase::PreMain, location.statement_index);
-        self.generate_dot_graph(state, EvalStmtPhase::PostMain, location.statement_index);
+        if let PcgDomain::Analysis(state) = state {
+            let state = state.expect_transfer();
+            self.analyzed_blocks.insert(location.block.index());
+
+            state.generate_dot_graph(DataflowStmtPhase::Initial, location, state.ctxt);
+            for phase in EvalStmtPhase::phases() {
+                state.generate_dot_graph(phase.into(), location, state.ctxt);
+            }
+        }
         Ok(())
     }
 
     pub(crate) fn new(
         ctxt: CompilerCtxt<'a, 'tcx>,
         move_data: &'a MoveData<'tcx>,
-        arena: A,
+        arena: PcgArena<'a>,
         debug_output_dir: Option<&str>,
     ) -> Self {
         let debug_data = debug_output_dir.map(|dir_path| {
@@ -278,36 +296,35 @@ impl<'a, 'tcx, A: Allocator + Clone> PcgEngine<'a, 'tcx, A> {
                 std::fs::remove_dir_all(dir_path).expect("Failed to delete directory contents");
             }
             create_dir_all(dir_path).expect("Failed to create directory for DOT files");
-            let dot_graphs = IndexVec::from_fn_n(
-                |_| Rc::new(RefCell::new(PcgDotGraphsForBlock::default())),
-                ctxt.body().basic_blocks.len(),
-            );
+            let dot_graphs: IndexVec<BasicBlock, &'a RefCell<PcgDotGraphsForBlock>> =
+                IndexVec::from_fn_n(
+                    |b| {
+                        let blocks: &'a RefCell<PcgDotGraphsForBlock> =
+                            arena.alloc(RefCell::new(PcgDotGraphsForBlock::new(b, ctxt)));
+                        blocks
+                    },
+                    ctxt.body().basic_blocks.len(),
+                );
             PCGEngineDebugData {
-                debug_output_dir: dir_path.to_string(),
+                debug_output_dir: arena.alloc(dir_path.to_string()),
                 dot_graphs,
             }
         });
         let mut reachable_blocks = BitSet::default();
         reachable_blocks.reserve_len(ctxt.body().basic_blocks.len());
         reachable_blocks.insert(START_BLOCK.index());
+        let mut analyzed_blocks = BitSet::default();
+        analyzed_blocks.reserve_len(ctxt.body().basic_blocks.len());
         Self {
             first_error: ErrorState::default(),
             reachable_blocks,
             ctxt,
-            debug_data,
-            curr_block: Cell::new(START_BLOCK),
-            body_analysis: Rc::new(BodyAnalysis::new(ctxt, move_data)),
+            debug_graphs: debug_data,
+            body_analysis: arena.alloc(BodyAnalysis::new(ctxt, move_data)),
             arena,
+            symbolic_capability_ctxt: SymbolicCapabilityCtxt::new(arena),
+            analyzed_blocks,
         }
-    }
-
-    fn generate_dot_graph(
-        &self,
-        state: &mut PcgDomain<'a, 'tcx, A>,
-        phase: impl Into<DataflowStmtPhase>,
-        statement_index: usize,
-    ) {
-        state.generate_dot_graph(phase.into(), statement_index);
     }
 
     fn record_error_if_first(&mut self, error: &PcgError) {
@@ -317,38 +334,23 @@ impl<'a, 'tcx, A: Allocator + Clone> PcgEngine<'a, 'tcx, A> {
     }
 }
 
-impl<'a, 'tcx, A: Allocator + Copy> Analysis<'tcx> for PcgEngine<'a, 'tcx, A> {
-    type Domain = PcgDomain<'a, 'tcx, A>;
-    const NAME: &'static str = "pcs";
+impl<'a, 'tcx: 'a> Analysis<'tcx> for PcgEngine<'a, 'tcx> {
+    type Domain = PcgDomain<'a, 'tcx>;
+    const NAME: &'static str = "pcg";
 
-    fn bottom_value(&self, body: &Body<'tcx>) -> Self::Domain {
-        let curr_block = self.curr_block.get();
-        let (block, debug_data) = if curr_block.as_usize() < body.basic_blocks.len() {
-            self.curr_block.set(curr_block.plus(1));
-            let debug_data = self.debug_output_dir().map(|dir| PcgDebugData {
-                dot_output_dir: dir,
-                dot_graphs: self.dot_graphs(curr_block).unwrap(),
-            });
-            (Some(curr_block), debug_data)
-        } else {
-            // For results cursor, don't set block or consider debug data
-            (None, None)
-        };
-        PcgDomain::new(
-            self.body_analysis.clone(),
-            self.ctxt,
-            block,
-            debug_data,
-            self.arena,
-        )
+    fn bottom_value(&self, _body: &Body<'tcx>) -> Self::Domain {
+        PcgDomain::bottom()
     }
 
     fn initialize_start_block(&self, _body: &Body<'tcx>, state: &mut Self::Domain) {
-        self.curr_block.set(START_BLOCK);
-        state
-            .pcg_mut(DomainDataIndex::Initial)
-            .initialize_as_start_block(self.ctxt);
-        state.reachable = true;
+        if state.is_bottom() {
+            *state = PcgDomain::Analysis(DataflowState::Transfer(DomainDataWithCtxt::new(
+                PcgDomainData::start_block(self.analysis_ctxt(START_BLOCK)),
+                self.analysis_ctxt(START_BLOCK),
+            )));
+        } else {
+            pcg_validity_assert!(state.is_results(), "unexpected state: {:?}", state);
+        }
     }
 
     #[tracing::instrument(skip(self, state, statement))]
@@ -361,22 +363,6 @@ impl<'a, 'tcx, A: Allocator + Copy> Analysis<'tcx> for PcgEngine<'a, 'tcx, A> {
         if let Some(error) = state.error() {
             self.record_error_if_first(error);
             return;
-        }
-        if let Some(max_nodes) = *MAX_NODES {
-            if state.data().unwrap().pcg[DomainDataIndex::Initial]
-                .borrow
-                .graph
-                .nodes(self.ctxt)
-                .len()
-                >= max_nodes
-            {
-                tracing::info!("Max nodes exceeded");
-                self.record_error_if_first(&PcgError::unsupported(
-                    PcgUnsupportedError::MaxNodesExceeded,
-                ));
-                state.record_error(PcgError::unsupported(PcgUnsupportedError::MaxNodesExceeded));
-                return;
-            }
         }
         if let Err(e) = self.analyze(state, statement.into(), location) {
             self.record_error_if_first(&e);

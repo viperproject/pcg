@@ -11,11 +11,11 @@ use crate::utils::display::DisplayWithCompilerCtxt;
 
 use super::PcgError;
 use crate::rustc_interface::middle::ty::{self};
-use crate::utils::{self, CompilerCtxt, SnapshotLocation};
+use crate::utils::{self, DataflowCtxt, HasCompilerCtxt, SnapshotLocation};
 
-fn get_function_data<'tcx>(
+fn get_function_data<'a, 'tcx: 'a>(
     func: &Operand<'tcx>,
-    ctxt: CompilerCtxt<'_, 'tcx>,
+    ctxt: impl HasCompilerCtxt<'a, 'tcx>,
 ) -> Option<FunctionData<'tcx>> {
     match func.ty(ctxt.body(), ctxt.tcx()).kind() {
         ty::TyKind::FnDef(def_id, substs) => Some(FunctionData::new(*def_id, substs)),
@@ -24,7 +24,7 @@ fn get_function_data<'tcx>(
     }
 }
 
-impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
+impl<'a, 'tcx: 'a, Ctxt: DataflowCtxt<'a, 'tcx>> PcgVisitor<'_, 'a, 'tcx, Ctxt> {
     #[tracing::instrument(skip(self, func, args, destination))]
     pub(super) fn make_function_call_abstraction(
         &mut self,
@@ -93,7 +93,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                     pre_rp.label(),
                     format!(
                         "Function call:Label Pre version of {}",
-                        rp.to_short_string(self.ctxt),
+                        rp.to_short_string(self.ctxt.bc_ctxt()),
                     ),
                 )
                 .into(),
@@ -104,7 +104,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
             let mut outputs = vec![];
             for post_rp in post_rps.iter() {
                 if post_rp.is_invariant_in_type(self.ctxt)
-                    && self.ctxt.bc.outlives(
+                    && self.ctxt.bc_ctxt().bc.outlives(
                         pre_rp.region(self.ctxt),
                         post_rp.region(self.ctxt),
                         location,
@@ -117,9 +117,11 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 .lifetime_projections(self.ctxt)
                 .iter()
                 .filter(|rp| {
-                    self.ctxt
-                        .bc
-                        .outlives(pre_rp.region(self.ctxt), rp.region(self.ctxt), location)
+                    self.ctxt.bc().outlives(
+                        pre_rp.region(self.ctxt),
+                        rp.region(self.ctxt),
+                        location,
+                    )
                 })
                 .map(|rp| (*rp).into())
                 .collect();

@@ -10,21 +10,20 @@ use std::fmt::{Debug, Formatter, Result};
 
 use crate::{
     borrow_pcg::borrow_pcg_expansion::PlaceExpansion,
+    error::PcgUnsupportedError,
     owned_pcg::{RepackCollapse, RepackGuide},
-    pcg::{
-        PcgUnsupportedError,
-        ctxt::AnalysisCtxt,
-        place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface},
+    pcg::place_capabilities::{
+        PlaceCapabilities, PlaceCapabilitiesInterface, PlaceCapabilitiesReader,
     },
     rustc_interface::middle::mir::Local,
-    utils::data_structures::HashSet,
+    utils::{HasCompilerCtxt, data_structures::HashSet},
 };
 use itertools::Itertools;
 
 use crate::{
+    error::PcgInternalError,
     owned_pcg::RepackOp,
     pcg::CapabilityKind,
-    pcg::PcgInternalError,
     utils::{CompilerCtxt, Place, display::DisplayWithCompilerCtxt},
 };
 
@@ -87,10 +86,13 @@ impl<'tcx> ExpandedPlace<'tcx> {
         self.expansion.guide()
     }
 
-    pub(crate) fn expansion_places(
+    pub(crate) fn expansion_places<'a>(
         &self,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> std::result::Result<HashSet<Place<'tcx>>, PcgUnsupportedError> {
+        ctxt: impl HasCompilerCtxt<'a, 'tcx>,
+    ) -> std::result::Result<HashSet<Place<'tcx>>, PcgUnsupportedError>
+    where
+        'tcx: 'a,
+    {
         Ok(self
             .place
             .expansion_places(&self.expansion, ctxt)?
@@ -130,14 +132,16 @@ impl<'tcx> LocalExpansions<'tcx> {
         !self.expansions.is_empty()
     }
 
-    pub(crate) fn remove_all_expansions_from(
+    pub(crate) fn remove_all_expansions_from<'a>(
         &mut self,
         place: Place<'tcx>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) {
+        ctxt: impl HasCompilerCtxt<'a, 'tcx>,
+    ) where
+        'tcx: 'a,
+    {
         tracing::debug!(
             "Removing all expansions from {}",
-            place.to_short_string(ctxt)
+            place.to_short_string(ctxt.ctxt())
         );
         self.expansions.retain(|pe| pe.place != place);
     }
@@ -150,10 +154,13 @@ impl<'tcx> LocalExpansions<'tcx> {
         &self.expansions
     }
 
-    pub(crate) fn leaf_expansions(
+    pub(crate) fn leaf_expansions<'a>(
         &self,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> HashSet<ExpandedPlace<'tcx>> {
+        ctxt: impl HasCompilerCtxt<'a, 'tcx>,
+    ) -> HashSet<ExpandedPlace<'tcx>>
+    where
+        'tcx: 'a,
+    {
         self.expansions
             .iter()
             .filter(|e| {
@@ -170,7 +177,10 @@ impl<'tcx> LocalExpansions<'tcx> {
         self.leaf_places(ctxt).contains(&place)
     }
 
-    pub fn leaf_places(&self, repacker: CompilerCtxt<'_, 'tcx>) -> HashSet<Place<'tcx>> {
+    pub fn leaf_places<'a>(&self, repacker: impl HasCompilerCtxt<'a, 'tcx>) -> HashSet<Place<'tcx>>
+    where
+        'tcx: 'a,
+    {
         if self.expansions.is_empty() {
             return vec![self.local.into()].into_iter().collect();
         }
@@ -199,11 +209,14 @@ impl<'tcx> LocalExpansions<'tcx> {
         self.expansions.iter().filter(move |e| e.place == place)
     }
 
-    pub(crate) fn contains_expansion_to(
+    pub(crate) fn contains_expansion_to<'a>(
         &self,
         place: Place<'tcx>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> bool {
+        ctxt: impl HasCompilerCtxt<'a, 'tcx>,
+    ) -> bool
+    where
+        'tcx: 'a,
+    {
         self.expansions
             .iter()
             .any(|e| e.expansion_places(ctxt).unwrap().contains(&place))
@@ -213,11 +226,14 @@ impl<'tcx> LocalExpansions<'tcx> {
         self.local
     }
 
-    pub(crate) fn places_to_collapse_for_obtain_of(
+    pub(crate) fn places_to_collapse_for_obtain_of<'a>(
         &self,
         place: Place<'tcx>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> Vec<Place<'tcx>> {
+        ctxt: impl HasCompilerCtxt<'a, 'tcx>,
+    ) -> Vec<Place<'tcx>>
+    where
+        'tcx: 'a,
+    {
         if !self.contains_expansion_from(place) {
             return vec![];
         }
@@ -232,24 +248,27 @@ impl<'tcx> LocalExpansions<'tcx> {
         places
     }
 
-    pub(crate) fn collapse(
+    pub(crate) fn collapse<'a, Ctxt: HasCompilerCtxt<'a, 'tcx>>(
         &mut self,
         to: Place<'tcx>,
         _for_cap: Option<CapabilityKind>,
-        capabilities: &mut PlaceCapabilities<'tcx>,
-        ctxt: AnalysisCtxt<'_, 'tcx>,
-    ) -> std::result::Result<Vec<RepackOp<'tcx>>, PcgInternalError> {
+        capabilities: &mut impl PlaceCapabilitiesInterface<'tcx>,
+        ctxt: Ctxt,
+    ) -> std::result::Result<Vec<RepackOp<'tcx>>, PcgInternalError>
+    where
+        'tcx: 'a,
+    {
         if !self.contains_expansion_from(to) {
             return Ok(vec![]);
         }
-        let places_to_collapse = self.places_to_collapse_for_obtain_of(to, ctxt.ctxt);
+        let places_to_collapse = self.places_to_collapse_for_obtain_of(to, ctxt);
         let ops: Vec<RepackOp<'tcx>> = places_to_collapse
             .into_iter()
             .map(|place| {
                 let retained_cap = self
-                    .get_retained_capability_of_children(place, capabilities, ctxt.ctxt)
+                    .get_retained_capability_of_children(place, capabilities, ctxt)
                     .unwrap();
-                let action = RepackCollapse::new(place, retained_cap);
+                let action = RepackCollapse::new(place, retained_cap.expect_concrete());
                 self.perform_collapse_action(action, capabilities, ctxt)
                     .unwrap();
                 RepackOp::Collapse(action)

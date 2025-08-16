@@ -7,77 +7,39 @@
 use std::fmt::{Debug, Formatter, Result};
 
 use crate::{
-    owned_pcg::RepackOp,
     pcg::{
-        CapabilityKind, PcgError,
+        CapabilityKind,
         ctxt::AnalysisCtxt,
-        place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface},
+        place_capabilities::{
+            PlaceCapabilities, PlaceCapabilitiesInterface, SymbolicPlaceCapabilities,
+        },
     },
     rustc_interface::{
         index::{Idx, IndexVec},
         middle::mir::{self, Local, RETURN_PLACE},
     },
-    utils::{Place, data_structures::HashSet},
+    utils::{HasCompilerCtxt, Place, data_structures::HashSet},
 };
 use derive_more::{Deref, DerefMut};
 
 use crate::{owned_pcg::OwnedPcgLocal, utils::CompilerCtxt};
 
-/// The state of the Owned PCG.
-#[derive(Clone, Default)]
-pub struct OwnedPcg<'tcx> {
-    pub(crate) data: Option<OwnedPcgData<'tcx>>,
+#[derive(Clone, PartialEq, Eq, Deref, DerefMut)]
+/// The expansions of all locals.
+pub struct OwnedPcg<'tcx>(IndexVec<Local, OwnedPcgLocal<'tcx>>);
+
+impl Debug for OwnedPcg<'_> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        let v: Vec<_> = self.0.iter().filter(|c| !c.is_unallocated()).collect();
+        v.fmt(f)
+    }
 }
 
 impl<'tcx> OwnedPcg<'tcx> {
-    pub(crate) fn check_validity(
-        &self,
-        capabilities: &PlaceCapabilities<'tcx>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> std::result::Result<(), String> {
-        self.data
-            .as_ref()
-            .unwrap()
-            .check_validity(capabilities, ctxt)
-    }
-
-    pub(crate) fn is_allocated(&self, local: Local) -> bool {
-        self.data.as_ref().unwrap().is_allocated(local)
-    }
-
-    pub(crate) fn contains_place(&self, place: Place<'tcx>, ctxt: CompilerCtxt<'_, 'tcx>) -> bool {
-        self.data.as_ref().unwrap().contains_place(place, ctxt)
-    }
-
-    pub(crate) fn leaf_places(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> HashSet<Place<'tcx>> {
-        self.data.as_ref().unwrap().leaf_places(ctxt)
-    }
-
-    pub fn locals(&self) -> &OwnedPcgData<'tcx> {
-        self.data.as_ref().unwrap()
-    }
-
-    pub(crate) fn locals_mut(&mut self) -> &mut OwnedPcgData<'tcx> {
-        self.data.as_mut().unwrap()
-    }
-
-    pub(crate) fn bridge(
-        &self,
-        other: &Self,
-        place_capabilities: &PlaceCapabilities<'tcx>,
-        ctxt: AnalysisCtxt<'_, 'tcx>,
-    ) -> std::result::Result<Vec<RepackOp<'tcx>>, PcgError> {
-        self.data
-            .as_ref()
-            .unwrap()
-            .bridge(other.data.as_ref().unwrap(), place_capabilities, ctxt)
-    }
-
-    pub(crate) fn initialize_as_start_block(
-        &mut self,
-        capabilities: &mut PlaceCapabilities<'tcx>,
-        ctxt: AnalysisCtxt<'_, 'tcx>,
-    ) {
+    pub(crate) fn start_block<'a>(
+        capabilities: &mut SymbolicPlaceCapabilities<'tcx>,
+        ctxt: AnalysisCtxt<'a, 'tcx>,
+    ) -> Self {
         let always_live = ctxt.ctxt.always_live_locals();
         let return_local = RETURN_PLACE;
         let last_arg = Local::new(ctxt.body().arg_count);
@@ -99,34 +61,11 @@ impl<'tcx> OwnedPcg<'tcx> {
             },
             ctxt.ctxt.local_count(),
         );
-        self.data = Some(OwnedPcgData(capability_summary));
+        OwnedPcg(capability_summary)
     }
 }
 
-impl PartialEq for OwnedPcg<'_> {
-    fn eq(&self, other: &Self) -> bool {
-        self.data == other.data
-    }
-}
-impl Eq for OwnedPcg<'_> {}
-
-impl Debug for OwnedPcg<'_> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        self.data.fmt(f)
-    }
-}
-#[derive(Clone, PartialEq, Eq, Deref, DerefMut)]
-/// The expansions of all locals.
-pub struct OwnedPcgData<'tcx>(IndexVec<Local, OwnedPcgLocal<'tcx>>);
-
-impl Debug for OwnedPcgData<'_> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        let v: Vec<_> = self.0.iter().filter(|c| !c.is_unallocated()).collect();
-        v.fmt(f)
-    }
-}
-
-impl<'tcx> OwnedPcgData<'tcx> {
+impl<'tcx> OwnedPcg<'tcx> {
     pub(crate) fn check_validity(
         &self,
         capabilities: &PlaceCapabilities<'tcx>,
@@ -141,7 +80,13 @@ impl<'tcx> OwnedPcgData<'tcx> {
         self.0.len()
     }
 
-    pub(crate) fn leaf_places(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> HashSet<Place<'tcx>> {
+    pub(crate) fn leaf_places<'a>(
+        &self,
+        ctxt: impl HasCompilerCtxt<'a, 'tcx>,
+    ) -> HashSet<Place<'tcx>>
+    where
+        'tcx: 'a,
+    {
         self.0
             .iter()
             .filter(|c| !c.is_unallocated())

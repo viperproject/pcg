@@ -4,10 +4,10 @@ use crate::{
         region_projection::{LifetimeProjection, MaybeRemoteRegionProjectionBase},
         state::BorrowStateRef,
     },
-    owned_pcg::{OwnedPcgData, OwnedPcgLocal},
+    owned_pcg::{OwnedPcg, OwnedPcgLocal},
     pcg::{
-        CapabilityKind, MaybeHasLocation, PcgNode, PcgRef,
-        place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface},
+        CapabilityKind, MaybeHasLocation, PcgNode, PcgRef, SymbolicCapability,
+        place_capabilities::{PlaceCapabilities, PlaceCapabilitiesReader},
     },
     rustc_interface::{borrowck::BorrowIndex, middle::mir},
     utils::{CompilerCtxt, HasPlace, Place, SnapshotLocation, display::DisplayWithCompilerCtxt},
@@ -34,7 +34,7 @@ pub(super) struct GraphConstructor<'mir, 'tcx> {
     location: Option<mir::Location>,
 }
 
-impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
+impl<'a, 'tcx: 'a> GraphConstructor<'a, 'tcx> {
     fn new(ctxt: CompilerCtxt<'a, 'tcx>, location: Option<mir::Location>) -> Self {
         Self {
             remote_nodes: IdLookup::new('a'),
@@ -50,7 +50,7 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
     fn insert_maybe_old_place(
         &mut self,
         place: MaybeLabelledPlace<'tcx>,
-        capability_getter: &impl CapabilityGetter<'tcx>,
+        capability_getter: &impl CapabilityGetter<'a, 'tcx>,
     ) -> NodeId {
         self.insert_place_node(place.place(), place.location(), capability_getter)
     }
@@ -58,7 +58,7 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
     fn insert_maybe_remote_place(
         &mut self,
         place: MaybeRemotePlace<'tcx>,
-        capability_getter: &impl CapabilityGetter<'tcx>,
+        capability_getter: &impl CapabilityGetter<'a, 'tcx>,
     ) -> NodeId {
         match place {
             MaybeRemotePlace::Local(place) => self.insert_maybe_old_place(place, capability_getter),
@@ -68,7 +68,7 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
     fn insert_pcg_node(
         &mut self,
         node: PcgNode<'tcx>,
-        capability_getter: &impl CapabilityGetter<'tcx>,
+        capability_getter: &impl CapabilityGetter<'a, 'tcx>,
     ) -> NodeId {
         match node {
             PcgNode::Place(place) => self.insert_maybe_remote_place(place, capability_getter),
@@ -167,7 +167,7 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
     pub(super) fn insert_abstraction(
         &mut self,
         abstraction: &AbstractionType<'tcx>,
-        capabilities: &impl CapabilityGetter<'tcx>,
+        capabilities: &impl CapabilityGetter<'a, 'tcx>,
         edge_idx: usize,
     ) {
         let mut input_nodes = vec![];
@@ -241,7 +241,7 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
         &mut self,
         place: Place<'tcx>,
         location: Option<SnapshotLocation>,
-        capability_getter: &impl CapabilityGetter<'tcx>,
+        capability_getter: &impl CapabilityGetter<'a, 'tcx>,
     ) -> NodeId {
         if let Some(node_id) = self.place_nodes.existing_id(&(place, location)) {
             return node_id;
@@ -253,14 +253,20 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
         let node_type = NodeType::PlaceNode {
             owned: place.is_owned(self.ctxt),
             label,
-            capability,
+            capability: capability.and_then(|c| match c {
+                SymbolicCapability::Concrete(cap) => Some(cap),
+                _ => None,
+            }),
             location,
             ty: format!("{:?}", place_ty.ty),
         };
         let node = GraphNode { id, node_type };
         self.insert_node(node);
         if matches!(
-            capability,
+            capability.and_then(|c| match c {
+                SymbolicCapability::Concrete(cap) => Some(cap),
+                _ => None,
+            }),
             Some(CapabilityKind::Read | CapabilityKind::Exclusive)
         ) {
             for rp in place.lifetime_projections(self.ctxt) {
@@ -271,18 +277,21 @@ impl<'a, 'tcx> GraphConstructor<'a, 'tcx> {
     }
 }
 
-pub struct BorrowsGraphConstructor<'graph, 'mir, 'tcx> {
+pub struct BorrowsGraphConstructor<'graph, 'a, 'tcx, C> {
     borrows_graph: &'graph BorrowsGraph<'tcx>,
-    capabilities: &'graph PlaceCapabilities<'tcx>,
-    constructor: GraphConstructor<'mir, 'tcx>,
-    ctxt: CompilerCtxt<'mir, 'tcx>,
+    capabilities: &'graph C,
+    constructor: GraphConstructor<'a, 'tcx>,
+    ctxt: CompilerCtxt<'a, 'tcx>,
 }
 
-impl<'graph, 'mir: 'graph, 'tcx: 'mir> BorrowsGraphConstructor<'graph, 'mir, 'tcx> {
+impl<'graph, 'a: 'graph, 'tcx: 'a, C> BorrowsGraphConstructor<'graph, 'a, 'tcx, C>
+where
+    C: PlaceCapabilitiesReader<'tcx, SymbolicCapability>,
+{
     pub fn new(
         borrows_graph: &'graph BorrowsGraph<'tcx>,
-        capabilities: &'graph PlaceCapabilities<'tcx>,
-        ctxt: CompilerCtxt<'mir, 'tcx>,
+        capabilities: &'graph C,
+        ctxt: CompilerCtxt<'a, 'tcx>,
     ) -> Self {
         Self {
             borrows_graph,
@@ -303,31 +312,26 @@ impl<'graph, 'mir: 'graph, 'tcx: 'mir> BorrowsGraphConstructor<'graph, 'mir, 'tc
 }
 
 pub(crate) struct PcgGraphConstructor<'pcg, 'a, 'tcx> {
-    summary: &'pcg OwnedPcgData<'tcx>,
+    summary: &'pcg OwnedPcg<'tcx>,
     borrows_domain: BorrowStateRef<'pcg, 'tcx>,
-    capabilities: &'pcg PlaceCapabilities<'tcx>,
+    capabilities: &'pcg PlaceCapabilities<'tcx, SymbolicCapability>,
     constructor: GraphConstructor<'a, 'tcx>,
     ctxt: CompilerCtxt<'a, 'tcx>,
 }
 
-struct PCGCapabilityGetter<'a, 'tcx> {
-    capabilities: &'a PlaceCapabilities<'tcx>,
+struct PCGCapabilityGetter<'r, 'a, 'tcx, C> {
+    capabilities: &'r C,
     ctxt: CompilerCtxt<'a, 'tcx>,
 }
 
-impl<'tcx> CapabilityGetter<'tcx> for PCGCapabilityGetter<'_, 'tcx> {
-    fn get(&self, place: Place<'tcx>) -> Option<CapabilityKind> {
+impl<'a, 'tcx, C> CapabilityGetter<'a, 'tcx> for PCGCapabilityGetter<'_, 'a, 'tcx, C>
+where
+    C: PlaceCapabilitiesReader<'tcx, SymbolicCapability>,
+{
+    fn get(&self, place: Place<'tcx>) -> Option<SymbolicCapability> {
         self.capabilities.get(place, self.ctxt)
     }
 }
-
-// struct NullCapabilityGetter;
-
-// impl<'tcx> CapabilityGetter<'tcx> for NullCapabilityGetter {
-//     fn get(&self, _: Place<'tcx>) -> Option<CapabilityKind> {
-//         None
-//     }
-// }
 
 impl<'pcg, 'a: 'pcg, 'tcx> Grapher<'pcg, 'a, 'tcx> for PcgGraphConstructor<'pcg, 'a, 'tcx> {
     fn ctxt(&self) -> CompilerCtxt<'a, 'tcx> {
@@ -338,41 +342,43 @@ impl<'pcg, 'a: 'pcg, 'tcx> Grapher<'pcg, 'a, 'tcx> for PcgGraphConstructor<'pcg,
         &mut self.constructor
     }
 
-    fn capability_getter(&self) -> impl CapabilityGetter<'tcx> + 'pcg {
-        PCGCapabilityGetter {
+    fn capability_getter(&self) -> impl CapabilityGetter<'a, 'tcx> + 'pcg {
+        PCGCapabilityGetter::<'pcg, 'a, 'tcx, _> {
             capabilities: self.capabilities,
             ctxt: self.ctxt,
         }
     }
 }
 
-impl<'graph, 'mir: 'graph, 'tcx: 'mir> Grapher<'graph, 'mir, 'tcx>
-    for BorrowsGraphConstructor<'graph, 'mir, 'tcx>
+impl<'graph, 'a: 'graph, 'tcx: 'a, C> Grapher<'graph, 'a, 'tcx>
+    for BorrowsGraphConstructor<'graph, 'a, 'tcx, C>
+where
+    C: PlaceCapabilitiesReader<'tcx, SymbolicCapability>,
 {
-    fn ctxt(&self) -> CompilerCtxt<'mir, 'tcx> {
+    fn ctxt(&self) -> CompilerCtxt<'a, 'tcx> {
         self.ctxt
     }
 
-    fn constructor(&mut self) -> &mut GraphConstructor<'mir, 'tcx> {
+    fn constructor(&mut self) -> &mut GraphConstructor<'a, 'tcx> {
         &mut self.constructor
     }
 
-    fn capability_getter(&self) -> impl CapabilityGetter<'tcx> + 'graph {
-        PCGCapabilityGetter {
+    fn capability_getter(&self) -> impl CapabilityGetter<'a, 'tcx> + 'graph {
+        PCGCapabilityGetter::<'graph, 'a, 'tcx, C> {
             capabilities: self.capabilities,
             ctxt: self.ctxt,
         }
     }
 }
 
-impl<'pcg, 'a: 'pcg, 'tcx> PcgGraphConstructor<'pcg, 'a, 'tcx> {
+impl<'pcg, 'a: 'pcg, 'tcx: 'a> PcgGraphConstructor<'pcg, 'a, 'tcx> {
     pub fn new(
         pcg: PcgRef<'pcg, 'tcx>,
         repacker: CompilerCtxt<'a, 'tcx>,
         location: mir::Location,
     ) -> Self {
         Self {
-            summary: pcg.owned.locals(),
+            summary: pcg.owned,
             borrows_domain: pcg.borrow,
             capabilities: pcg.capabilities,
             constructor: GraphConstructor::new(repacker, Some(location)),
@@ -384,7 +390,7 @@ impl<'pcg, 'a: 'pcg, 'tcx> PcgGraphConstructor<'pcg, 'a, 'tcx> {
         &mut self,
         place: Place<'tcx>,
         location: Option<SnapshotLocation>,
-        capabilities: &impl CapabilityGetter<'tcx>,
+        capabilities: &impl CapabilityGetter<'a, 'tcx>,
     ) -> NodeId {
         let node = self
             .constructor
@@ -410,7 +416,7 @@ impl<'pcg, 'a: 'pcg, 'tcx> PcgGraphConstructor<'pcg, 'a, 'tcx> {
     }
 
     pub fn construct_graph(mut self) -> Graph {
-        let capability_getter = &PCGCapabilityGetter {
+        let capability_getter = &PCGCapabilityGetter::<'pcg, 'a, 'tcx, _> {
             capabilities: self.capabilities,
             ctxt: self.ctxt,
         };

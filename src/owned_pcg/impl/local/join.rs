@@ -3,19 +3,20 @@ use crate::{
     action::{BorrowPcgAction, PcgAction},
     borrow_pcg::action::LabelPlaceReason,
     capability_gte,
+    error::PcgError,
     owned_pcg::{
         ExpandedPlace, LocalExpansions, RepackExpand, RepackOp,
         join::{data::JoinOwnedData, obtain::JoinObtainer},
     },
     pcg::{
-        CapabilityKind, PcgError,
+        CapabilityKind, CapabilityLike, SymbolicCapability,
         ctxt::AnalysisCtxt,
         obtain::{ActionApplier, HasSnapshotLocation, PlaceCollapser},
-        place_capabilities::{PlaceCapabilities, PlaceCapabilitiesInterface},
+        place_capabilities::{PlaceCapabilitiesInterface, PlaceCapabilitiesReader},
     },
     pcg_validity_assert,
     utils::{
-        CompilerCtxt, HasCompilerCtxt, Place, data_structures::HashSet,
+        CompilerCtxt, HasBorrowCheckerCtxt, Place, data_structures::HashSet,
         display::DisplayWithCompilerCtxt,
     },
 };
@@ -63,19 +64,26 @@ impl<'tcx> JoinExpandedPlaceResult<'tcx> {
     }
 }
 
-impl<'pcg, 'tcx> JoinOwnedData<'pcg, 'tcx, &'pcg mut LocalExpansions<'tcx>> {
+impl<'pcg, 'a, 'tcx> JoinOwnedData<'pcg, 'tcx, &'pcg mut LocalExpansions<'tcx>> {
     fn join_different_expansions_from_place<'other>(
         &mut self,
         other: &mut JoinOwnedData<'pcg, 'tcx, &'other mut LocalExpansions<'tcx>>,
         other_expansion: &ExpandedPlace<'tcx>,
-        ctxt: AnalysisCtxt<'_, 'tcx>,
+        ctxt: AnalysisCtxt<'a, 'tcx>,
     ) -> Result<JoinDifferentExpansionsResult<'tcx>, PcgError>
     where
         'pcg: 'other,
+        'tcx: 'a,
     {
         let base_place = other_expansion.place;
-        let self_cap = self.capabilities.get(base_place, ctxt.ctxt);
-        let other_cap = other.capabilities.get(base_place, ctxt.ctxt);
+        let self_cap = self
+            .capabilities
+            .get(base_place, ctxt.ctxt)
+            .map(|c| c.expect_concrete());
+        let other_cap = other
+            .capabilities
+            .get(base_place, ctxt.ctxt)
+            .map(|c| c.expect_concrete());
         if self_cap == Some(CapabilityKind::Read) && other_cap == Some(CapabilityKind::Read) {
             let action =
                 RepackExpand::new(base_place, other_expansion.guide(), CapabilityKind::Read);
@@ -120,7 +128,7 @@ impl<'pcg, 'tcx> JoinOwnedData<'pcg, 'tcx, &'pcg mut LocalExpansions<'tcx>> {
 
             pcg_validity_assert!(
                 self_obtainer.data.capabilities.get(base_place, ctxt.ctxt)
-                    == Some(CapabilityKind::Write),
+                    == Some(CapabilityKind::Write.into()),
                 "Expected capability for {} to be Write",
                 base_place.to_short_string(ctxt.ctxt)
             );
@@ -151,27 +159,27 @@ impl<'pcg, 'tcx> JoinOwnedData<'pcg, 'tcx, &'pcg mut LocalExpansions<'tcx>> {
         &mut self,
         other: &mut JoinOwnedData<'pcg, 'tcx, &'pcg mut LocalExpansions<'tcx>>,
         expansion: &ExpandedPlace<'tcx>,
-        self_cap: CapabilityKind,
-        other_cap: CapabilityKind,
-        ctxt: AnalysisCtxt<'_, 'tcx>,
+        self_cap: SymbolicCapability,
+        other_cap: SymbolicCapability,
+        ctxt: AnalysisCtxt<'a, 'tcx>,
     ) -> Result<Vec<RepackOp<'tcx>>, PcgError> {
         let place = expansion.place;
         let guide = expansion.guide();
         pcg_validity_assert!(!self.owned.contains_expansion_from(place));
-        if let Some(expand_cap) = self_cap.minimum(other_cap) {
+        if let Some(expand_cap) = self_cap.minimum(other_cap, ctxt) {
             tracing::info!(
                 "Expanding from place {} with cap {:?}",
                 place.to_short_string(ctxt.ctxt),
                 expand_cap
             );
-            let expand_action = RepackExpand::new(place, guide, expand_cap);
+            let expand_action = RepackExpand::new(place, guide, expand_cap.expect_concrete());
             self.owned
                 .perform_expand_action(expand_action, self.capabilities, ctxt)?;
             let mut actions = vec![RepackOp::Expand(expand_action)];
             actions.extend(self.join_all_places_in_expansion(other, expansion, ctxt)?);
             Ok(actions)
-        } else if self_cap == CapabilityKind::Read {
-            pcg_validity_assert!(other_cap == CapabilityKind::Write);
+        } else if self_cap == CapabilityKind::Read.into() {
+            pcg_validity_assert!(other_cap == CapabilityKind::Write.into());
             tracing::info!(
                 "No join expansion from place {}",
                 place.to_short_string(ctxt.ctxt)
@@ -188,7 +196,7 @@ impl<'pcg, 'tcx> JoinOwnedData<'pcg, 'tcx, &'pcg mut LocalExpansions<'tcx>> {
         &mut self,
         other: &JoinOwnedData<'pcg, 'tcx, &'pcg mut LocalExpansions<'tcx>>,
         expansion: &ExpandedPlace<'tcx>,
-        ctxt: AnalysisCtxt<'_, 'tcx>,
+        ctxt: AnalysisCtxt<'a, 'tcx>,
     ) -> Result<Vec<RepackOp<'tcx>>, PcgError> {
         let mut actions = vec![];
         for expansion_place in expansion.expansion_places(ctxt.ctxt).unwrap() {
@@ -202,7 +210,7 @@ impl<'pcg, 'tcx> JoinOwnedData<'pcg, 'tcx, &'pcg mut LocalExpansions<'tcx>> {
         &mut self,
         other: &mut JoinOwnedData<'pcg, 'tcx, &'pcg mut LocalExpansions<'tcx>>,
         other_expansion: &ExpandedPlace<'tcx>,
-        ctxt: AnalysisCtxt<'_, 'tcx>,
+        ctxt: AnalysisCtxt<'a, 'tcx>,
     ) -> Result<JoinExpandedPlaceResult<'tcx>, PcgError> {
         tracing::info!("Joining expansion: {:?}", other_expansion);
         let place = other_expansion.place;
@@ -234,7 +242,8 @@ impl<'pcg, 'tcx> JoinOwnedData<'pcg, 'tcx, &'pcg mut LocalExpansions<'tcx>> {
                 ))
             } else {
                 // We might as well just expand our place
-                let expand_action = RepackExpand::new(place, other_expansion.guide(), self_cap);
+                let expand_action =
+                    RepackExpand::new(place, other_expansion.guide(), self_cap.expect_concrete());
                 self.owned
                     .perform_expand_action(expand_action, self.capabilities, ctxt)?;
                 Ok(JoinExpandedPlaceResult::CreatedExpansion(vec![
@@ -251,7 +260,7 @@ impl<'pcg, 'tcx> JoinOwnedData<'pcg, 'tcx, &'pcg mut LocalExpansions<'tcx>> {
     fn join_expansions_iteration(
         &mut self,
         other: &mut JoinOwnedData<'pcg, 'tcx, &'pcg mut LocalExpansions<'tcx>>,
-        ctxt: AnalysisCtxt<'_, 'tcx>,
+        ctxt: AnalysisCtxt<'a, 'tcx>,
     ) -> Result<Vec<RepackOp<'tcx>>, PcgError> {
         let expansions_shortest_first = other
             .owned
@@ -280,7 +289,7 @@ impl<'pcg, 'tcx> JoinOwnedData<'pcg, 'tcx, &'pcg mut LocalExpansions<'tcx>> {
     fn join_expansions(
         &mut self,
         mut other: JoinOwnedData<'pcg, 'tcx, &'pcg mut LocalExpansions<'tcx>>,
-        ctxt: AnalysisCtxt<'_, 'tcx>,
+        ctxt: AnalysisCtxt<'a, 'tcx>,
     ) -> Result<Vec<RepackOp<'tcx>>, PcgError> {
         let mut actions = vec![];
         let mut iteration = 0;
@@ -297,8 +306,11 @@ impl<'pcg, 'tcx> JoinOwnedData<'pcg, 'tcx, &'pcg mut LocalExpansions<'tcx>> {
         Ok(actions)
     }
 
-    fn render_debug_graph<'a, 'slf>(&'slf self, comment: &str, ctxt: impl HasCompilerCtxt<'a, 'tcx>)
-    where
+    fn render_debug_graph<'slf>(
+        &'slf self,
+        comment: &str,
+        ctxt: impl HasBorrowCheckerCtxt<'a, 'tcx>,
+    ) where
         'tcx: 'slf,
         'tcx: 'a,
     {
@@ -307,21 +319,23 @@ impl<'pcg, 'tcx> JoinOwnedData<'pcg, 'tcx, &'pcg mut LocalExpansions<'tcx>> {
             Some(crate::utils::DebugImgcat::JoinOwned),
             self.capabilities,
             comment,
-            ctxt.ctxt(),
+            ctxt.bc_ctxt(),
         );
     }
 
-    fn join_leaf_read_and_write_capabilities<'mir>(
+    fn join_leaf_read_and_write_capabilities(
         &mut self,
         other: &JoinOwnedData<'pcg, 'tcx, &'pcg mut LocalExpansions<'tcx>>,
         place: Place<'tcx>,
-        ctxt: AnalysisCtxt<'mir, 'tcx>,
+        ctxt: AnalysisCtxt<'a, 'tcx>,
     ) -> Result<Vec<RepackOp<'tcx>>, PcgError> {
         pcg_validity_assert!(self.owned.is_leaf_place(place, ctxt.ctxt));
         pcg_validity_assert!(other.owned.is_leaf_place(place, ctxt.ctxt));
-        pcg_validity_assert!(self.capabilities.get(place, ctxt.ctxt) == Some(CapabilityKind::Read));
         pcg_validity_assert!(
-            other.capabilities.get(place, ctxt.ctxt) == Some(CapabilityKind::Write)
+            self.capabilities.get(place, ctxt.ctxt) == Some(CapabilityKind::Read.into())
+        );
+        pcg_validity_assert!(
+            other.capabilities.get(place, ctxt.ctxt) == Some(CapabilityKind::Write.into())
         );
         let mut join_obtainer = JoinObtainer {
             ctxt,
@@ -341,11 +355,11 @@ impl<'pcg, 'tcx> JoinOwnedData<'pcg, 'tcx, &'pcg mut LocalExpansions<'tcx>> {
         Ok(join_obtainer.actions)
     }
 
-    pub(crate) fn join_owned_places<'mir>(
+    pub(crate) fn join_owned_places(
         &mut self,
         other: &JoinOwnedData<'pcg, 'tcx, &'pcg mut LocalExpansions<'tcx>>,
         place: Place<'tcx>,
-        ctxt: AnalysisCtxt<'mir, 'tcx>,
+        ctxt: AnalysisCtxt<'a, 'tcx>,
     ) -> Result<Vec<RepackOp<'tcx>>, PcgError> {
         if !self.owned.is_leaf_place(place, ctxt.ctxt)
             || !other.owned.is_leaf_place(place, ctxt.ctxt)
@@ -358,7 +372,7 @@ impl<'pcg, 'tcx> JoinOwnedData<'pcg, 'tcx, &'pcg mut LocalExpansions<'tcx>> {
         let Some(other_cap) = other.capabilities.get(place, ctxt.ctxt) else {
             return Ok(vec![]);
         };
-        match (self_cap, other_cap) {
+        match (self_cap.expect_concrete(), other_cap.expect_concrete()) {
             (capability_gte!(Read), CapabilityKind::Read) => {
                 copy_read_capabilities(other.capabilities, self.capabilities, place, ctxt);
                 Ok(vec![])
@@ -383,10 +397,10 @@ impl<'pcg, 'tcx> JoinOwnedData<'pcg, 'tcx, &'pcg mut LocalExpansions<'tcx>> {
         }
     }
 
-    pub(crate) fn join<'mir>(
+    pub(crate) fn join(
         mut self,
         mut other: JoinOwnedData<'pcg, 'tcx, &'pcg mut LocalExpansions<'tcx>>,
-        ctxt: AnalysisCtxt<'mir, 'tcx>,
+        ctxt: AnalysisCtxt<'a, 'tcx>,
     ) -> Result<Vec<RepackOp<'tcx>>, PcgError> {
         let mut actions: Vec<RepackOp<'tcx>> = Vec::new();
         if self.owned.has_expansions() || other.owned.has_expansions() {
@@ -415,11 +429,11 @@ impl<'pcg, 'tcx> JoinOwnedData<'pcg, 'tcx, &'pcg mut LocalExpansions<'tcx>> {
 }
 
 impl<'tcx> LocalExpansions<'tcx> {
-    fn contains_descendent_leaf_node_without_capability(
+    fn contains_descendent_leaf_node_without_capability<'a>(
         &self,
         place: Place<'tcx>,
-        place_capabilities: &PlaceCapabilities<'tcx>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
+        place_capabilities: &impl PlaceCapabilitiesInterface<'tcx, SymbolicCapability>,
+        ctxt: CompilerCtxt<'a, 'tcx>,
     ) -> bool {
         self.leaf_places(ctxt).into_iter().any(|p| {
             if place.is_prefix_of(p) && place_capabilities.get(p, ctxt).is_none() {
@@ -435,15 +449,15 @@ impl<'tcx> LocalExpansions<'tcx> {
     }
 }
 
-fn copy_read_capabilities<'tcx>(
-    cap_source: &PlaceCapabilities<'tcx>,
-    cap_target: &mut PlaceCapabilities<'tcx>,
+fn copy_read_capabilities<'a, 'tcx>(
+    cap_source: &impl PlaceCapabilitiesInterface<'tcx, SymbolicCapability>,
+    cap_target: &mut impl PlaceCapabilitiesInterface<'tcx, SymbolicCapability>,
     place: Place<'tcx>,
-    ctxt: AnalysisCtxt<'_, 'tcx>,
+    ctxt: AnalysisCtxt<'a, 'tcx>,
 ) {
     cap_target.insert(place, CapabilityKind::Read, ctxt);
     for (p, c) in cap_source.capabilities_for_strict_postfixes_of(place) {
-        pcg_validity_assert!(c.is_read());
+        pcg_validity_assert!(c.expect_concrete().is_read());
         cap_target.insert(p, c, ctxt);
     }
 }

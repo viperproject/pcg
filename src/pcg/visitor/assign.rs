@@ -12,11 +12,11 @@ use crate::rustc_interface::middle::mir::{self, Operand, Rvalue};
 
 use crate::rustc_interface::middle::ty::{self};
 use crate::utils::maybe_old::MaybeLabelledPlace;
-use crate::utils::{self, AnalysisLocation, SnapshotLocation};
+use crate::utils::{self, AnalysisLocation, DataflowCtxt, SnapshotLocation};
 
 use super::{PcgError, PcgUnsupportedError};
 
-impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
+impl<'a, 'tcx: 'a, Ctxt: DataflowCtxt<'a, 'tcx>> PcgVisitor<'_, 'a, 'tcx, Ctxt> {
     // The label that should be used when referencing (after PostOperands), the
     // value at the place before the move.
     pub(crate) fn pre_operand_move_label(&self) -> SnapshotLocation {
@@ -65,7 +65,7 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
 
         self.pcg
             .capabilities
-            .insert(target, CapabilityKind::Exclusive, self.analysis_ctxt());
+            .insert(target, CapabilityKind::Exclusive, self.ctxt);
         match rvalue {
             Rvalue::Aggregate(
                 box (mir::AggregateKind::Adt(..)
@@ -234,12 +234,12 @@ impl<'tcx> PcgVisitor<'_, '_, 'tcx> {
                 let target_region = target_proj.region(self.ctxt);
                 if self
                     .ctxt
-                    .bc
+                    .bc()
                     .outlives(source_region, target_region, self.location())
                 {
                     let regions_equal =
                         self.ctxt
-                            .bc
+                            .bc()
                             .same_region(source_region, target_region, self.location());
                     self.record_and_apply_action(
                         BorrowPcgAction::add_edge(

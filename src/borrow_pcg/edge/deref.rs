@@ -1,4 +1,5 @@
 use crate::{
+    HasCompilerCtxt,
     borrow_checker::BorrowCheckerInterface,
     borrow_pcg::{
         edge_data::{EdgeData, LabelEdgePlaces, LabelPlacePredicate},
@@ -37,11 +38,14 @@ impl<'tcx> DerefEdge<'tcx> {
         self.deref_place
     }
 
-    pub(crate) fn new(
+    pub(crate) fn new<'a>(
         place: Place<'tcx>,
         blocked_lifetime_projection_label: Option<SnapshotLocation>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
-    ) -> Self {
+        ctxt: impl HasCompilerCtxt<'a, 'tcx>,
+    ) -> Self
+    where
+        'tcx: 'a,
+    {
         let blocked_lifetime_projection = place
             .base_lifetime_projection(ctxt)
             .unwrap()

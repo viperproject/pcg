@@ -5,7 +5,6 @@ use std::{
     io::Write,
 };
 
-use bumpalo::Bump;
 use derive_more::From;
 
 use crate::{
@@ -312,8 +311,7 @@ pub(crate) unsafe fn run_pcg_on_all_fns(tcx: TyCtxt<'_>, polonius: bool) {
     }
 }
 
-type PcgCallback<'tcx> =
-    dyn for<'mir, 'arena> Fn(PcgAnalysis<'mir, 'tcx, &'arena bumpalo::Bump>) + 'static;
+type PcgCallback<'tcx> = dyn for<'mir, 'arena> Fn(PcgAnalysis<'mir, 'tcx>) + 'static;
 
 pub(crate) fn run_pcg_on_fn<'tcx>(
     def_id: LocalDefId,
@@ -346,9 +344,8 @@ pub(crate) fn run_pcg_on_fn<'tcx>(
     }
     let item_name = tcx.def_path_str(def_id.to_def_id()).to_string();
     let item_dir = vis_dir.map(|dir| format!("{dir}/{item_name}"));
-    let arena = Bump::new();
     let pcg_ctxt = PcgCtxt::new(&body.body, tcx, &bc);
-    let mut output = run_pcg(&pcg_ctxt, &arena, item_dir.as_deref());
+    let mut output = run_pcg(&pcg_ctxt, item_dir.as_deref());
     let ctxt = CompilerCtxt::new(&body.body, tcx, &bc);
 
     #[cfg(feature = "visualization")]
@@ -503,7 +500,7 @@ impl<'mir, 'tcx> RustBorrowCheckerImpl<'mir, 'tcx> {
     }
 }
 
-fn emit_and_check_annotations(item_name: String, output: &mut PcgOutput<'_, '_, &bumpalo::Bump>) {
+fn emit_and_check_annotations(item_name: String, output: &mut PcgOutput<'_, '_>) {
     let emit_pcg_annotations = *crate::utils::EMIT_ANNOTATIONS;
     let check_pcg_annotations = *crate::utils::CHECK_ANNOTATIONS;
 

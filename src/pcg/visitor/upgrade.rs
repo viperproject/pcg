@@ -11,16 +11,18 @@ use crate::{
         has_pcs_elem::LabelLifetimeProjectionPredicate,
         region_projection::LifetimeProjection,
     },
-    pcg::CapabilityKind,
+    error::PcgError,
     pcg::{
-        PcgError, PcgNode,
+        CapabilityKind, PcgNode,
         obtain::{HasSnapshotLocation, PlaceObtainer},
-        place_capabilities::{BlockType, PlaceCapabilitiesInterface},
+        place_capabilities::{BlockType, PlaceCapabilitiesReader},
     },
-    utils::{Place, data_structures::HashSet, display::DisplayWithCompilerCtxt},
+    utils::{DataflowCtxt, Place, data_structures::HashSet, display::DisplayWithCompilerCtxt},
 };
 
-impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
+impl<'state, 'a: 'state, 'tcx: 'a, Ctxt: DataflowCtxt<'a, 'tcx>>
+    PlaceObtainer<'state, 'a, 'tcx, Ctxt>
+{
     fn weaken_place_from_read_upwards(
         &mut self,
         place: Place<'tcx>,
@@ -39,7 +41,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                         format!(
                             "{}: remove read permission upwards from base place {} (downgrade R to W for mut ref)",
                             debug_ctxt,
-                            place.to_short_string(self.ctxt),
+                            place.to_short_string(self.ctxt.bc_ctxt()),
                         ),
                         self.ctxt,
                     )
@@ -54,7 +56,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                     format!(
                         "{}: remove read permission upwards from base place {}",
                         debug_ctxt,
-                        place.to_short_string(self.ctxt),
+                        place.to_short_string(self.ctxt.bc_ctxt()),
                     ),
                     self.ctxt,
                 )
@@ -76,14 +78,19 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
         let place_regions = place.regions(self.ctxt);
         let mut prev = None;
         let mut current = place;
-        while self.pcg.capabilities.get(current, self.ctxt) == Some(CapabilityKind::Read) {
+        while self.pcg.capabilities.get(current, self.ctxt) == Some(CapabilityKind::Read.into()) {
             self.weaken_place_from_read_upwards(current, debug_ctxt)?;
             let leaf_nodes = self.pcg.borrow.graph.frozen_graph().leaf_nodes(self.ctxt);
             for place in self.pcg.borrow.graph.places(self.ctxt) {
                 if prev != Some(place)
                     && current.is_prefix_exact(place)
                     && leaf_nodes.contains(&place.into())
-                    && self.pcg.capabilities.get(place, self.ctxt) == Some(CapabilityKind::Read)
+                    && self
+                        .pcg
+                        .capabilities
+                        .get(place, self.ctxt)
+                        .map(|c| c.expect_concrete())
+                        == Some(CapabilityKind::Read)
                     && !place.projects_shared_ref(self.ctxt)
                 {
                     self.record_and_apply_action(
@@ -93,7 +100,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                             format!(
                                 "{}: remove_read_permission_upwards_and_label_rps: restore exclusive cap for leaf place {}",
                                 debug_ctxt,
-                                place.to_short_string(self.ctxt)
+                                place.to_short_string(self.ctxt.bc_ctxt())
                             ),
                         )
                         .into(),
@@ -149,7 +156,7 @@ impl<'state, 'mir: 'state, 'tcx> PlaceObtainer<'state, 'mir, 'tcx> {
                             format!(
                                 "{}: remove_read_permission_upwards_and_label_rps: label current lifetime projection {} with previous snapshot location {:?}",
                                 debug_ctxt,
-                                current_rp.to_short_string(self.ctxt),
+                                current_rp.to_short_string(self.ctxt.bc_ctxt()),
                                 self.prev_snapshot_location()
                             ),
                         )

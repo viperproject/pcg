@@ -315,7 +315,7 @@ impl<'tcx> FallableVisitor<'tcx> for UsageVisitor<'_, 'tcx> {
         place: Place<'tcx>,
         context: mir::visit::PlaceContext,
         _location: mir::Location,
-    ) -> Result<(), crate::pcg::PcgError> {
+    ) -> Result<(), crate::error::PcgError> {
         match context {
             PlaceContext::MutatingUse(MutatingUseContext::Projection) => {}
             PlaceContext::MutatingUse(_) => {

@@ -1,26 +1,21 @@
-use std::alloc::Allocator;
-
 use derive_more::From;
 
 use crate::pcg::EvalStmtPhase;
-use crate::utils::incoming_states::IncomingStates;
 
-use super::arena::ArenaRef;
+use super::arena::PcgArenaRef;
 use super::eval_stmt_data::EvalStmtData;
 use super::validity::HasValidityCheck;
 
-#[derive(Clone, Debug, PartialEq, Eq, Default)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct DomainData<T> {
     pub(crate) entry_state: T,
-    pub(crate) incoming_states: IncomingStates,
     pub(crate) states: DomainDataStates<T>,
 }
 
-impl<T: Clone> DomainData<T> {
-    pub(crate) fn new(entry_state: T) -> Self {
+impl<'a, T: Clone> DomainData<PcgArenaRef<'a, T>> {
+    pub(crate) fn new(entry_state: PcgArenaRef<'a, T>) -> Self {
         Self {
             entry_state: entry_state.clone(),
-            incoming_states: IncomingStates::default(),
             states: DomainDataStates::new(entry_state),
         }
     }
@@ -32,11 +27,11 @@ pub enum DomainDataIndex {
     Initial,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DomainDataStates<T>(pub(crate) EvalStmtData<T>);
 
-impl<T: Clone> DomainDataStates<T> {
-    pub(crate) fn new(entry_state: T) -> Self {
+impl<'a, T: Clone> DomainDataStates<PcgArenaRef<'a, T>> {
+    pub(crate) fn new(entry_state: PcgArenaRef<'a, T>) -> Self {
         Self(EvalStmtData::new(
             entry_state.clone(),
             entry_state.clone(),
@@ -46,7 +41,7 @@ impl<T: Clone> DomainDataStates<T> {
     }
 }
 
-impl<T: Clone, A: Allocator + Clone> DomainDataStates<ArenaRef<T, A>> {
+impl<T: Clone> DomainDataStates<PcgArenaRef<'_, T>> {
     pub(crate) fn to_owned(&self) -> DomainDataStates<T> {
         DomainDataStates(self.0.clone().map(|x| (*x).clone()))
     }

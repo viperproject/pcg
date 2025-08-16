@@ -19,7 +19,7 @@ use crate::{
         region_projection::{LifetimeProjectionLabel, MaybeRemoteRegionProjectionBase},
     },
     pcg::PCGNodeLike,
-    utils::maybe_remote::MaybeRemotePlace,
+    utils::{HasBorrowCheckerCtxt, maybe_remote::MaybeRemotePlace},
 };
 
 use crate::borrow_pcg::borrow_pcg_edge::LocalNode;
@@ -306,7 +306,7 @@ impl<
     pub(crate) fn new(
         inputs: Vec<Input>,
         outputs: Vec<Output>,
-        ctxt: CompilerCtxt<'_, 'tcx>,
+        ctxt: impl HasBorrowCheckerCtxt<'a, 'tcx>,
     ) -> Self {
         assert!(!inputs.is_empty());
         assert!(!outputs.is_empty());
@@ -315,7 +315,7 @@ impl<
             inputs,
             outputs,
         };
-        result.assert_validity(ctxt);
+        result.assert_validity(ctxt.bc_ctxt());
         result
     }
 }
