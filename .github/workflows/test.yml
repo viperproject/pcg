@@ -139,7 +139,7 @@ jobs:
     - name: Checkout mutation testing repository
       uses: actions/checkout@v4
       with:
-        repository: zgrannan/pcg-mutation-testing
+        repository: prusti-dev/pcg-mutation-testing
         ref: zgrannan/update-pcg
         path: pcg-mutation-testing
 
