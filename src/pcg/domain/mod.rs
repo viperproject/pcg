@@ -15,10 +15,9 @@ use derive_more::From;
 use crate::{
     AnalysisEngine,
     action::PcgActions,
-    borrow_checker::BorrowCheckerInterface,
     r#loop::{LoopAnalysis, LoopPlaceUsageAnalysis, PlaceUsages},
     pcg::{
-        SymbolicCapability, ctxt::AnalysisCtxt, dot_graphs::PcgDotGraphsForBlock,
+        ctxt::AnalysisCtxt, dot_graphs::PcgDotGraphsForBlock,
         place_capabilities::SymbolicPlaceCapabilities,
     },
     pcg_validity_assert,
@@ -27,7 +26,7 @@ use crate::{
         mir_dataflow::{JoinSemiLattice, fmt::DebugWithContext, move_paths::MoveData},
     },
     utils::{
-        CompilerCtxt, DataflowCtxt, HasBorrowCheckerCtxt, HasCompilerCtxt, PANIC_ON_ERROR, Place,
+        CompilerCtxt, DataflowCtxt, HasBorrowCheckerCtxt, PANIC_ON_ERROR, Place,
         ToGraph,
         arena::PcgArenaRef,
         domain_data::{DomainData, DomainDataIndex},
@@ -178,22 +177,83 @@ impl std::fmt::Debug for PcgDomain<'_, '_> {
     }
 }
 
-#[derive(Clone, From, Eq)]
-pub(crate) struct PendingDataflowState<'a, 'tcx, T> {
-    pending: Vec<DomainDataWithCtxt<'a, 'tcx, T>>,
-}
+mod private {
+    use derive_more::From;
 
-impl<T> PartialEq for PendingDataflowState<'_, '_, T> {
-    fn eq(&self, other: &Self) -> bool {
-        self.pending == other.pending
+    use crate::borrow_checker::BorrowCheckerInterface;
+    use crate::pcg::DomainDataWithCtxt;
+    use crate::utils::{CompilerCtxt, HasBorrowCheckerCtxt, HasCompilerCtxt};
+
+    #[derive(Clone, From, Eq)]
+    pub struct PendingDataflowState<'a, 'tcx, T> {
+        pending: Vec<DomainDataWithCtxt<'a, 'tcx, T>>,
+    }
+
+    impl<T> PartialEq for PendingDataflowState<'_, '_, T> {
+        fn eq(&self, other: &Self) -> bool {
+            self.pending == other.pending
+        }
+    }
+
+    impl<T> Default for PendingDataflowState<'_, '_, T> {
+        fn default() -> Self {
+            Self { pending: vec![] }
+        }
+    }
+
+    impl<'a, 'tcx, T> PendingDataflowState<'a, 'tcx, T> {
+        pub(crate) fn take_first(
+            self,
+        ) -> (
+            DomainDataWithCtxt<'a, 'tcx, T>,
+            Vec<DomainDataWithCtxt<'a, 'tcx, T>>,
+        ) {
+            let mut iter = self.pending.into_iter();
+            (iter.next().unwrap(), iter.collect())
+        }
+
+        pub(crate) fn take(&mut self) -> Self {
+            std::mem::take(self)
+        }
+
+        pub(crate) fn push(&mut self, data: DomainDataWithCtxt<'a, 'tcx, T>) -> bool {
+            if self.pending.iter().any(|d| d == &data) {
+                return false;
+            }
+            self.pending.push(data);
+            true
+        }
+    }
+
+    #[derive(Clone, Copy, Debug)]
+    pub struct ResultsCtxt<'a, 'tcx> {
+        ctxt: CompilerCtxt<'a, 'tcx>,
+    }
+
+    impl<'a, 'tcx: 'a> ResultsCtxt<'a, 'tcx> {
+        pub(crate) fn new(ctxt: CompilerCtxt<'a, 'tcx>) -> Self {
+            Self { ctxt }
+        }
+    }
+
+    impl<'a, 'tcx: 'a> HasBorrowCheckerCtxt<'a, 'tcx> for ResultsCtxt<'a, 'tcx> {
+        fn bc_ctxt(&self) -> CompilerCtxt<'a, 'tcx, &'a (dyn BorrowCheckerInterface<'tcx>)> {
+            self.ctxt
+        }
+
+        fn bc(&self) -> &'a (dyn BorrowCheckerInterface<'tcx>) {
+            self.ctxt.bc()
+        }
+    }
+
+    impl<'a, 'tcx: 'a> HasCompilerCtxt<'a, 'tcx> for ResultsCtxt<'a, 'tcx> {
+        fn ctxt(&self) -> CompilerCtxt<'a, 'tcx, ()> {
+            self.ctxt.ctxt()
+        }
     }
 }
 
-impl<T> Default for PendingDataflowState<'_, '_, T> {
-    fn default() -> Self {
-        Self { pending: vec![] }
-    }
-}
+pub(crate) use private::*;
 
 impl<'a, 'tcx> PendingDataflowState<'a, 'tcx, AnalysisCtxt<'a, 'tcx>> {
     pub(crate) fn join(
@@ -223,32 +283,6 @@ impl<'a, 'tcx> PendingDataflowState<'a, 'tcx, AnalysisCtxt<'a, 'tcx>> {
             }
         }
         Ok(result)
-    }
-}
-
-impl<'a, 'tcx, T> PendingDataflowState<'a, 'tcx, T> {
-    pub(crate) fn take_first(
-        self,
-    ) -> (
-        DomainDataWithCtxt<'a, 'tcx, T>,
-        Vec<DomainDataWithCtxt<'a, 'tcx, T>>,
-    ) {
-        let mut iter = self.pending.into_iter();
-        (iter.next().unwrap(), iter.collect())
-    }
-
-    pub(crate) fn take(&mut self) -> Self {
-        std::mem::take(self)
-    }
-}
-
-impl<'a, 'tcx, T> PendingDataflowState<'a, 'tcx, T> {
-    pub(crate) fn push(&mut self, data: DomainDataWithCtxt<'a, 'tcx, T>) -> bool {
-        if self.pending.iter().any(|d| d == &data) {
-            return false;
-        }
-        self.pending.push(data);
-        true
     }
 }
 
@@ -434,37 +468,13 @@ impl<'a, 'tcx: 'a> DataflowCtxt<'a, 'tcx> for ResultsCtxt<'a, 'tcx> {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct ResultsCtxt<'a, 'tcx> {
-    ctxt: CompilerCtxt<'a, 'tcx>,
-}
-
-impl<'a, 'tcx: 'a> ResultsCtxt<'a, 'tcx> {
-    pub(crate) fn new(ctxt: CompilerCtxt<'a, 'tcx>) -> Self {
-        Self { ctxt }
-    }
-}
-
-impl<'a, 'tcx: 'a> HasBorrowCheckerCtxt<'a, 'tcx> for ResultsCtxt<'a, 'tcx> {
-    fn bc_ctxt(&self) -> CompilerCtxt<'a, 'tcx, &'a (dyn BorrowCheckerInterface<'tcx>)> {
-        self.ctxt
-    }
-
-    fn bc(&self) -> &'a (dyn BorrowCheckerInterface<'tcx>) {
-        self.ctxt.bc()
-    }
-}
-
-impl<'a, 'tcx: 'a> HasCompilerCtxt<'a, 'tcx> for ResultsCtxt<'a, 'tcx> {
-    fn ctxt(&self) -> CompilerCtxt<'a, 'tcx, ()> {
-        self.ctxt.ctxt()
-    }
-}
-
 pub(crate) trait HasPcgDomainData<'a, 'tcx: 'a> {
     fn data(&self) -> &PcgDomainData<'a, 'tcx>;
 
-    fn pcg<'slf>(&'slf self, phase: impl Into<DomainDataIndex>) -> &'slf Pcg<'tcx> where 'a: 'slf{
+    fn pcg<'slf>(&'slf self, phase: impl Into<DomainDataIndex>) -> &'slf Pcg<'tcx>
+    where
+        'a: 'slf,
+    {
         &self.data().pcg[phase.into()]
     }
 

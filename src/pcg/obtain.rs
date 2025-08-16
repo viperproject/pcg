@@ -68,7 +68,7 @@ impl<Ctxt> HasSnapshotLocation for PlaceObtainer<'_, '_, '_, Ctxt> {
     }
 }
 
-impl<'state, 'a, 'tcx, Ctxt> PlaceObtainer<'state, 'a, 'tcx, Ctxt> {
+impl<'state, 'tcx, Ctxt> PlaceObtainer<'state, '_, 'tcx, Ctxt> {
     pub(crate) fn location(&self) -> mir::Location {
         self.location
     }

@@ -9,7 +9,6 @@ use crate::pcg::ctxt::AnalysisCtxt;
 use crate::pcg::obtain::{PlaceCollapser, PlaceObtainer};
 use crate::pcg::place_capabilities::{PlaceCapabilitiesInterface, PlaceCapabilitiesReader};
 use crate::pcg::triple::TripleWalker;
-use crate::pcg::{CapabilityLike, SymbolicCapability};
 use crate::rustc_interface::middle::mir::{self, Location, Operand, Rvalue, Statement, Terminator};
 use crate::utils::data_structures::HashSet;
 use crate::utils::display::DisplayWithCompilerCtxt;
@@ -18,7 +17,7 @@ use crate::action::PcgActions;
 use crate::utils::maybe_old::MaybeLabelledPlace;
 use crate::utils::visitor::FallableVisitor;
 use crate::utils::{
-    self, AnalysisLocation, DataflowCtxt, HasBorrowCheckerCtxt, HasCompilerCtxt, HasPlace, Place,
+    self, AnalysisLocation, DataflowCtxt, HasCompilerCtxt, HasPlace, Place,
     SnapshotLocation,
 };
 
@@ -383,7 +382,7 @@ impl<'state, 'a: 'state, 'tcx: 'a, Ctxt> PlaceObtainer<'state, 'a, 'tcx, Ctxt> {
 impl<'state, 'a: 'state, 'tcx: 'a, Ctxt: DataflowCtxt<'a, 'tcx>>
     PlaceObtainer<'state, 'a, 'tcx, Ctxt>
 {
-    pub(crate) fn collapse_owned_places<'slf>(&'slf mut self) -> Result<(), PcgError> {
+    pub(crate) fn collapse_owned_places(&mut self) -> Result<(), PcgError> {
         let allocated_locals = self.pcg.owned.allocated_locals();
         for local in allocated_locals {
             self.iterations_for_local(local)?;
@@ -391,7 +390,7 @@ impl<'state, 'a: 'state, 'tcx: 'a, Ctxt: DataflowCtxt<'a, 'tcx>>
         Ok(())
     }
 
-    fn iterations_for_local<'slf>(&'slf mut self, local: mir::Local) -> Result<(), PcgError> {
+    fn iterations_for_local(&mut self, local: mir::Local) -> Result<(), PcgError> {
         let mut iteration = 1;
         while self.collapse_iteration(local, iteration)? {
             iteration += 1;

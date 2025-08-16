@@ -12,7 +12,7 @@ use std::{
 use derive_more::From;
 
 use crate::{
-    pcg::{PcgArena, ctxt::AnalysisCtxt},
+    pcg::PcgArena,
     utils::{Place, SnapshotLocation, data_structures::HashSet},
 };
 
@@ -392,14 +392,13 @@ impl SymbolicCapability {
     pub(crate) fn gte<'a>(
         self,
         other: impl Into<Self>,
-        arena: PcgArena<'a>,
     ) -> CapabilityConstraint<'a> {
         CapabilityConstraint::gte(self, other.into())
     }
 }
 
 mod private {
-    use crate::pcg::{CapabilityKind, ctxt::AnalysisCtxt};
+    use crate::pcg::CapabilityKind;
 
     pub trait CapabilityLike: Copy + PartialEq + From<CapabilityKind> + 'static {
         fn expect_concrete(self) -> CapabilityKind;

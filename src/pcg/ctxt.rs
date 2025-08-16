@@ -11,8 +11,8 @@ use crate::rustc_interface::middle::{mir, ty};
 use crate::utils::data_structures::HashMap;
 use crate::utils::logging::LogPredicate;
 use crate::utils::{
-    CompilerCtxt, DataflowCtxt, HasBorrowCheckerCtxt, HasCompilerCtxt, PcgSettings, Place,
-    SETTINGS, SnapshotLocation, StmtGraphs, ToGraph,
+    CompilerCtxt, DataflowCtxt, HasBorrowCheckerCtxt, HasCompilerCtxt, Place, SETTINGS,
+    SnapshotLocation, StmtGraphs, ToGraph,
 };
 use crate::visualization::write_pcg_dot_graph_to_file;
 
@@ -28,21 +28,31 @@ impl<'a, 'tcx: 'a> DataflowCtxt<'a, 'tcx> for AnalysisCtxt<'a, 'tcx> {
     }
 }
 
-#[derive(Copy, Clone)]
-pub(crate) struct AnalysisCtxt<'a, 'tcx> {
-    pub(crate) ctxt: CompilerCtxt<'a, 'tcx>,
-    pub(crate) body_analysis: &'a BodyAnalysis<'a, 'tcx>,
-    pub(crate) settings: &'a PcgSettings<'a>,
-    #[allow(dead_code)]
-    pub(crate) symbolic_capability_ctxt: SymbolicCapabilityCtxt<'a, 'tcx>,
-    pub(crate) block: mir::BasicBlock,
-    pub(crate) graphs: Option<PcgBlockDebugVisualizationGraphs<'a>>,
-    pub(crate) arena: PcgArena<'a>,
+mod private {
+    use crate::{
+        pcg::{BodyAnalysis, PcgArena, PcgBlockDebugVisualizationGraphs, SymbolicCapabilityCtxt},
+        rustc_interface::middle::mir,
+        utils::{CompilerCtxt, PcgSettings},
+    };
+
+    #[derive(Copy, Clone)]
+    pub struct AnalysisCtxt<'a, 'tcx> {
+        pub(crate) ctxt: CompilerCtxt<'a, 'tcx>,
+        pub(crate) body_analysis: &'a BodyAnalysis<'a, 'tcx>,
+        pub(crate) settings: &'a PcgSettings<'a>,
+        #[allow(dead_code)]
+        pub(crate) symbolic_capability_ctxt: SymbolicCapabilityCtxt<'a, 'tcx>,
+        pub(crate) block: mir::BasicBlock,
+        pub(crate) graphs: Option<PcgBlockDebugVisualizationGraphs<'a>>,
+        pub(crate) arena: PcgArena<'a>,
+    }
 }
 
 fn dot_filename_for(output_dir: &str, relative_filename: &str) -> String {
     format!("{}/{}", output_dir, relative_filename)
 }
+
+pub use private::*;
 
 impl<'a, 'tcx: 'a> AnalysisCtxt<'a, 'tcx> {
     pub(crate) fn generate_pcg_debug_visualization_graph<'pcg>(
@@ -78,9 +88,6 @@ impl<'a, 'tcx: 'a> AnalysisCtxt<'a, 'tcx> {
 
             write_pcg_dot_graph_to_file(pcg, self, location, &filename).unwrap();
         }
-    }
-    pub(crate) fn alloc<T>(&self, val: T) -> &'a mut T {
-        self.arena.alloc(val)
     }
 
     #[allow(dead_code)]
@@ -141,7 +148,7 @@ impl<'a, 'tcx: 'a> AnalysisCtxt<'a, 'tcx> {
     fn get_application_rules(
         self,
         constraints: &IntroduceConstraints<'tcx>,
-        capabilities: &mut SymbolicPlaceCapabilities<'tcx>
+        capabilities: &mut SymbolicPlaceCapabilities<'tcx>,
     ) -> CapabilityRules<'a, 'tcx> {
         match constraints {
             IntroduceConstraints::ExpandForSharedBorrow {
@@ -151,7 +158,7 @@ impl<'a, 'tcx: 'a> AnalysisCtxt<'a, 'tcx> {
             } => {
                 let base_cap = capabilities.get(*base_place, self).unwrap();
                 let expand_read = CapabilityRule::new(
-                    base_cap.gte(CapabilityKind::Read, self.arena),
+                    base_cap.gte(CapabilityKind::Read),
                     HashMap::from_iter(expansion_places.iter().map(|p| (*p, CapabilityKind::Read))),
                 );
                 let expand_exclusive = CapabilityRule::new(

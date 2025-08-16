@@ -17,7 +17,7 @@ use crate::{
     BodyAndBorrows,
     pcg::{
         DataflowState, DomainDataWithCtxt, HasPcgDomainData, PcgDomainData,
-        SymbolicCapability, SymbolicCapabilityCtxt, ctxt::AnalysisCtxt, triple::TripleWalker,
+        SymbolicCapabilityCtxt, ctxt::AnalysisCtxt, triple::TripleWalker,
     },
     pcg_validity_assert,
     rustc_interface::{

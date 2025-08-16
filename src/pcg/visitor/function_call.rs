@@ -6,7 +6,6 @@ use crate::borrow_pcg::edge::abstraction::function::{FunctionCallAbstraction, Fu
 use crate::borrow_pcg::edge::abstraction::{AbstractionBlockEdge, AbstractionType};
 use crate::borrow_pcg::has_pcs_elem::LabelLifetimeProjectionPredicate;
 use crate::pcg::obtain::{HasSnapshotLocation, PlaceExpander};
-use crate::pcg::{SymbolicCapability};
 use crate::rustc_interface::middle::mir::{Location, Operand};
 use crate::utils::display::DisplayWithCompilerCtxt;
 

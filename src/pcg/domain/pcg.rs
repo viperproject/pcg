@@ -1,5 +1,3 @@
-use std::marker::PhantomData;
-
 use crate::{
     DebugLines,
     borrow_pcg::{
@@ -10,7 +8,7 @@ use crate::{
     borrows_imgcat_debug,
     owned_pcg::{OwnedPcg, join::data::JoinOwnedData},
     pcg::{
-        CapabilityKind, PcgError, SymbolicCapability,
+        CapabilityKind, PcgError,
         ctxt::AnalysisCtxt,
         place_capabilities::{
             PlaceCapabilities, PlaceCapabilitiesReader, SymbolicPlaceCapabilities,
@@ -46,7 +44,7 @@ pub(crate) struct PcgRef<'pcg, 'tcx> {
     pub(crate) capabilities: &'pcg SymbolicPlaceCapabilities<'tcx>,
 }
 
-impl<'pcg, 'tcx> PcgRef<'pcg, 'tcx> {
+impl<'tcx> PcgRef<'_, 'tcx> {
     pub(crate) fn render_debug_graph<'slf, 'a>(
         &'slf self,
         location: mir::Location,

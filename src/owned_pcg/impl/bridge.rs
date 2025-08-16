@@ -7,7 +7,7 @@
 use crate::{
     owned_pcg::{LocalExpansions, OwnedPcg, OwnedPcgLocal, RepackOp},
     pcg::{
-        CapabilityKind, CapabilityLike, PcgError, place_capabilities::PlaceCapabilitiesInterface,
+        CapabilityKind, PcgError, place_capabilities::PlaceCapabilitiesInterface,
     },
     utils::HasCompilerCtxt,
 };

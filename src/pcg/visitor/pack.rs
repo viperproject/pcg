@@ -8,7 +8,7 @@ use crate::borrow_pcg::edge_data::EdgeData;
 use crate::borrow_pcg::graph::Conditioned;
 use crate::borrow_pcg::graph::frozen::FrozenGraphRef;
 use crate::pcg::obtain::{PlaceCollapser, PlaceObtainer};
-use crate::pcg::{PcgNode, SymbolicCapability};
+use crate::pcg::PcgNode;
 use crate::utils::HasPlace;
 use crate::utils::data_structures::{HashMap, HashSet};
 use crate::utils::display::DisplayWithCompilerCtxt;

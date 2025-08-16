@@ -7,7 +7,7 @@ use crate::borrow_pcg::region_projection::{LifetimeProjection, MaybeRemoteRegion
 use crate::pcg::obtain::{ActionApplier, HasSnapshotLocation, PlaceExpander};
 use crate::pcg::place_capabilities::PlaceCapabilitiesInterface;
 use crate::pcg::{CapabilityKind};
-use crate::pcg::{EvalStmtPhase, SymbolicCapability};
+use crate::pcg::EvalStmtPhase;
 use crate::rustc_interface::middle::mir::{self, Operand, Rvalue};
 
 use crate::rustc_interface::middle::ty::{self};

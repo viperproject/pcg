@@ -16,7 +16,7 @@ use crate::pcg::obtain::{
 use crate::pcg::place_capabilities::{
     BlockType, PlaceCapabilitiesInterface, PlaceCapabilitiesReader, SymbolicPlaceCapabilities,
 };
-use crate::pcg::{CapabilityKind, SymbolicCapability};
+use crate::pcg::CapabilityKind;
 use crate::pcg::{EvalStmtPhase, PCGNodeLike, PcgNode, PcgRef, PcgRefLike};
 use crate::rustc_interface::middle::mir;
 use crate::utils::data_structures::HashSet;
