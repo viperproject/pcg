@@ -237,11 +237,11 @@ mod private {
     }
 
     impl<'a, 'tcx: 'a> HasBorrowCheckerCtxt<'a, 'tcx> for ResultsCtxt<'a, 'tcx> {
-        fn bc_ctxt(&self) -> CompilerCtxt<'a, 'tcx, &'a (dyn BorrowCheckerInterface<'tcx>)> {
+        fn bc_ctxt(&self) -> CompilerCtxt<'a, 'tcx, &'a dyn BorrowCheckerInterface<'tcx>> {
             self.ctxt
         }
 
-        fn bc(&self) -> &'a (dyn BorrowCheckerInterface<'tcx>) {
+        fn bc(&self) -> &'a dyn BorrowCheckerInterface<'tcx> {
             self.ctxt.bc()
         }
     }

@@ -27,6 +27,16 @@ where
     A: mir_dataflow::Analysis<'tcx>,
 {
     #[rustversion::since(2025-05-24)]
+    pub fn get_analysis(&self) -> &A {
+        &self.analysis
+    }
+
+    #[rustversion::before(2025-05-24)]
+    pub fn get_analysis(&self) -> &A {
+        &self.results.analysis
+    }
+
+    #[rustversion::since(2025-05-24)]
     pub fn into_results_cursor<'mir>(
         self,
         body: &'mir Body<'tcx>,
@@ -39,9 +49,19 @@ where
         &self.results[block]
     }
 
+    #[rustversion::since(2025-05-24)]
+    pub fn entry_state_for_block_mut(&mut self, block: BasicBlock) -> &mut A::Domain {
+        &mut self.results[block]
+    }
+
     #[rustversion::before(2025-05-24)]
     pub fn entry_set_for_block(&self, block: BasicBlock) -> &A::Domain {
         self.results.entry_set_for_block(block)
+    }
+
+    #[rustversion::before(2025-05-24)]
+    pub fn entry_state_for_block_mut(&mut self, block: BasicBlock) -> &mut A::Domain {
+        &mut self.results.entry_states[block]
     }
 
     #[rustversion::before(2025-05-24)]

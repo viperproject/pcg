@@ -309,9 +309,10 @@ pub fn run_pcg<'a, 'tcx>(
     let body = pcg_ctxt.compiler_ctxt.body();
     let tcx = pcg_ctxt.compiler_ctxt.tcx();
     let mut analysis = compute_fixpoint(AnalysisEngine(engine), tcx, body);
-    for (block, state) in analysis.results.entry_states.iter_enumerated_mut() {
-        let engine = &analysis.results.analysis;
+    for block in body.basic_blocks.indices() {
+        let engine = analysis.get_analysis();
         let ctxt = engine.analysis_ctxt(block);
+        let state = analysis.entry_state_for_block_mut(block);
         state.complete(ctxt);
     }
     if let Some(dir_path) = &visualization_output_path {
@@ -322,7 +323,7 @@ pub fn run_pcg<'a, 'tcx>(
             }
             let block_iterations_json_file =
                 format!("{}/block_{}_iterations.json", dir_path, block.index());
-            let ctxt = analysis.results.analysis.analysis_ctxt(block);
+            let ctxt = analysis.get_analysis().analysis_ctxt(block);
             if let Some(graphs) = ctxt.graphs {
                 graphs
                     .dot_graphs
