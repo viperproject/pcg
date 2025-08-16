@@ -218,7 +218,7 @@ impl<'tcx, 'a> ToJsonWithCompilerCtxt<'tcx, &'a dyn BorrowCheckerInterface<'tcx>
 }
 
 impl<'a, 'tcx> PCGStmtVisualizationData<'a, 'tcx> {
-    fn new<'mir>(location: &'a PcgLocation<'a, 'tcx>) -> Self
+    fn new<'mir>(location: &'a PcgLocation<'tcx>) -> Self
     where
         'tcx: 'mir,
     {

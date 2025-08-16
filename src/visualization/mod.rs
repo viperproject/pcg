@@ -341,7 +341,7 @@ impl Graph {
 
 pub(crate) fn generate_borrows_dot_graph<'a, 'tcx: 'a, 'bc>(
     ctxt: impl HasBorrowCheckerCtxt<'a, 'tcx>,
-    capabilities: &impl PlaceCapabilitiesReader<'tcx, SymbolicCapability<'a>>,
+    capabilities: &impl PlaceCapabilitiesReader<'tcx, SymbolicCapability>,
     borrows_domain: &BorrowsGraph<'tcx>,
 ) -> io::Result<String> {
     let constructor = BorrowsGraphConstructor::new(borrows_domain, capabilities, ctxt.bc_ctxt());
@@ -353,7 +353,7 @@ pub(crate) fn generate_borrows_dot_graph<'a, 'tcx: 'a, 'bc>(
 }
 
 pub(crate) fn generate_pcg_dot_graph<'pcg, 'a: 'pcg, 'tcx: 'a>(
-    pcg: PcgRef<'pcg, 'a, 'tcx>,
+    pcg: PcgRef<'pcg, 'tcx>,
     ctxt: impl HasBorrowCheckerCtxt<'a, 'tcx>,
     location: Location,
 ) -> io::Result<String> {
@@ -366,7 +366,7 @@ pub(crate) fn generate_pcg_dot_graph<'pcg, 'a: 'pcg, 'tcx: 'a>(
 }
 
 pub(crate) fn write_pcg_dot_graph_to_file<'a, 'tcx: 'a>(
-    pcg: PcgRef<'_, 'a, 'tcx>,
+    pcg: PcgRef<'_, 'tcx>,
     ctxt: impl HasBorrowCheckerCtxt<'a, 'tcx>,
     location: Location,
     file_path: &str,

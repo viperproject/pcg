@@ -10,7 +10,7 @@ use crate::{
     borrows_imgcat_debug,
     owned_pcg::{OwnedPcg, join::data::JoinOwnedData},
     pcg::{
-        CapabilityKind, CapabilityOps, PcgError, SymbolicCapability,
+        CapabilityKind, PcgError, SymbolicCapability,
         ctxt::AnalysisCtxt,
         place_capabilities::{
             PlaceCapabilities, PlaceCapabilitiesReader, SymbolicPlaceCapabilities,
@@ -27,28 +27,27 @@ use crate::{
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Pcg<'a, 'tcx, Capabilities = SymbolicPlaceCapabilities<'a, 'tcx>> {
+pub struct Pcg<'tcx, Capabilities = SymbolicPlaceCapabilities<'tcx>> {
     pub(crate) owned: OwnedPcg<'tcx>,
     pub(crate) borrow: BorrowsState<'tcx>,
     pub(crate) capabilities: Capabilities,
-    pub(crate) _marker: PhantomData<&'a ()>,
 }
 
-impl<'tcx> HasValidityCheck<'tcx> for Pcg<'_, 'tcx> {
+impl<'tcx> HasValidityCheck<'tcx> for Pcg<'tcx> {
     fn check_validity(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> std::result::Result<(), String> {
         self.as_ref().check_validity(ctxt)
     }
 }
 
 #[derive(Clone, Copy)]
-pub(crate) struct PcgRef<'pcg, 'a, 'tcx> {
+pub(crate) struct PcgRef<'pcg, 'tcx> {
     pub(crate) owned: &'pcg OwnedPcg<'tcx>,
     pub(crate) borrow: BorrowStateRef<'pcg, 'tcx>,
-    pub(crate) capabilities: &'pcg SymbolicPlaceCapabilities<'a, 'tcx>,
+    pub(crate) capabilities: &'pcg SymbolicPlaceCapabilities<'tcx>,
 }
 
-impl<'a, 'tcx: 'a> PcgRef<'_, 'a, 'tcx> {
-    pub(crate) fn render_debug_graph<'slf>(
+impl<'pcg, 'tcx> PcgRef<'pcg, 'tcx> {
+    pub(crate) fn render_debug_graph<'slf, 'a>(
         &'slf self,
         location: mir::Location,
         debug_imgcat: Option<DebugImgcat>,
@@ -64,8 +63,8 @@ impl<'a, 'tcx: 'a> PcgRef<'_, 'a, 'tcx> {
     }
 }
 
-impl<'pcg, 'a, 'tcx> From<&'pcg Pcg<'a, 'tcx>> for PcgRef<'pcg, 'a, 'tcx> {
-    fn from(pcg: &'pcg Pcg<'a, 'tcx>) -> Self {
+impl<'pcg, 'tcx> From<&'pcg Pcg<'tcx>> for PcgRef<'pcg, 'tcx> {
+    fn from(pcg: &'pcg Pcg<'tcx>) -> Self {
         Self {
             owned: &pcg.owned,
             borrow: pcg.borrow.as_ref(),
@@ -74,8 +73,8 @@ impl<'pcg, 'a, 'tcx> From<&'pcg Pcg<'a, 'tcx>> for PcgRef<'pcg, 'a, 'tcx> {
     }
 }
 
-impl<'pcg, 'a, 'tcx> From<&'pcg PcgMutRef<'pcg, 'a, 'tcx>> for PcgRef<'pcg, 'a, 'tcx> {
-    fn from(pcg: &'pcg PcgMutRef<'pcg, 'a, 'tcx>) -> Self {
+impl<'pcg, 'a, 'tcx> From<&'pcg PcgMutRef<'pcg, 'tcx>> for PcgRef<'pcg, 'tcx> {
+    fn from(pcg: &'pcg PcgMutRef<'pcg, 'tcx>) -> Self {
         let borrow = pcg.borrow.as_ref();
         Self {
             owned: &*pcg.owned,
@@ -85,17 +84,17 @@ impl<'pcg, 'a, 'tcx> From<&'pcg PcgMutRef<'pcg, 'a, 'tcx>> for PcgRef<'pcg, 'a, 
     }
 }
 
-pub(crate) struct PcgMutRef<'pcg, 'a, 'tcx> {
+pub(crate) struct PcgMutRef<'pcg, 'tcx> {
     pub(crate) owned: &'pcg mut OwnedPcg<'tcx>,
     pub(crate) borrow: BorrowStateMutRef<'pcg, 'tcx>,
-    pub(crate) capabilities: &'pcg mut SymbolicPlaceCapabilities<'a, 'tcx>,
+    pub(crate) capabilities: &'pcg mut SymbolicPlaceCapabilities<'tcx>,
 }
 
-impl<'pcg, 'a, 'tcx> PcgMutRef<'pcg, 'a, 'tcx> {
+impl<'pcg, 'tcx> PcgMutRef<'pcg, 'tcx> {
     pub(crate) fn new(
         owned: &'pcg mut OwnedPcg<'tcx>,
         borrow: BorrowStateMutRef<'pcg, 'tcx>,
-        capabilities: &'pcg mut SymbolicPlaceCapabilities<'a, 'tcx>,
+        capabilities: &'pcg mut SymbolicPlaceCapabilities<'tcx>,
     ) -> Self {
         Self {
             owned,
@@ -105,8 +104,8 @@ impl<'pcg, 'a, 'tcx> PcgMutRef<'pcg, 'a, 'tcx> {
     }
 }
 
-impl<'pcg, 'a, 'tcx> From<&'pcg mut Pcg<'a, 'tcx>> for PcgMutRef<'pcg, 'a, 'tcx> {
-    fn from(pcg: &'pcg mut Pcg<'a, 'tcx>) -> Self {
+impl<'pcg, 'tcx> From<&'pcg mut Pcg<'tcx>> for PcgMutRef<'pcg, 'tcx> {
+    fn from(pcg: &'pcg mut Pcg<'tcx>) -> Self {
         Self::new(
             &mut pcg.owned,
             (&mut pcg.borrow).into(),
@@ -116,7 +115,7 @@ impl<'pcg, 'a, 'tcx> From<&'pcg mut Pcg<'a, 'tcx>> for PcgMutRef<'pcg, 'a, 'tcx>
 }
 
 pub(crate) trait PcgRefLike<'tcx> {
-    fn as_ref(&self) -> PcgRef<'_, '_, 'tcx>;
+    fn as_ref(&self) -> PcgRef<'_, 'tcx>;
 
     fn borrows_graph(&self) -> &BorrowsGraph<'tcx> {
         self.as_ref().borrow.graph
@@ -152,25 +151,25 @@ pub(crate) trait PcgRefLike<'tcx> {
     }
 }
 
-impl<'a, 'tcx> PcgRefLike<'tcx> for PcgMutRef<'_, 'a, 'tcx> {
-    fn as_ref(&self) -> PcgRef<'_, 'a, 'tcx> {
+impl<'a, 'tcx> PcgRefLike<'tcx> for PcgMutRef<'_, 'tcx> {
+    fn as_ref(&self) -> PcgRef<'_, 'tcx> {
         PcgRef::from(self)
     }
 }
 
-impl<'a, 'tcx> PcgRefLike<'tcx> for Pcg<'a, 'tcx> {
-    fn as_ref(&self) -> PcgRef<'_, 'a, 'tcx> {
+impl<'tcx> PcgRefLike<'tcx> for Pcg<'tcx> {
+    fn as_ref(&self) -> PcgRef<'_, 'tcx> {
         PcgRef::from(self)
     }
 }
 
-impl<'a, 'tcx> PcgRefLike<'tcx> for PcgRef<'_, 'a, 'tcx> {
-    fn as_ref(&self) -> PcgRef<'_, 'a, 'tcx> {
+impl<'a, 'tcx> PcgRefLike<'tcx> for PcgRef<'_, 'tcx> {
+    fn as_ref(&self) -> PcgRef<'_, 'tcx> {
         *self
     }
 }
 
-impl<'tcx> HasValidityCheck<'tcx> for PcgRef<'_, '_, 'tcx> {
+impl<'tcx> HasValidityCheck<'tcx> for PcgRef<'_, 'tcx> {
     fn check_validity(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> std::result::Result<(), String> {
         self.capabilities.to_concrete(ctxt).check_validity(ctxt)?;
         self.borrow.check_validity(ctxt)?;
@@ -250,7 +249,7 @@ impl<'tcx> HasValidityCheck<'tcx> for PcgRef<'_, '_, 'tcx> {
     }
 }
 
-impl<'a, 'tcx: 'a> Pcg<'a, 'tcx> {
+impl<'a, 'tcx: 'a> Pcg<'tcx> {
     pub(crate) fn is_expansion_leaf(
         &self,
         place: Place<'tcx>,
@@ -268,7 +267,7 @@ impl<'a, 'tcx: 'a> Pcg<'a, 'tcx> {
         return !place.is_owned(ctxt) || self.owned.leaf_places(ctxt).contains(&place);
     }
 
-    pub fn capabilities(&self) -> &SymbolicPlaceCapabilities<'a, 'tcx> {
+    pub fn capabilities(&self) -> &SymbolicPlaceCapabilities<'tcx> {
         &self.capabilities
     }
 
@@ -284,9 +283,7 @@ impl<'a, 'tcx: 'a> Pcg<'a, 'tcx> {
         &mut self,
         t: Triple<'tcx>,
         ctxt: Ctxt,
-    ) where
-        SymbolicCapability<'a>: CapabilityOps<Ctxt>,
-    {
+    ) {
         self.owned.ensures(t, &mut self.capabilities, ctxt);
     }
 
@@ -347,7 +344,6 @@ impl<'a, 'tcx: 'a> Pcg<'a, 'tcx> {
             owned,
             borrow,
             capabilities,
-            _marker: PhantomData,
         }
     }
 }

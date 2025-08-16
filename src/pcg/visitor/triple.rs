@@ -1,7 +1,7 @@
 use crate::{
     owned_pcg::{LocalExpansions, OwnedPcgLocal},
     pcg::{
-        CapabilityKind, CapabilityOps, PcgError, PcgUnsupportedError, SymbolicCapability,
+        CapabilityKind, PcgError, PcgUnsupportedError, SymbolicCapability,
         obtain::ObtainType,
         place_capabilities::PlaceCapabilitiesInterface,
         triple::{PlaceCondition, Triple},
@@ -12,8 +12,6 @@ use crate::{
 use super::PcgVisitor;
 
 impl<'a, 'tcx: 'a, Ctxt: DataflowCtxt<'a, 'tcx>> PcgVisitor<'_, 'a, 'tcx, Ctxt>
-where
-    SymbolicCapability<'a>: CapabilityOps<Ctxt>,
 {
     #[tracing::instrument(skip(self))]
     pub(crate) fn require_triple(&mut self, triple: Triple<'tcx>) -> Result<(), PcgError> {

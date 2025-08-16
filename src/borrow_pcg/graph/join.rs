@@ -32,7 +32,7 @@ pub(crate) struct JoinBorrowsArgs<'pcg, 'a, 'tcx> {
     pub(crate) self_block: BasicBlock,
     pub(crate) other_block: BasicBlock,
     pub(crate) body_analysis: &'pcg BodyAnalysis<'a, 'tcx>,
-    pub(crate) capabilities: &'pcg mut SymbolicPlaceCapabilities<'a, 'tcx>,
+    pub(crate) capabilities: &'pcg mut SymbolicPlaceCapabilities<'tcx>,
     pub(crate) owned: &'pcg mut OwnedPcg<'tcx>,
 }
 
@@ -53,7 +53,7 @@ impl<'tcx> BorrowsGraph<'tcx> {
         &self,
         block: mir::BasicBlock,
         debug_imgcat: Option<DebugImgcat>,
-        capabilities: &impl PlaceCapabilitiesReader<'tcx, SymbolicCapability<'a>>,
+        capabilities: &impl PlaceCapabilitiesReader<'tcx>,
         comment: &str,
         ctxt: CompilerCtxt<'a, 'tcx>,
     ) where

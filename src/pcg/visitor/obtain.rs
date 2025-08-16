@@ -16,7 +16,7 @@ use crate::pcg::obtain::{
 use crate::pcg::place_capabilities::{
     BlockType, PlaceCapabilitiesInterface, PlaceCapabilitiesReader, SymbolicPlaceCapabilities,
 };
-use crate::pcg::{CapabilityKind, CapabilityOps, SymbolicCapability};
+use crate::pcg::{CapabilityKind, SymbolicCapability};
 use crate::pcg::{EvalStmtPhase, PCGNodeLike, PcgNode, PcgRef, PcgRefLike};
 use crate::rustc_interface::middle::mir;
 use crate::utils::data_structures::HashSet;
@@ -29,8 +29,6 @@ use crate::utils::{Place, SnapshotLocation};
 
 use super::{PcgError, PcgVisitor};
 impl<'a, 'tcx: 'a, Ctxt: DataflowCtxt<'a, 'tcx>> PcgVisitor<'_, 'a, 'tcx, Ctxt>
-where
-    SymbolicCapability<'a>: CapabilityOps<Ctxt>,
 {
     pub(crate) fn place_obtainer(&mut self) -> PlaceObtainer<'_, 'a, 'tcx, Ctxt> {
         let prev_snapshot_location = self.prev_snapshot_location();
@@ -53,8 +51,6 @@ where
 
 impl<'state, 'a: 'state, 'tcx: 'a, Ctxt: DataflowCtxt<'a, 'tcx>> PlaceCollapser<'a, 'tcx>
     for PlaceObtainer<'state, 'a, 'tcx, Ctxt>
-where
-    SymbolicCapability<'a>: CapabilityOps<Ctxt>,
 {
     fn get_local_expansions(&self, local: mir::Local) -> &crate::owned_pcg::LocalExpansions<'tcx> {
         self.pcg.owned[local].get_allocated()
@@ -64,7 +60,7 @@ where
         self.pcg.borrow.as_mut_ref()
     }
 
-    fn capabilities(&mut self) -> &mut SymbolicPlaceCapabilities<'a, 'tcx> {
+    fn capabilities(&mut self) -> &mut SymbolicPlaceCapabilities<'tcx> {
         self.pcg.capabilities
     }
 
@@ -89,8 +85,6 @@ where
 
 impl<'state, 'a: 'state, 'tcx: 'a, Ctxt: DataflowCtxt<'a, 'tcx>>
     PlaceObtainer<'state, 'a, 'tcx, Ctxt>
-where
-    SymbolicCapability<'a>: CapabilityOps<Ctxt>,
 {
     fn restore_place(&mut self, place: Place<'tcx>, context: &str) -> Result<(), PcgError> {
         // The place to restore could come from a local that was conditionally
@@ -543,8 +537,6 @@ where
 
 impl<'state, 'a: 'state, 'tcx: 'a, Ctxt: DataflowCtxt<'a, 'tcx>> ActionApplier<'tcx>
     for PlaceObtainer<'state, 'a, 'tcx, Ctxt>
-where
-    SymbolicCapability<'a>: CapabilityOps<Ctxt>,
 {
     fn apply_action(&mut self, action: PcgAction<'tcx>) -> Result<bool, PcgError> {
         self.record_and_apply_action(action)
@@ -553,8 +545,6 @@ where
 
 impl<'state, 'a: 'state, 'tcx: 'a, Ctxt: DataflowCtxt<'a, 'tcx>>
     PlaceObtainer<'state, 'a, 'tcx, Ctxt>
-where
-    SymbolicCapability<'a>: CapabilityOps<Ctxt>,
 {
     /// Ensures that the place is expanded to the given place, with a certain
     /// capability.
@@ -712,8 +702,6 @@ where
 
 impl<'pcg, 'a: 'pcg, 'tcx: 'a, Ctxt: DataflowCtxt<'a, 'tcx>> PlaceExpander<'a, 'tcx>
     for PlaceObtainer<'pcg, 'a, 'tcx, Ctxt>
-where
-    SymbolicCapability<'a>: CapabilityOps<Ctxt>,
 {
     fn contains_owned_expansion_to(&self, target: Place<'tcx>) -> bool {
         self.pcg.owned[target.local]

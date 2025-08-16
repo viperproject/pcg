@@ -286,7 +286,7 @@ pub struct BorrowsGraphConstructor<'graph, 'a, 'tcx, C> {
 
 impl<'graph, 'a: 'graph, 'tcx: 'a, C> BorrowsGraphConstructor<'graph, 'a, 'tcx, C>
 where
-    C: PlaceCapabilitiesReader<'tcx, SymbolicCapability<'a>>,
+    C: PlaceCapabilitiesReader<'tcx, SymbolicCapability>,
 {
     pub fn new(
         borrows_graph: &'graph BorrowsGraph<'tcx>,
@@ -314,7 +314,7 @@ where
 pub(crate) struct PcgGraphConstructor<'pcg, 'a, 'tcx> {
     summary: &'pcg OwnedPcg<'tcx>,
     borrows_domain: BorrowStateRef<'pcg, 'tcx>,
-    capabilities: &'pcg PlaceCapabilities<'tcx, SymbolicCapability<'a>>,
+    capabilities: &'pcg PlaceCapabilities<'tcx, SymbolicCapability>,
     constructor: GraphConstructor<'a, 'tcx>,
     ctxt: CompilerCtxt<'a, 'tcx>,
 }
@@ -326,9 +326,9 @@ struct PCGCapabilityGetter<'r, 'a, 'tcx, C> {
 
 impl<'a, 'tcx, C> CapabilityGetter<'a, 'tcx> for PCGCapabilityGetter<'_, 'a, 'tcx, C>
 where
-    C: PlaceCapabilitiesReader<'tcx, SymbolicCapability<'a>>,
+    C: PlaceCapabilitiesReader<'tcx, SymbolicCapability>,
 {
-    fn get(&self, place: Place<'tcx>) -> Option<SymbolicCapability<'a>> {
+    fn get(&self, place: Place<'tcx>) -> Option<SymbolicCapability> {
         self.capabilities.get(place, self.ctxt)
     }
 }
@@ -353,7 +353,7 @@ impl<'pcg, 'a: 'pcg, 'tcx> Grapher<'pcg, 'a, 'tcx> for PcgGraphConstructor<'pcg,
 impl<'graph, 'a: 'graph, 'tcx: 'a, C> Grapher<'graph, 'a, 'tcx>
     for BorrowsGraphConstructor<'graph, 'a, 'tcx, C>
 where
-    C: PlaceCapabilitiesReader<'tcx, SymbolicCapability<'a>>,
+    C: PlaceCapabilitiesReader<'tcx, SymbolicCapability>,
 {
     fn ctxt(&self) -> CompilerCtxt<'a, 'tcx> {
         self.ctxt
@@ -373,7 +373,7 @@ where
 
 impl<'pcg, 'a: 'pcg, 'tcx: 'a> PcgGraphConstructor<'pcg, 'a, 'tcx> {
     pub fn new(
-        pcg: PcgRef<'pcg, 'a, 'tcx>,
+        pcg: PcgRef<'pcg, 'tcx>,
         repacker: CompilerCtxt<'a, 'tcx>,
         location: mir::Location,
     ) -> Self {

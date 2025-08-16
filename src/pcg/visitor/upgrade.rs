@@ -12,7 +12,7 @@ use crate::{
         region_projection::LifetimeProjection,
     },
     pcg::{
-        CapabilityKind, CapabilityOps, PcgError, PcgNode, SymbolicCapability,
+        CapabilityKind, PcgError, PcgNode, SymbolicCapability,
         obtain::{HasSnapshotLocation, PlaceObtainer},
         place_capabilities::{BlockType, PlaceCapabilitiesReader},
     },
@@ -21,8 +21,6 @@ use crate::{
 
 impl<'state, 'a: 'state, 'tcx: 'a, Ctxt: DataflowCtxt<'a, 'tcx>>
     PlaceObtainer<'state, 'a, 'tcx, Ctxt>
-where
-    SymbolicCapability<'a>: CapabilityOps<Ctxt>,
 {
     fn weaken_place_from_read_upwards(
         &mut self,

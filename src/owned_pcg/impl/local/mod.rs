@@ -12,7 +12,7 @@ use crate::{
     borrow_pcg::borrow_pcg_expansion::PlaceExpansion,
     owned_pcg::{RepackCollapse, RepackGuide},
     pcg::{
-        CapabilityOps, PcgUnsupportedError,
+        PcgUnsupportedError,
         place_capabilities::{
             PlaceCapabilities, PlaceCapabilitiesInterface, PlaceCapabilitiesReader,
         },
@@ -250,11 +250,11 @@ impl<'tcx> LocalExpansions<'tcx> {
         places
     }
 
-    pub(crate) fn collapse<'a, Ctxt: HasCompilerCtxt<'a, 'tcx>, C: CapabilityOps<Ctxt>>(
+    pub(crate) fn collapse<'a, Ctxt: HasCompilerCtxt<'a, 'tcx>>(
         &mut self,
         to: Place<'tcx>,
         _for_cap: Option<CapabilityKind>,
-        capabilities: &mut impl PlaceCapabilitiesInterface<'tcx, C>,
+        capabilities: &mut impl PlaceCapabilitiesInterface<'tcx>,
         ctxt: Ctxt,
     ) -> std::result::Result<Vec<RepackOp<'tcx>>, PcgInternalError>
     where

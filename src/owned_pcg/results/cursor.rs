@@ -73,7 +73,7 @@ impl<'a, 'tcx> PcgAnalysis<'a, 'tcx> {
     ///
     /// This function may return `None` if the PCG did not analyze this block.
     /// This could happen, for example, if the block would only be reached when unwinding from a panic.
-    fn next(&mut self, exp_loc: Location) -> Result<Option<PcgLocation<'a, 'tcx>>, PcgError> {
+    fn next(&mut self, exp_loc: Location) -> Result<Option<PcgLocation<'tcx>>, PcgError> {
         let location = self.curr_stmt.unwrap();
         assert_eq!(location, exp_loc);
         assert!(location < self.end_stmt.unwrap());
@@ -136,7 +136,7 @@ impl<'a, 'tcx> PcgAnalysis<'a, 'tcx> {
                     .owned
                     .bridge(
                         &to.entry_state.owned,
-                        &from_post_main.capabilities.to_concrete(ctxt),
+                        &from_post_main.capabilities,
                         ctxt,
                     )
                     .unwrap();
@@ -180,10 +180,11 @@ impl<'a, 'tcx> PcgAnalysis<'a, 'tcx> {
     ///
     /// This is rather expensive to compute and may take a lot of memory. You
     /// may want to consider using `get_all_for_bb` instead.
-    pub fn results_for_all_blocks(&mut self) -> Result<PcgBasicBlocks<'a, 'tcx>, PcgError> {
+    pub fn results_for_all_blocks(&mut self) -> Result<PcgBasicBlocks<'tcx>, PcgError> {
         let mut result = IndexVec::new();
         for block in self.body().basic_blocks.indices() {
-            result.push(self.get_all_for_bb(block)?);
+            let pcg_block = self.get_all_for_bb(block)?;
+            result.push(pcg_block);
         }
         Ok(PcgBasicBlocks(result))
     }
@@ -203,7 +204,7 @@ impl<'a, 'tcx> PcgAnalysis<'a, 'tcx> {
     pub fn get_all_for_bb(
         &mut self,
         block: BasicBlock,
-    ) -> Result<Option<PcgBasicBlock<'a, 'tcx>>, PcgError> {
+    ) -> Result<Option<PcgBasicBlock<'tcx>>, PcgError> {
         if !self.analysis().reachable_blocks.contains(block.index()) {
             return Ok(None);
         }
@@ -227,10 +228,10 @@ impl<'a, 'tcx> PcgAnalysis<'a, 'tcx> {
 
 /// The results of the PCG analysis for all basic blocks.
 #[derive(Deref)]
-pub struct PcgBasicBlocks<'a, 'tcx>(IndexVec<BasicBlock, Option<PcgBasicBlock<'a, 'tcx>>>);
+pub struct PcgBasicBlocks<'tcx>(IndexVec<BasicBlock, Option<PcgBasicBlock<'tcx>>>);
 
-impl<'a, 'tcx> PcgBasicBlocks<'a, 'tcx> {
-    pub fn get_statement(&self, location: Location) -> Option<&PcgLocation<'a, 'tcx>> {
+impl<'a, 'tcx> PcgBasicBlocks<'tcx> {
+    pub fn get_statement(&self, location: Location) -> Option<&PcgLocation<'tcx>> {
         if let Some(pcg_block) = &self.0[location.block] {
             pcg_block.statements.get(location.statement_index)
         } else {
@@ -240,7 +241,7 @@ impl<'a, 'tcx> PcgBasicBlocks<'a, 'tcx> {
 
     fn aggregate<T: std::hash::Hash + std::cmp::Eq>(
         &self,
-        f: impl Fn(&PcgLocation<'a, 'tcx>) -> FxHashSet<T>,
+        f: impl Fn(&PcgLocation<'tcx>) -> FxHashSet<T>,
     ) -> FxHashSet<T> {
         let mut result = FxHashSet::default();
         for block in self.0.iter() {
@@ -264,12 +265,12 @@ impl<'a, 'tcx> PcgBasicBlocks<'a, 'tcx> {
 }
 
 /// The results of the PCG analysis for a basic block.
-pub struct PcgBasicBlock<'a, 'tcx> {
-    pub statements: Vec<PcgLocation<'a, 'tcx>>,
+pub struct PcgBasicBlock<'tcx> {
+    pub statements: Vec<PcgLocation<'tcx>>,
     pub terminator: PcgTerminator<'tcx>,
 }
 
-impl<'tcx> PcgBasicBlock<'_, 'tcx> {
+impl<'tcx> PcgBasicBlock<'tcx> {
     pub fn debug_lines(&self, repacker: CompilerCtxt<'_, 'tcx>) -> Vec<String> {
         let mut result = Vec::new();
         for stmt in self.statements.iter() {
@@ -291,9 +292,9 @@ impl<'tcx> PcgBasicBlock<'_, 'tcx> {
 /// The PCG state at a MIR location. Also contains associated actions performed
 /// when analysing the statement at that location.
 #[derive(Debug, Clone)]
-pub struct PcgLocation<'a, 'tcx> {
+pub struct PcgLocation<'tcx> {
     pub location: Location,
-    pub states: DomainDataStates<Pcg<'a, 'tcx>>,
+    pub states: DomainDataStates<Pcg<'tcx>>,
     pub(crate) actions: EvalStmtData<PcgActions<'tcx>>,
 }
 
@@ -303,14 +304,14 @@ impl<'tcx> DebugLines<CompilerCtxt<'_, 'tcx>> for Vec<RepackOp<'tcx>> {
     }
 }
 
-impl<'tcx> HasValidityCheck<'tcx> for PcgLocation<'_, 'tcx> {
+impl<'tcx> HasValidityCheck<'tcx> for PcgLocation<'tcx> {
     fn check_validity(&self, ctxt: CompilerCtxt<'_, 'tcx>) -> Result<(), String> {
         // TODO
         self.states.check_validity(ctxt)
     }
 }
 
-impl<'tcx> PcgLocation<'_, 'tcx> {
+impl<'tcx> PcgLocation<'tcx> {
     pub fn borrow_pcg_actions(&self, phase: EvalStmtPhase) -> BorrowPcgActions<'tcx> {
         self.actions[phase].borrow_pcg_actions()
     }

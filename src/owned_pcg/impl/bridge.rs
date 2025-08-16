@@ -7,16 +7,16 @@
 use crate::{
     owned_pcg::{LocalExpansions, OwnedPcg, OwnedPcgLocal, RepackOp},
     pcg::{
-        CapabilityKind, CapabilityOps, PcgError, place_capabilities::PlaceCapabilitiesInterface,
+        CapabilityKind, CapabilityLike, PcgError, place_capabilities::PlaceCapabilitiesInterface,
     },
     utils::HasCompilerCtxt,
 };
 
 impl<'tcx> OwnedPcg<'tcx> {
-    pub(crate) fn bridge<'a, Ctxt: HasCompilerCtxt<'a, 'tcx>, C: CapabilityOps<Ctxt>>(
+    pub(crate) fn bridge<'a, Ctxt: HasCompilerCtxt<'a, 'tcx>>(
         &self,
         other: &Self,
-        place_capabilities: &(impl PlaceCapabilitiesInterface<'tcx, C> + Clone),
+        place_capabilities: &(impl PlaceCapabilitiesInterface<'tcx> + Clone),
         ctxt: Ctxt,
     ) -> std::result::Result<Vec<RepackOp<'tcx>>, PcgError>
     where
@@ -39,10 +39,10 @@ impl<'tcx> OwnedPcg<'tcx> {
 }
 
 impl<'tcx> OwnedPcgLocal<'tcx> {
-    pub(crate) fn bridge<'a, Ctxt: HasCompilerCtxt<'a, 'tcx>, C: CapabilityOps<Ctxt>>(
+    pub(crate) fn bridge<'a, Ctxt: HasCompilerCtxt<'a, 'tcx>>(
         &self,
         other: &Self,
-        place_capabilities: &(impl PlaceCapabilitiesInterface<'tcx, C> + Clone),
+        place_capabilities: &(impl PlaceCapabilitiesInterface<'tcx> + Clone),
         ctxt: Ctxt,
     ) -> std::result::Result<Vec<RepackOp<'tcx>>, PcgError>
     where
@@ -89,7 +89,7 @@ impl<'tcx> OwnedPcgLocal<'tcx> {
 }
 
 impl<'tcx> LocalExpansions<'tcx> {
-    pub(crate) fn bridge<Ctxt, C: CapabilityOps<Ctxt>>(
+    pub(crate) fn bridge<Ctxt, C>(
         &self,
         _other: &Self,
         _self_place_capabilities: &impl PlaceCapabilitiesInterface<'tcx, C>,

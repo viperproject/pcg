@@ -8,7 +8,7 @@ use crate::borrow_pcg::edge_data::EdgeData;
 use crate::borrow_pcg::graph::Conditioned;
 use crate::borrow_pcg::graph::frozen::FrozenGraphRef;
 use crate::pcg::obtain::{PlaceCollapser, PlaceObtainer};
-use crate::pcg::{CapabilityOps, PcgNode, SymbolicCapability};
+use crate::pcg::{PcgNode, SymbolicCapability};
 use crate::utils::HasPlace;
 use crate::utils::data_structures::{HashMap, HashSet};
 use crate::utils::display::DisplayWithCompilerCtxt;
@@ -89,8 +89,6 @@ impl<'tcx> EdgesToRemove<'tcx> {
 }
 
 impl<'pcg, 'a: 'pcg, 'tcx: 'a, Ctxt: DataflowCtxt<'a, 'tcx>> PlaceObtainer<'pcg, 'a, 'tcx, Ctxt>
-where
-    SymbolicCapability<'a>: CapabilityOps<Ctxt>,
 {
     /// Removes leaves that are old or dead (based on the borrow checker). This
     /// function should called prior to evaluating the effect of the statement

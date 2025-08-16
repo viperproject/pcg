@@ -14,7 +14,7 @@ use crate::{
 
 pub(crate) struct JoinObtainer<'pcg: 'exp, 'exp, 'slf, 'a, 'tcx> {
     pub(crate) ctxt: AnalysisCtxt<'a, 'tcx>,
-    pub(crate) data: &'slf mut JoinOwnedData<'pcg, 'a, 'tcx, &'exp mut LocalExpansions<'tcx>>,
+    pub(crate) data: &'slf mut JoinOwnedData<'pcg, 'tcx, &'exp mut LocalExpansions<'tcx>>,
     pub(crate) actions: Vec<RepackOp<'tcx>>,
 }
 
@@ -71,7 +71,7 @@ impl<'a, 'tcx> PlaceCollapser<'a, 'tcx> for JoinObtainer<'_, '_, '_, 'a, 'tcx> {
         self.data.borrows.into()
     }
 
-    fn capabilities(&mut self) -> &mut SymbolicPlaceCapabilities<'a, 'tcx> {
+    fn capabilities(&mut self) -> &mut SymbolicPlaceCapabilities<'tcx> {
         self.data.capabilities
     }
 

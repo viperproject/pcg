@@ -18,7 +18,7 @@ use crate::{
     borrow_checker::BorrowCheckerInterface,
     r#loop::{LoopAnalysis, LoopPlaceUsageAnalysis, PlaceUsages},
     pcg::{
-        CapabilityOps, SymbolicCapability, ctxt::AnalysisCtxt, dot_graphs::PcgDotGraphsForBlock,
+        SymbolicCapability, ctxt::AnalysisCtxt, dot_graphs::PcgDotGraphsForBlock,
         place_capabilities::SymbolicPlaceCapabilities,
     },
     pcg_validity_assert,
@@ -75,8 +75,8 @@ impl<'a> PcgBlockDebugVisualizationGraphs<'a> {
 }
 
 #[derive(Clone, Eq, Debug)]
-pub struct PcgDomainData<'a, 'tcx, Capabilities = SymbolicPlaceCapabilities<'a, 'tcx>> {
-    pub(crate) pcg: DomainData<PcgArenaRef<'a, Pcg<'a, 'tcx, Capabilities>>>,
+pub struct PcgDomainData<'a, 'tcx, Capabilities = SymbolicPlaceCapabilities<'tcx>> {
+    pub(crate) pcg: DomainData<PcgArenaRef<'a, Pcg<'tcx, Capabilities>>>,
     pub(crate) actions: EvalStmtData<PcgActions<'tcx>>,
 }
 
@@ -461,18 +461,10 @@ impl<'a, 'tcx: 'a> HasCompilerCtxt<'a, 'tcx> for ResultsCtxt<'a, 'tcx> {
     }
 }
 
-impl<'a, 'tcx> CapabilityOps<ResultsCtxt<'a, 'tcx>> for SymbolicCapability<'a> {
-    fn minimum(self, other: impl Into<Self>, _ctxt: ResultsCtxt<'a, 'tcx>) -> Option<Self> {
-        self.expect_concrete()
-            .minimum(other.into().expect_concrete())
-            .map(SymbolicCapability::Concrete)
-    }
-}
-
 pub(crate) trait HasPcgDomainData<'a, 'tcx: 'a> {
     fn data(&self) -> &PcgDomainData<'a, 'tcx>;
 
-    fn pcg(&self, phase: impl Into<DomainDataIndex>) -> &Pcg<'a, 'tcx> {
+    fn pcg<'slf>(&'slf self, phase: impl Into<DomainDataIndex>) -> &'slf Pcg<'tcx> where 'a: 'slf{
         &self.data().pcg[phase.into()]
     }
 

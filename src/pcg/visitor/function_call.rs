@@ -6,7 +6,7 @@ use crate::borrow_pcg::edge::abstraction::function::{FunctionCallAbstraction, Fu
 use crate::borrow_pcg::edge::abstraction::{AbstractionBlockEdge, AbstractionType};
 use crate::borrow_pcg::has_pcs_elem::LabelLifetimeProjectionPredicate;
 use crate::pcg::obtain::{HasSnapshotLocation, PlaceExpander};
-use crate::pcg::{CapabilityOps, SymbolicCapability};
+use crate::pcg::{SymbolicCapability};
 use crate::rustc_interface::middle::mir::{Location, Operand};
 use crate::utils::display::DisplayWithCompilerCtxt;
 
@@ -26,8 +26,6 @@ fn get_function_data<'a, 'tcx: 'a>(
 }
 
 impl<'a, 'tcx: 'a, Ctxt: DataflowCtxt<'a, 'tcx>> PcgVisitor<'_, 'a, 'tcx, Ctxt>
-where
-    SymbolicCapability<'a>: CapabilityOps<Ctxt>,
 {
     #[tracing::instrument(skip(self, func, args, destination))]
     pub(super) fn make_function_call_abstraction(

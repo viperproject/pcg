@@ -49,7 +49,7 @@ impl<'a, 'tcx: 'a> AnalysisCtxt<'a, 'tcx> {
         self,
         location: mir::Location,
         to_graph: ToGraph,
-        pcg: PcgRef<'pcg, 'a, 'tcx>,
+        pcg: PcgRef<'pcg, 'tcx>,
     ) {
         if location.block.as_usize() == 0 {
             assert!(!matches!(
@@ -88,7 +88,7 @@ impl<'a, 'tcx: 'a> AnalysisCtxt<'a, 'tcx> {
         self,
         places: impl Iterator<Item = Place<'tcx>>,
         location: SnapshotLocation,
-        capabilities: &mut SymbolicPlaceCapabilities<'a, 'tcx>,
+        capabilities: &mut SymbolicPlaceCapabilities<'tcx>,
     ) -> HashMap<Place<'tcx>, CapabilityVar> {
         places
             .into_iter()
@@ -105,8 +105,8 @@ impl<'a, 'tcx: 'a> AnalysisCtxt<'a, 'tcx> {
         self,
         places: impl Iterator<Item = Place<'tcx>>,
         location: SnapshotLocation,
-        capabilities: &mut SymbolicPlaceCapabilities<'a, 'tcx>,
-    ) -> HashMap<Place<'tcx>, SymbolicCapability<'a>> {
+        capabilities: &mut SymbolicPlaceCapabilities<'tcx>,
+    ) -> HashMap<Place<'tcx>, SymbolicCapability> {
         places
             .into_iter()
             .map(|place| {
@@ -126,8 +126,8 @@ impl<'a, 'tcx: 'a> AnalysisCtxt<'a, 'tcx> {
         self,
         place: Place<'tcx>,
         location: SnapshotLocation,
-        capabilities: &mut SymbolicPlaceCapabilities<'a, 'tcx>,
-    ) -> SymbolicCapability<'a> {
+        capabilities: &mut SymbolicPlaceCapabilities<'tcx>,
+    ) -> SymbolicCapability {
         if let Some(cap) = capabilities.get(place, self) {
             cap
         } else {
@@ -141,7 +141,7 @@ impl<'a, 'tcx: 'a> AnalysisCtxt<'a, 'tcx> {
     fn get_application_rules(
         self,
         constraints: &IntroduceConstraints<'tcx>,
-        capabilities: &mut SymbolicPlaceCapabilities<'a, 'tcx>,
+        capabilities: &mut SymbolicPlaceCapabilities<'tcx>
     ) -> CapabilityRules<'a, 'tcx> {
         match constraints {
             IntroduceConstraints::ExpandForSharedBorrow {
@@ -151,7 +151,7 @@ impl<'a, 'tcx: 'a> AnalysisCtxt<'a, 'tcx> {
             } => {
                 let base_cap = capabilities.get(*base_place, self).unwrap();
                 let expand_read = CapabilityRule::new(
-                    base_cap.gte(CapabilityKind::Read),
+                    base_cap.gte(CapabilityKind::Read, self.arena),
                     HashMap::from_iter(expansion_places.iter().map(|p| (*p, CapabilityKind::Read))),
                 );
                 let expand_exclusive = CapabilityRule::new(
@@ -172,7 +172,7 @@ impl<'a, 'tcx: 'a> AnalysisCtxt<'a, 'tcx> {
         self,
         constraints: &IntroduceConstraints<'tcx>,
         rule: CapabilityRules<'a, 'tcx>,
-        capabilities: &mut SymbolicPlaceCapabilities<'a, 'tcx>,
+        capabilities: &mut SymbolicPlaceCapabilities<'tcx>,
     ) {
         match rule {
             CapabilityRules::OneOf(rules) => {

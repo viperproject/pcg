@@ -1,3 +1,5 @@
+use std::marker::PhantomData;
+
 use crate::{
     action::{BorrowPcgAction, OwnedPcgAction, PcgAction},
     borrow_checker::r#impl::get_reserve_location,
@@ -39,11 +41,12 @@ use crate::{
 };
 
 pub(crate) struct PlaceObtainer<'state, 'a, 'tcx, Ctxt = AnalysisCtxt<'a, 'tcx>> {
-    pub(crate) pcg: PcgMutRef<'state, 'a, 'tcx>,
+    pub(crate) pcg: PcgMutRef<'state, 'tcx>,
     pub(crate) ctxt: Ctxt,
     pub(crate) actions: Option<&'state mut Vec<PcgAction<'tcx>>>,
     pub(crate) location: mir::Location,
     pub(crate) prev_snapshot_location: SnapshotLocation,
+    pub(crate) _marker: PhantomData<&'a ()>,
 }
 
 impl<'a, 'tcx: 'a, Ctxt: DataflowCtxt<'a, 'tcx>> RenderDebugGraph
@@ -71,7 +74,7 @@ impl<'state, 'a, 'tcx, Ctxt> PlaceObtainer<'state, 'a, 'tcx, Ctxt> {
     }
 
     pub(crate) fn new(
-        pcg: PcgMutRef<'state, 'a, 'tcx>,
+        pcg: PcgMutRef<'state, 'tcx>,
         actions: Option<&'state mut Vec<PcgAction<'tcx>>>,
         ctxt: Ctxt,
         location: mir::Location,
@@ -83,6 +86,7 @@ impl<'state, 'a, 'tcx, Ctxt> PlaceObtainer<'state, 'a, 'tcx, Ctxt> {
             actions,
             location,
             prev_snapshot_location,
+            _marker: PhantomData,
         }
     }
 }
@@ -186,7 +190,7 @@ pub(crate) trait PlaceCollapser<'a, 'tcx: 'a>:
 
     fn borrows_state(&mut self) -> BorrowStateMutRef<'_, 'tcx>;
 
-    fn capabilities(&mut self) -> &mut SymbolicPlaceCapabilities<'a, 'tcx>;
+    fn capabilities(&mut self) -> &mut SymbolicPlaceCapabilities<'tcx>;
 
     fn leaf_places(&self, ctxt: CompilerCtxt<'a, 'tcx>) -> HashSet<Place<'tcx>>;
 

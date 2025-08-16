@@ -5,7 +5,7 @@ use crate::borrow_pcg::action::LabelPlaceReason;
 use crate::borrow_pcg::borrow_pcg_edge::BorrowPcgEdgeLike;
 use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::pcg::place_capabilities::PlaceCapabilitiesReader;
-use crate::pcg::{CapabilityKind, CapabilityOps, SymbolicCapability};
+use crate::pcg::{CapabilityKind, SymbolicCapability};
 use crate::pcg_validity_assert;
 use crate::rustc_interface::middle::mir::{Statement, StatementKind};
 
@@ -15,8 +15,6 @@ use crate::utils::{self, DataflowCtxt};
 use super::{EvalStmtPhase, PcgError};
 
 impl<'a, 'tcx: 'a, Ctxt: DataflowCtxt<'a, 'tcx>> PcgVisitor<'_, 'a, 'tcx, Ctxt>
-where
-    SymbolicCapability<'a>: CapabilityOps<Ctxt>,
 {
     pub(crate) fn perform_statement_actions(
         &mut self,

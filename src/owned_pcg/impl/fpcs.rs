@@ -37,7 +37,7 @@ impl Debug for OwnedPcg<'_> {
 
 impl<'tcx> OwnedPcg<'tcx> {
     pub(crate) fn start_block<'a>(
-        capabilities: &mut SymbolicPlaceCapabilities<'a, 'tcx>,
+        capabilities: &mut SymbolicPlaceCapabilities<'tcx>,
         ctxt: AnalysisCtxt<'a, 'tcx>,
     ) -> Self {
         let always_live = ctxt.ctxt.always_live_locals();

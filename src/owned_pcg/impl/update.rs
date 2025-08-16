@@ -7,7 +7,7 @@
 use crate::{
     owned_pcg::{LocalExpansions, OwnedPcgLocal},
     pcg::{
-        CapabilityKind, CapabilityOps, SymbolicCapability,
+        CapabilityKind, SymbolicCapability,
         place_capabilities::{
             PlaceCapabilitiesInterface, PlaceCapabilitiesReader, SymbolicPlaceCapabilities,
         },
@@ -25,7 +25,7 @@ impl<'tcx> OwnedPcg<'tcx> {
     fn check_pre_satisfied<'a>(
         &self,
         pre: PlaceCondition<'tcx>,
-        capabilities: &SymbolicPlaceCapabilities<'a, 'tcx>,
+        capabilities: &SymbolicPlaceCapabilities<'tcx>,
         ctxt: impl HasBorrowCheckerCtxt<'a, 'tcx>,
     ) where
         'tcx: 'a,
@@ -92,11 +92,10 @@ impl<'tcx> OwnedPcg<'tcx> {
     pub(crate) fn ensures<'a, Ctxt: HasBorrowCheckerCtxt<'a, 'tcx>>(
         &mut self,
         t: Triple<'tcx>,
-        place_capabilities: &mut SymbolicPlaceCapabilities<'a, 'tcx>,
+        place_capabilities: &mut SymbolicPlaceCapabilities<'tcx>,
         ctxt: Ctxt,
     ) where
         'tcx: 'a,
-        SymbolicCapability<'a>: CapabilityOps<Ctxt>,
     {
         self.check_pre_satisfied(t.pre(), place_capabilities, ctxt);
         let Some(post) = t.post() else {

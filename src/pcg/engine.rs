@@ -16,7 +16,7 @@ use super::{
 use crate::{
     BodyAndBorrows,
     pcg::{
-        CapabilityOps, DataflowState, DomainDataWithCtxt, HasPcgDomainData, PcgDomainData,
+        DataflowState, DomainDataWithCtxt, HasPcgDomainData, PcgDomainData,
         SymbolicCapability, SymbolicCapabilityCtxt, ctxt::AnalysisCtxt, triple::TripleWalker,
     },
     pcg_validity_assert,
@@ -207,8 +207,6 @@ impl<'a, 'tcx: 'a> PcgEngine<'a, 'tcx> {
         tw: &TripleWalker<'a, 'tcx>,
         location: Location,
     ) -> Result<(), PcgError>
-    where
-        SymbolicCapability<'a>: CapabilityOps<Ctxt>,
     {
         let domain = &mut state.data;
         for phase in EvalStmtPhase::phases() {

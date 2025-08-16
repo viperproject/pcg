@@ -16,7 +16,7 @@ use crate::{
 use super::{GraphEdge, NodeId, graph_constructor::GraphConstructor};
 
 pub(super) trait CapabilityGetter<'a, 'tcx: 'a> {
-    fn get(&self, node: Place<'tcx>) -> Option<SymbolicCapability<'a>>;
+    fn get(&self, node: Place<'tcx>) -> Option<SymbolicCapability>;
 }
 
 pub(super) trait Grapher<'state, 'a: 'state, 'tcx: 'a> {

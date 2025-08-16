@@ -8,7 +8,7 @@ use crate::{
     borrow_pcg::borrow_pcg_expansion::PlaceExpansion,
     owned_pcg::{ExpandedPlace, RepackCollapse, RepackExpand, join::data::JoinOwnedData},
     pcg::{
-        CapabilityKind, CapabilityOps, PcgError, ctxt::AnalysisCtxt,
+        CapabilityKind, CapabilityLike, PcgError, ctxt::AnalysisCtxt,
         place_capabilities::PlaceCapabilitiesInterface,
     },
     pcg_validity_assert, pcg_validity_expect_some,
@@ -21,10 +21,10 @@ use crate::{
     rustc_interface::middle::mir,
 };
 
-impl<'pcg, 'a, 'tcx> JoinOwnedData<'pcg, 'a, 'tcx, &'pcg mut OwnedPcgLocal<'tcx>> {
+impl<'pcg, 'a, 'tcx> JoinOwnedData<'pcg, 'tcx, &'pcg mut OwnedPcgLocal<'tcx>> {
     pub(crate) fn join(
         &mut self,
-        mut other: JoinOwnedData<'pcg, 'a, 'tcx, &'pcg OwnedPcgLocal<'tcx>>,
+        mut other: JoinOwnedData<'pcg, 'tcx, &'pcg OwnedPcgLocal<'tcx>>,
         ctxt: AnalysisCtxt<'a, 'tcx>,
     ) -> Result<bool, PcgError> {
         match (&mut self.owned, &mut other.owned) {
@@ -56,10 +56,10 @@ impl<'pcg, 'a, 'tcx> JoinOwnedData<'pcg, 'a, 'tcx, &'pcg mut OwnedPcgLocal<'tcx>
     }
 }
 
-impl<'pcg, 'a, 'tcx> JoinOwnedData<'pcg, 'a, 'tcx, &'pcg mut OwnedPcg<'tcx>> {
+impl<'pcg, 'a, 'tcx> JoinOwnedData<'pcg, 'tcx, &'pcg mut OwnedPcg<'tcx>> {
     pub(crate) fn join(
         &mut self,
-        mut other: JoinOwnedData<'pcg, 'a, 'tcx, &'pcg OwnedPcg<'tcx>>,
+        mut other: JoinOwnedData<'pcg, 'tcx, &'pcg OwnedPcg<'tcx>>,
         ctxt: AnalysisCtxt<'a, 'tcx>,
     ) -> Result<bool, PcgError> {
         let mut changed = false;
@@ -81,14 +81,10 @@ impl<'tcx> LocalExpansions<'tcx> {
             .sorted_by_key(|ep| ep.place.projection().len())
     }
 
-    pub(crate) fn perform_expand_action<
-        'a,
-        Ctxt: HasCompilerCtxt<'a, 'tcx>,
-        C: CapabilityOps<Ctxt>,
-    >(
+    pub(crate) fn perform_expand_action<'a, Ctxt: HasCompilerCtxt<'a, 'tcx>>(
         &mut self,
         expand: RepackExpand<'tcx>,
-        capabilities: &mut impl PlaceCapabilitiesInterface<'tcx, C>,
+        capabilities: &mut impl PlaceCapabilitiesInterface<'tcx>,
         ctxt: Ctxt,
     ) -> Result<(), PcgError>
     where
@@ -157,7 +153,7 @@ impl<'tcx> LocalExpansions<'tcx> {
     pub(crate) fn get_retained_capability_of_children<
         'a,
         Ctxt: HasCompilerCtxt<'a, 'tcx>,
-        C: CapabilityOps<Ctxt>,
+        C: CapabilityLike,
     >(
         &self,
         place: Place<'tcx>,
@@ -171,16 +167,15 @@ impl<'tcx> LocalExpansions<'tcx> {
         let mut current_cap: C = CapabilityKind::Exclusive.into();
         for child in children {
             let child_cap = capabilities.get(child, ctxt)?;
-            current_cap = current_cap.minimum(child_cap, ctxt)?;
+            current_cap = current_cap
+                .expect_concrete()
+                .minimum(child_cap.expect_concrete())?
+                .into();
         }
         Some(current_cap)
     }
 
-    pub(crate) fn perform_collapse_action<
-        'a,
-        Ctxt: HasCompilerCtxt<'a, 'tcx>,
-        C: CapabilityOps<Ctxt>,
-    >(
+    pub(crate) fn perform_collapse_action<'a, Ctxt: HasCompilerCtxt<'a, 'tcx>, C: CapabilityLike>(
         &mut self,
         collapse: RepackCollapse<'tcx>,
         place_capabilities: &mut impl PlaceCapabilitiesInterface<'tcx, C>,

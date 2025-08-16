@@ -3,7 +3,7 @@
 use crate::{
     borrow_pcg::graph::join::JoinBorrowsArgs,
     pcg::{
-        CapabilityOps, SymbolicCapability,
+        SymbolicCapability,
         place_capabilities::{PlaceCapabilitiesReader, SymbolicPlaceCapabilities},
     },
     utils::HasBorrowCheckerCtxt,
@@ -89,7 +89,7 @@ pub(crate) trait BorrowsStateLike<'tcx> {
         place: Place<'tcx>,
         reason: LabelPlaceReason,
         labeller: &impl PlaceLabeller<'tcx>,
-        capabilities: &mut impl PlaceCapabilitiesInterface<'tcx, SymbolicCapability<'a>>,
+        capabilities: &mut impl PlaceCapabilitiesInterface<'tcx, SymbolicCapability>,
         ctxt: Ctxt,
     ) -> bool
     where
@@ -122,12 +122,11 @@ pub(crate) trait BorrowsStateLike<'tcx> {
     fn remove<'a, Ctxt: HasBorrowCheckerCtxt<'a, 'tcx>>(
         &mut self,
         edge: &BorrowPcgEdgeKind<'tcx>,
-        capabilities: &mut impl PlaceCapabilitiesInterface<'tcx, SymbolicCapability<'a>>,
+        capabilities: &mut impl PlaceCapabilitiesInterface<'tcx, SymbolicCapability>,
         ctxt: Ctxt,
     ) -> bool
     where
-        'tcx: 'a,
-        SymbolicCapability<'a>: CapabilityOps<Ctxt>,
+        'tcx: 'a
     {
         let state = self.as_mut_ref();
         let removed = state.graph.remove(edge).is_some();
@@ -146,12 +145,11 @@ pub(crate) trait BorrowsStateLike<'tcx> {
     fn apply_action<'a, Ctxt: HasBorrowCheckerCtxt<'a, 'tcx>>(
         &mut self,
         action: BorrowPcgAction<'tcx>,
-        capabilities: &mut impl PlaceCapabilitiesInterface<'tcx, SymbolicCapability<'a>>,
+        capabilities: &mut impl PlaceCapabilitiesInterface<'tcx, SymbolicCapability>,
         ctxt: Ctxt,
     ) -> Result<bool, PcgError>
     where
         'tcx: 'a,
-        SymbolicCapability<'a>: CapabilityOps<Ctxt>,
     {
         let result = match action.kind {
             BorrowPcgActionKind::Restore(restore) => {
@@ -289,7 +287,7 @@ impl<'tcx> BorrowsState<'tcx> {
     fn introduce_initial_borrows<'a>(
         &mut self,
         local: mir::Local,
-        capabilities: &mut PlaceCapabilities<'tcx, SymbolicCapability<'a>>,
+        capabilities: &mut PlaceCapabilities<'tcx, SymbolicCapability>,
         ctxt: AnalysisCtxt<'a, 'tcx>,
     ) {
         let local_decl = &ctxt.ctxt.body().local_decls[local];
@@ -345,7 +343,7 @@ impl<'tcx> BorrowsState<'tcx> {
     }
 
     pub(crate) fn start_block<'a>(
-        capabilities: &mut PlaceCapabilities<'tcx, SymbolicCapability<'a>>,
+        capabilities: &mut PlaceCapabilities<'tcx, SymbolicCapability>,
         analysis_ctxt: AnalysisCtxt<'a, 'tcx>,
     ) -> Self {
         let mut borrow = Self::default();
@@ -440,11 +438,10 @@ impl<'tcx> BorrowsState<'tcx> {
         kind: BorrowKind,
         location: Location,
         region: ty::Region<'tcx>,
-        capabilities: &mut SymbolicPlaceCapabilities<'a, 'tcx>,
+        capabilities: &mut SymbolicPlaceCapabilities<'tcx>,
         ctxt: Ctxt,
     ) where
         'tcx: 'a,
-        SymbolicCapability<'a>: CapabilityOps<Ctxt>,
     {
         assert!(
             assigned_place.ty(ctxt).ty.ref_mutability().is_some(),

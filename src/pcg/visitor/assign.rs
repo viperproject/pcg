@@ -6,7 +6,7 @@ use crate::borrow_pcg::has_pcs_elem::LabelLifetimeProjectionPredicate;
 use crate::borrow_pcg::region_projection::{LifetimeProjection, MaybeRemoteRegionProjectionBase};
 use crate::pcg::obtain::{ActionApplier, HasSnapshotLocation, PlaceExpander};
 use crate::pcg::place_capabilities::PlaceCapabilitiesInterface;
-use crate::pcg::{CapabilityKind, CapabilityOps};
+use crate::pcg::{CapabilityKind};
 use crate::pcg::{EvalStmtPhase, SymbolicCapability};
 use crate::rustc_interface::middle::mir::{self, Operand, Rvalue};
 
@@ -17,8 +17,6 @@ use crate::utils::{self, AnalysisLocation, DataflowCtxt, SnapshotLocation};
 use super::{PcgError, PcgUnsupportedError};
 
 impl<'a, 'tcx: 'a, Ctxt: DataflowCtxt<'a, 'tcx>> PcgVisitor<'_, 'a, 'tcx, Ctxt>
-where
-    SymbolicCapability<'a>: CapabilityOps<Ctxt>,
 {
     // The label that should be used when referencing (after PostOperands), the
     // value at the place before the move.

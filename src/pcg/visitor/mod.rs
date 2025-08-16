@@ -4,12 +4,12 @@ use crate::borrow_pcg::borrow_pcg_edge::BorrowPcgEdge;
 use crate::borrow_pcg::edge::outlives::{BorrowFlowEdge, BorrowFlowEdgeKind};
 use crate::borrow_pcg::region_projection::{LifetimeProjection, PcgRegion};
 use crate::owned_pcg::{OwnedPcg, RepackExpand};
-use crate::pcg::SymbolicCapability;
+use crate::pcg::CapabilityKind;
 use crate::pcg::ctxt::AnalysisCtxt;
 use crate::pcg::obtain::{PlaceCollapser, PlaceObtainer};
 use crate::pcg::place_capabilities::{PlaceCapabilitiesInterface, PlaceCapabilitiesReader};
 use crate::pcg::triple::TripleWalker;
-use crate::pcg::{CapabilityKind, CapabilityOps};
+use crate::pcg::{CapabilityLike, SymbolicCapability};
 use crate::rustc_interface::middle::mir::{self, Location, Operand, Rvalue, Statement, Terminator};
 use crate::utils::data_structures::HashSet;
 use crate::utils::display::DisplayWithCompilerCtxt;
@@ -18,7 +18,8 @@ use crate::action::PcgActions;
 use crate::utils::maybe_old::MaybeLabelledPlace;
 use crate::utils::visitor::FallableVisitor;
 use crate::utils::{
-    self, AnalysisLocation, DataflowCtxt, HasCompilerCtxt, HasPlace, Place, SnapshotLocation,
+    self, AnalysisLocation, DataflowCtxt, HasBorrowCheckerCtxt, HasCompilerCtxt, HasPlace, Place,
+    SnapshotLocation,
 };
 
 use super::{AnalysisObject, EvalStmtPhase, Pcg, PcgError, PcgNode, PcgUnsupportedError};
@@ -32,19 +33,16 @@ mod triple;
 mod upgrade;
 
 pub(crate) struct PcgVisitor<'pcg, 'a, 'tcx, Ctxt = AnalysisCtxt<'a, 'tcx>> {
-    pcg: &'pcg mut Pcg<'a, 'tcx>,
+    pcg: &'pcg mut Pcg<'tcx>,
     ctxt: Ctxt,
     actions: PcgActions<'tcx>,
     analysis_location: AnalysisLocation,
     tw: &'pcg TripleWalker<'a, 'tcx>,
 }
 
-impl<'pcg, 'a, 'tcx: 'a, Ctxt: DataflowCtxt<'a, 'tcx>> PcgVisitor<'pcg, 'a, 'tcx, Ctxt>
-where
-    SymbolicCapability<'a>: CapabilityOps<Ctxt>,
-{
+impl<'pcg, 'a, 'tcx: 'a, Ctxt: DataflowCtxt<'a, 'tcx>> PcgVisitor<'pcg, 'a, 'tcx, Ctxt> {
     pub(crate) fn visit(
-        pcg: &'pcg mut Pcg<'a, 'tcx>,
+        pcg: &'pcg mut Pcg<'tcx>,
         tw: &'pcg TripleWalker<'a, 'tcx>,
         analysis_location: AnalysisLocation,
         analysis_object: AnalysisObject<'_, 'tcx>,
@@ -56,7 +54,7 @@ where
     }
 
     pub(crate) fn new(
-        pcg: &'pcg mut Pcg<'a, 'tcx>,
+        pcg: &'pcg mut Pcg<'tcx>,
         ctxt: Ctxt,
         tw: &'pcg TripleWalker<'a, 'tcx>,
         analysis_location: AnalysisLocation,
@@ -212,8 +210,6 @@ where
 
 impl<'a, 'tcx: 'a, Ctxt: DataflowCtxt<'a, 'tcx>> FallableVisitor<'tcx>
     for PcgVisitor<'_, 'a, 'tcx, Ctxt>
-where
-    SymbolicCapability<'a>: CapabilityOps<Ctxt>,
 {
     #[tracing::instrument(skip(self))]
     fn visit_statement_fallable(
@@ -320,15 +316,15 @@ where
     }
 }
 
-impl<'a, 'tcx: 'a, Ctxt: DataflowCtxt<'a, 'tcx>> PlaceObtainer<'_, 'a, 'tcx, Ctxt>
-where
-    SymbolicCapability<'a>: CapabilityOps<Ctxt>,
-{
-    fn collapse_iteration(
-        &mut self,
+impl<'state, 'a: 'state, 'tcx: 'a, Ctxt> PlaceObtainer<'state, 'a, 'tcx, Ctxt> {
+    fn collapse_iteration<'slf>(
+        &'slf mut self,
         local: mir::Local,
         iteration: usize,
-    ) -> Result<bool, PcgError> {
+    ) -> Result<bool, PcgError>
+    where
+        Ctxt: DataflowCtxt<'a, 'tcx>,
+    {
         let local_expansions = self.pcg.owned[local].get_allocated();
         let leaf_expansions = local_expansions.leaf_expansions(self.ctxt);
         let parent_places = leaf_expansions
@@ -382,22 +378,29 @@ where
         }
         Ok(true)
     }
-    pub(crate) fn collapse_owned_places(&mut self) -> Result<(), PcgError> {
+}
+
+impl<'state, 'a: 'state, 'tcx: 'a, Ctxt: DataflowCtxt<'a, 'tcx>>
+    PlaceObtainer<'state, 'a, 'tcx, Ctxt>
+{
+    pub(crate) fn collapse_owned_places<'slf>(&'slf mut self) -> Result<(), PcgError> {
         let allocated_locals = self.pcg.owned.allocated_locals();
         for local in allocated_locals {
-            let mut iteration = 1;
-            while self.collapse_iteration(local, iteration)? {
-                iteration += 1;
-            }
+            self.iterations_for_local(local)?;
+        }
+        Ok(())
+    }
+
+    fn iterations_for_local<'slf>(&'slf mut self, local: mir::Local) -> Result<(), PcgError> {
+        let mut iteration = 1;
+        while self.collapse_iteration(local, iteration)? {
+            iteration += 1;
         }
         Ok(())
     }
 }
 
-impl<'a, 'tcx: 'a, Ctxt: DataflowCtxt<'a, 'tcx>> PcgVisitor<'_, 'a, 'tcx, Ctxt>
-where
-    SymbolicCapability<'a>: CapabilityOps<Ctxt>,
-{
+impl<'a, 'tcx: 'a, Ctxt: DataflowCtxt<'a, 'tcx>> PcgVisitor<'_, 'a, 'tcx, Ctxt> {
     fn activate_twophase_borrow_created_at(
         &mut self,
         created_location: Location,
@@ -423,14 +426,10 @@ where
 }
 
 impl<'tcx> OwnedPcg<'tcx> {
-    pub(crate) fn perform_expand_action<
-        'a,
-        Ctxt: HasCompilerCtxt<'a, 'tcx>,
-        C: CapabilityOps<Ctxt>,
-    >(
+    pub(crate) fn perform_expand_action<'a, Ctxt: HasCompilerCtxt<'a, 'tcx>>(
         &mut self,
         expand: RepackExpand<'tcx>,
-        capabilities: &mut impl PlaceCapabilitiesInterface<'tcx, C>,
+        capabilities: &mut impl PlaceCapabilitiesInterface<'tcx>,
         ctxt: Ctxt,
     ) -> Result<(), PcgError>
     where
