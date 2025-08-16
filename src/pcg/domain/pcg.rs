@@ -266,6 +266,19 @@ impl<'a, 'tcx: 'a> Pcg<'tcx> {
         return !place.is_owned(ctxt) || self.owned.leaf_places(ctxt).contains(&place);
     }
 
+    pub fn places_with_capapability(&self, capability: CapabilityKind) -> HashSet<Place<'tcx>> {
+        self.capabilities
+            .iter()
+            .filter_map(|(p, c)| {
+                if c == capability.into() {
+                    Some(p)
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
     pub fn capabilities(&self) -> &SymbolicPlaceCapabilities<'tcx> {
         &self.capabilities
     }

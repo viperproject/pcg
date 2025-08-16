@@ -19,7 +19,7 @@ where
     A: mir_dataflow::Analysis<'tcx>,
 {
     analysis: A,
-    results: mir_dataflow::Results<A::Domain>,
+    pub(crate) results: mir_dataflow::Results<A::Domain>,
 }
 
 impl<'tcx, A> AnalysisAndResults<'tcx, A>
