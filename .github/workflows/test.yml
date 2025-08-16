@@ -13,7 +13,7 @@ env:
 
 jobs:
   check_warnings:
-    runs-on: ${{ vars.RUNNER && fromJSON(format('["%s", "ubuntu-latest"]', vars.RUNNER)) || 'ubuntu-latest' }}
+    runs-on: ${{ vars.RUNNER || 'ubuntu-latest' }}
     container: ${{ fromJSON(vars.CONTAINER || 'null') }}
     steps:
     - uses: actions/checkout@v4
@@ -23,7 +23,7 @@ jobs:
       run: cargo check --all-targets --lib --bins --tests --examples --benches --message-format=json
 
   clippy:
-    runs-on: ${{ vars.RUNNER && fromJSON(format('["%s", "ubuntu-latest"]', vars.RUNNER)) || 'ubuntu-latest' }}
+    runs-on: ${{ vars.RUNNER || 'ubuntu-latest' }}
     container: ${{ fromJSON(vars.CONTAINER || 'null') }}
     steps:
     - uses: actions/checkout@v4
@@ -31,7 +31,7 @@ jobs:
       run: cargo clippy -- -D warnings
 
   rustfmt:
-    runs-on: ${{ vars.RUNNER && fromJSON(format('["%s", "ubuntu-latest"]', vars.RUNNER)) || 'ubuntu-latest' }}
+    runs-on: ${{ vars.RUNNER || 'ubuntu-latest' }}
     container: ${{ fromJSON(vars.CONTAINER || 'null') }}
     steps:
     - uses: actions/checkout@v4
@@ -39,7 +39,7 @@ jobs:
       run: cargo fmt --all -- --check
 
   test_files:
-    runs-on: ${{ vars.RUNNER && fromJSON(format('["%s", "ubuntu-latest"]', vars.RUNNER)) || 'ubuntu-latest' }}
+    runs-on: ${{ vars.RUNNER || 'ubuntu-latest' }}
     container: ${{ fromJSON(vars.CONTAINER || 'null') }}
     steps:
     - uses: actions/checkout@v4
@@ -47,7 +47,7 @@ jobs:
       run: cargo test --test test_files
 
   build_2025_07_21:
-    runs-on: ${{ vars.RUNNER && fromJSON(format('["%s", "ubuntu-latest"]', vars.RUNNER)) || 'ubuntu-latest' }}
+    runs-on: ${{ vars.RUNNER || 'ubuntu-latest' }}
     container: ${{ fromJSON(vars.CONTAINER || 'null') }}
     steps:
     - uses: actions/checkout@v4
@@ -55,7 +55,7 @@ jobs:
       run: cp rust-toolchain-2025-07-21 rust-toolchain && cargo build --no-default-features
 
   # bench_test_files:
-  #   runs-on: ${{ vars.RUNNER && fromJSON(format('["%s", "ubuntu-latest"]', vars.RUNNER)) || 'ubuntu-latest' }}
+  #   runs-on: ${{ vars.RUNNER || 'ubuntu-latest' }}
   #   steps:
   #   - uses: actions/checkout@v4
   #   - name: Install valgrind
@@ -64,7 +64,7 @@ jobs:
   #     run: cargo test --test bench_test_files -- --nocapture --show-output
 
   test_crates:
-    runs-on: ${{ vars.RUNNER && fromJSON(format('["%s", "ubuntu-latest"]', vars.RUNNER)) || 'ubuntu-latest' }}
+    runs-on: ${{ vars.RUNNER || 'ubuntu-latest' }}
     container: ${{ fromJSON(vars.CONTAINER || 'null') }}
     steps:
     - uses: actions/checkout@v4
@@ -72,7 +72,7 @@ jobs:
       run: cargo test --test selected_crates
 
   unit_tests:
-    runs-on: ${{ vars.RUNNER && fromJSON(format('["%s", "ubuntu-latest"]', vars.RUNNER)) || 'ubuntu-latest' }}
+    runs-on: ${{ vars.RUNNER || 'ubuntu-latest' }}
     container: ${{ fromJSON(vars.CONTAINER || 'null') }}
     steps:
     - uses: actions/checkout@v4
@@ -80,7 +80,7 @@ jobs:
       run: cargo test --lib
 
   doc_tests:
-    runs-on: ${{ vars.RUNNER && fromJSON(format('["%s", "ubuntu-latest"]', vars.RUNNER)) || 'ubuntu-latest' }}
+    runs-on: ${{ vars.RUNNER || 'ubuntu-latest' }}
     container: ${{ fromJSON(vars.CONTAINER || 'null') }}
     steps:
     - uses: actions/checkout@v4
@@ -88,7 +88,7 @@ jobs:
       run: cargo test --doc
 
   prusti_purification_tests:
-    runs-on: ${{ vars.RUNNER && fromJSON(format('["%s", "ubuntu-latest"]', vars.RUNNER)) || 'ubuntu-latest' }}
+    runs-on: ${{ vars.RUNNER || 'ubuntu-latest' }}
     container: ${{ fromJSON(vars.CONTAINER || 'null') }}
     steps:
     - name: Checkout repository
@@ -128,7 +128,7 @@ jobs:
       run: ./x.py setup && python3 test-rpe.py --no-server
 
   mutation_tests:
-    runs-on: ${{ vars.RUNNER && fromJSON(format('["%s", "ubuntu-latest"]', vars.RUNNER)) || 'ubuntu-latest' }}
+    runs-on: ${{ vars.RUNNER || 'ubuntu-latest' }}
     container: ${{ fromJSON(vars.CONTAINER || 'null') }}
     steps:
     - name: Checkout repository
@@ -148,7 +148,7 @@ jobs:
       run: cargo build
 
   flowistry_tests:
-    runs-on: ${{ vars.RUNNER && fromJSON(format('["%s", "ubuntu-latest"]', vars.RUNNER)) || 'ubuntu-latest' }}
+    runs-on: ${{ vars.RUNNER || 'ubuntu-latest' }}
     container: ${{ fromJSON(vars.CONTAINER || 'null') }}
     steps:
     - name: Checkout repository
