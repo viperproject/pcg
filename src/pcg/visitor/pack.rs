@@ -7,8 +7,8 @@ use crate::borrow_pcg::edge::kind::BorrowPcgEdgeKind;
 use crate::borrow_pcg::edge_data::EdgeData;
 use crate::borrow_pcg::graph::Conditioned;
 use crate::borrow_pcg::graph::frozen::FrozenGraphRef;
-use crate::pcg::obtain::{PlaceCollapser, PlaceObtainer};
 use crate::pcg::PcgNode;
+use crate::pcg::obtain::{PlaceCollapser, PlaceObtainer};
 use crate::utils::HasPlace;
 use crate::utils::data_structures::{HashMap, HashSet};
 use crate::utils::display::DisplayWithCompilerCtxt;
@@ -88,8 +88,7 @@ impl<'tcx> EdgesToRemove<'tcx> {
     }
 }
 
-impl<'pcg, 'a: 'pcg, 'tcx: 'a, Ctxt: DataflowCtxt<'a, 'tcx>> PlaceObtainer<'pcg, 'a, 'tcx, Ctxt>
-{
+impl<'pcg, 'a: 'pcg, 'tcx: 'a, Ctxt: DataflowCtxt<'a, 'tcx>> PlaceObtainer<'pcg, 'a, 'tcx, Ctxt> {
     /// Removes leaves that are old or dead (based on the borrow checker). This
     /// function should called prior to evaluating the effect of the statement
     /// at `location`.

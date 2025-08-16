@@ -17,12 +17,11 @@ use crate::action::PcgActions;
 use crate::utils::maybe_old::MaybeLabelledPlace;
 use crate::utils::visitor::FallableVisitor;
 use crate::utils::{
-    self, AnalysisLocation, DataflowCtxt, HasCompilerCtxt, HasPlace, Place,
-    SnapshotLocation,
+    self, AnalysisLocation, DataflowCtxt, HasCompilerCtxt, HasPlace, Place, SnapshotLocation,
 };
 
-use crate::error::{PcgError, PcgUnsupportedError};
 use super::{AnalysisObject, EvalStmtPhase, Pcg, PcgNode};
+use crate::error::{PcgError, PcgUnsupportedError};
 
 mod assign;
 mod function_call;

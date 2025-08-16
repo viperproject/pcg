@@ -21,9 +21,9 @@ use crate::{
 use itertools::Itertools;
 
 use crate::{
+    error::PcgInternalError,
     owned_pcg::RepackOp,
     pcg::CapabilityKind,
-    error::PcgInternalError,
     utils::{CompilerCtxt, Place, display::DisplayWithCompilerCtxt},
 };
 

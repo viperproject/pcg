@@ -9,16 +9,16 @@ use std::{cell::RefCell, fs::create_dir_all, rc::Rc};
 use bit_set::BitSet;
 use derive_more::From;
 
-use crate::error::PcgError;
 use super::{
     DataflowStmtPhase, ErrorState, EvalStmtPhase, PcgBlockDebugVisualizationGraphs,
     domain::PcgDomain, visitor::PcgVisitor,
 };
+use crate::error::PcgError;
 use crate::{
     BodyAndBorrows,
     pcg::{
-        DataflowState, DomainDataWithCtxt, HasPcgDomainData, PcgDomainData,
-        SymbolicCapabilityCtxt, ctxt::AnalysisCtxt, triple::TripleWalker,
+        DataflowState, DomainDataWithCtxt, HasPcgDomainData, PcgDomainData, SymbolicCapabilityCtxt,
+        ctxt::AnalysisCtxt, triple::TripleWalker,
     },
     pcg_validity_assert,
     rustc_interface::{
@@ -207,8 +207,7 @@ impl<'a, 'tcx: 'a> PcgEngine<'a, 'tcx> {
         object: AnalysisObject<'_, 'tcx>,
         tw: &TripleWalker<'a, 'tcx>,
         location: Location,
-    ) -> Result<(), PcgError>
-    {
+    ) -> Result<(), PcgError> {
         let domain = &mut state.data;
         for phase in EvalStmtPhase::phases() {
             let curr = PcgArenaRef::make_mut(&mut domain.pcg.states.0[phase]);

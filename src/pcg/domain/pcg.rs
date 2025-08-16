@@ -6,8 +6,8 @@ use crate::{
         state::{BorrowStateMutRef, BorrowStateRef, BorrowsState, BorrowsStateLike},
     },
     borrows_imgcat_debug,
-    owned_pcg::{OwnedPcg, join::data::JoinOwnedData},
     error::PcgError,
+    owned_pcg::{OwnedPcg, join::data::JoinOwnedData},
     pcg::{
         CapabilityKind,
         ctxt::AnalysisCtxt,
@@ -72,7 +72,7 @@ impl<'pcg, 'tcx> From<&'pcg Pcg<'tcx>> for PcgRef<'pcg, 'tcx> {
     }
 }
 
-impl<'pcg, 'a, 'tcx> From<&'pcg PcgMutRef<'pcg, 'tcx>> for PcgRef<'pcg, 'tcx> {
+impl<'pcg, 'tcx> From<&'pcg PcgMutRef<'pcg, 'tcx>> for PcgRef<'pcg, 'tcx> {
     fn from(pcg: &'pcg PcgMutRef<'pcg, 'tcx>) -> Self {
         let borrow = pcg.borrow.as_ref();
         Self {
@@ -150,7 +150,7 @@ pub(crate) trait PcgRefLike<'tcx> {
     }
 }
 
-impl<'a, 'tcx> PcgRefLike<'tcx> for PcgMutRef<'_, 'tcx> {
+impl<'tcx> PcgRefLike<'tcx> for PcgMutRef<'_, 'tcx> {
     fn as_ref(&self) -> PcgRef<'_, 'tcx> {
         PcgRef::from(self)
     }
@@ -162,7 +162,7 @@ impl<'tcx> PcgRefLike<'tcx> for Pcg<'tcx> {
     }
 }
 
-impl<'a, 'tcx> PcgRefLike<'tcx> for PcgRef<'_, 'tcx> {
+impl<'tcx> PcgRefLike<'tcx> for PcgRef<'_, 'tcx> {
     fn as_ref(&self) -> PcgRef<'_, 'tcx> {
         *self
     }

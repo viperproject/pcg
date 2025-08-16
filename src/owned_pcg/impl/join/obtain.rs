@@ -1,8 +1,8 @@
 use crate::{
     action::PcgAction,
     borrow_pcg::state::{BorrowStateMutRef, BorrowsStateLike},
-    owned_pcg::{LocalExpansions, RepackOp, join::data::JoinOwnedData},
     error::PcgError,
+    owned_pcg::{LocalExpansions, RepackOp, join::data::JoinOwnedData},
     pcg::{
         ctxt::AnalysisCtxt,
         obtain::{ActionApplier, HasSnapshotLocation, PlaceCollapser},

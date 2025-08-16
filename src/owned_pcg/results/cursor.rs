@@ -135,11 +135,7 @@ impl<'a, 'tcx> PcgAnalysis<'a, 'tcx> {
 
                 let owned_bridge = from_post_main
                     .owned
-                    .bridge(
-                        &to.entry_state.owned,
-                        &from_post_main.capabilities,
-                        ctxt,
-                    )
+                    .bridge(&to.entry_state.owned, &from_post_main.capabilities, ctxt)
                     .unwrap();
 
                 let mut borrow_actions = BorrowPcgActions::new();
@@ -231,7 +227,7 @@ impl<'a, 'tcx> PcgAnalysis<'a, 'tcx> {
 #[derive(Deref)]
 pub struct PcgBasicBlocks<'tcx>(IndexVec<BasicBlock, Option<PcgBasicBlock<'tcx>>>);
 
-impl<'a, 'tcx> PcgBasicBlocks<'tcx> {
+impl<'tcx> PcgBasicBlocks<'tcx> {
     pub fn get_statement(&self, location: Location) -> Option<&PcgLocation<'tcx>> {
         if let Some(pcg_block) = &self.0[location.block] {
             pcg_block.statements.get(location.statement_index)

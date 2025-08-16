@@ -11,6 +11,8 @@ use super::{
     path_condition::ValidityConditions,
     region_projection::{LifetimeProjection, LifetimeProjectionLabel, LocalLifetimeProjection},
 };
+use crate::borrow_pcg::edge::abstraction::AbstractionType;
+use crate::error::PcgError;
 use crate::{
     borrow_checker::BorrowCheckerInterface,
     borrow_pcg::{
@@ -21,8 +23,6 @@ use crate::{
     },
     utils::place::maybe_old::MaybeLabelledPlace,
 };
-use crate::error::PcgError;
-use crate::{borrow_pcg::edge::abstraction::AbstractionType};
 use crate::{borrow_pcg::edge::borrow::BorrowEdge, utils::HasPlace};
 use crate::{
     borrow_pcg::has_pcs_elem::{LabelNodeContext, LabelPlaceWithContext},

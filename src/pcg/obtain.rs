@@ -22,9 +22,9 @@ use crate::{
         region_projection::{LifetimeProjection, LocalLifetimeProjection},
         state::BorrowStateMutRef,
     },
+    error::PcgError,
     r#loop::PlaceUsageType,
     owned_pcg::{ExpandedPlace, LocalExpansions, RepackCollapse, RepackOp},
-    error::PcgError,
     pcg::{
         CapabilityKind, PCGNodeLike, PcgMutRef, PcgRefLike,
         ctxt::AnalysisCtxt,

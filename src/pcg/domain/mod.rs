@@ -13,15 +13,27 @@ use std::{
 use derive_more::From;
 
 use crate::{
-    action::PcgActions, error::PcgError, r#loop::{LoopAnalysis, LoopPlaceUsageAnalysis, PlaceUsages}, pcg::{
+    AnalysisEngine,
+    action::PcgActions,
+    error::PcgError,
+    r#loop::{LoopAnalysis, LoopPlaceUsageAnalysis, PlaceUsages},
+    pcg::{
         ctxt::AnalysisCtxt, dot_graphs::PcgDotGraphsForBlock,
         place_capabilities::SymbolicPlaceCapabilities,
-    }, pcg_validity_assert, rustc_interface::{
+    },
+    pcg_validity_assert,
+    rustc_interface::{
         middle::mir::{self, BasicBlock},
-        mir_dataflow::{fmt::DebugWithContext, move_paths::MoveData, JoinSemiLattice},
-    }, utils::{
-        arena::PcgArenaRef, domain_data::{DomainData, DomainDataIndex}, eval_stmt_data::EvalStmtData, initialized::DefinitelyInitialized, liveness::PlaceLiveness, CompilerCtxt, DataflowCtxt, HasBorrowCheckerCtxt, Place, ToGraph, PANIC_ON_ERROR
-    }, AnalysisEngine
+        mir_dataflow::{JoinSemiLattice, fmt::DebugWithContext, move_paths::MoveData},
+    },
+    utils::{
+        CompilerCtxt, DataflowCtxt, HasBorrowCheckerCtxt, PANIC_ON_ERROR, Place, ToGraph,
+        arena::PcgArenaRef,
+        domain_data::{DomainData, DomainDataIndex},
+        eval_stmt_data::EvalStmtData,
+        initialized::DefinitelyInitialized,
+        liveness::PlaceLiveness,
+    },
 };
 
 mod dataflow_stmt_phase;

@@ -389,10 +389,7 @@ pub enum SymbolicCapability {
 }
 
 impl SymbolicCapability {
-    pub(crate) fn gte<'a>(
-        self,
-        other: impl Into<Self>,
-    ) -> CapabilityConstraint<'a> {
+    pub(crate) fn gte<'a>(self, other: impl Into<Self>) -> CapabilityConstraint<'a> {
         CapabilityConstraint::gte(self, other.into())
     }
 }

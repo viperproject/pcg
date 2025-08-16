@@ -3,11 +3,11 @@ use crate::{
     action::{BorrowPcgAction, PcgAction},
     borrow_pcg::action::LabelPlaceReason,
     capability_gte,
+    error::PcgError,
     owned_pcg::{
         ExpandedPlace, LocalExpansions, RepackExpand, RepackOp,
         join::{data::JoinOwnedData, obtain::JoinObtainer},
     },
-    error::PcgError,
     pcg::{
         CapabilityKind, CapabilityLike, SymbolicCapability,
         ctxt::AnalysisCtxt,

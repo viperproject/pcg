@@ -1,8 +1,9 @@
 use crate::{
-    owned_pcg::{LocalExpansions, OwnedPcgLocal},
     error::{PcgError, PcgUnsupportedError},
+    owned_pcg::{LocalExpansions, OwnedPcgLocal},
     pcg::{
-        CapabilityKind, obtain::ObtainType,
+        CapabilityKind,
+        obtain::ObtainType,
         place_capabilities::PlaceCapabilitiesInterface,
         triple::{PlaceCondition, Triple},
     },
@@ -11,8 +12,7 @@ use crate::{
 
 use super::PcgVisitor;
 
-impl<'a, 'tcx: 'a, Ctxt: DataflowCtxt<'a, 'tcx>> PcgVisitor<'_, 'a, 'tcx, Ctxt>
-{
+impl<'a, 'tcx: 'a, Ctxt: DataflowCtxt<'a, 'tcx>> PcgVisitor<'_, 'a, 'tcx, Ctxt> {
     #[tracing::instrument(skip(self))]
     pub(crate) fn require_triple(&mut self, triple: Triple<'tcx>) -> Result<(), PcgError> {
         match triple.pre() {

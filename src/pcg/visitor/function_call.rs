@@ -24,8 +24,7 @@ fn get_function_data<'a, 'tcx: 'a>(
     }
 }
 
-impl<'a, 'tcx: 'a, Ctxt: DataflowCtxt<'a, 'tcx>> PcgVisitor<'_, 'a, 'tcx, Ctxt>
-{
+impl<'a, 'tcx: 'a, Ctxt: DataflowCtxt<'a, 'tcx>> PcgVisitor<'_, 'a, 'tcx, Ctxt> {
     #[tracing::instrument(skip(self, func, args, destination))]
     pub(super) fn make_function_call_abstraction(
         &mut self,

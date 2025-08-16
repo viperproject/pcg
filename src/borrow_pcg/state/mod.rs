@@ -127,7 +127,7 @@ pub(crate) trait BorrowsStateLike<'tcx> {
         ctxt: Ctxt,
     ) -> bool
     where
-        'tcx: 'a
+        'tcx: 'a,
     {
         let state = self.as_mut_ref();
         let removed = state.graph.remove(edge).is_some();

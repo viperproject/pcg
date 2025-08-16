@@ -9,10 +9,12 @@ use crate::{
         state::{BorrowStateMutRef, BorrowsStateLike},
     },
     error::PcgError,
-    pcg::{ctxt::AnalysisCtxt, CapabilityKind, CapabilityLike, SymbolicCapability},
+    pcg::{CapabilityKind, CapabilityLike, SymbolicCapability, ctxt::AnalysisCtxt},
     rustc_interface::middle::mir,
     utils::{
-        display::{DebugLines, DisplayWithCompilerCtxt}, validity::HasValidityCheck, CompilerCtxt, HasBorrowCheckerCtxt, HasCompilerCtxt, HasPlace, Place
+        CompilerCtxt, HasBorrowCheckerCtxt, HasCompilerCtxt, HasPlace, Place,
+        display::{DebugLines, DisplayWithCompilerCtxt},
+        validity::HasValidityCheck,
     },
 };
 
@@ -105,13 +107,11 @@ impl<'tcx, T: Copy> PlaceCapabilitiesReader<'tcx, T> for PlaceCapabilities<'tcx,
 }
 
 impl<'tcx, C: Copy> PlaceCapabilitiesInterface<'tcx, C> for PlaceCapabilities<'tcx, C> {
-    fn insert<Ctxt>(&mut self, place: Place<'tcx>, capability: impl Into<C>, _ctxt: Ctxt) -> bool
-    {
+    fn insert<Ctxt>(&mut self, place: Place<'tcx>, capability: impl Into<C>, _ctxt: Ctxt) -> bool {
         self.0.insert(place, capability.into()).is_some()
     }
 
-    fn remove<Ctxt>(&mut self, place: Place<'tcx>, _ctxt: Ctxt) -> Option<C>
-    {
+    fn remove<Ctxt>(&mut self, place: Place<'tcx>, _ctxt: Ctxt) -> Option<C> {
         self.0.remove(&place)
     }
 
@@ -160,8 +160,7 @@ impl<'a, 'tcx: 'a> SymbolicPlaceCapabilities<'tcx> {
         ref_place: Place<'tcx>,
         capability: CapabilityKind,
         ctxt: Ctxt,
-    ) -> Result<bool, PcgError>
-    {
+    ) -> Result<bool, PcgError> {
         if capability.is_read() || ref_place.is_shared_ref(ctxt.bc_ctxt()) {
             self.insert(
                 ref_place,
@@ -193,8 +192,7 @@ impl<'a, 'tcx: 'a> SymbolicPlaceCapabilities<'tcx> {
         expansion: &BorrowPcgExpansion<'tcx>,
         block_type: BlockType,
         ctxt: Ctxt,
-    ) -> Result<bool, PcgError>
-    {
+    ) -> Result<bool, PcgError> {
         let mut changed = false;
         // We dont change if only expanding region projections
         if expansion.base.is_place() {
@@ -222,8 +220,7 @@ impl<'a, 'tcx: 'a> SymbolicPlaceCapabilities<'tcx> {
         blocked_place: Place<'tcx>,
         block_type: BlockType,
         ctxt: Ctxt,
-    ) -> bool
-    {
+    ) -> bool {
         let retained_capability = block_type.blocked_place_maximum_retained_capability();
         if let Some(capability) = retained_capability {
             self.insert(

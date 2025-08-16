@@ -13,7 +13,8 @@ use crate::{
     },
     error::PcgError,
     pcg::{
-        CapabilityKind, PcgNode, obtain::{HasSnapshotLocation, PlaceObtainer},
+        CapabilityKind, PcgNode,
+        obtain::{HasSnapshotLocation, PlaceObtainer},
         place_capabilities::{BlockType, PlaceCapabilitiesReader},
     },
     utils::{DataflowCtxt, Place, data_structures::HashSet, display::DisplayWithCompilerCtxt},

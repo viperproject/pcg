@@ -9,6 +9,7 @@ use crate::borrow_pcg::graph::Conditioned;
 use crate::borrow_pcg::has_pcs_elem::LabelLifetimeProjectionPredicate;
 use crate::borrow_pcg::state::{BorrowStateMutRef, BorrowsStateLike};
 use crate::owned_pcg::RepackOp;
+use crate::pcg::CapabilityKind;
 use crate::pcg::obtain::{
     ActionApplier, HasSnapshotLocation, ObtainType, PlaceCollapser, PlaceExpander, PlaceObtainer,
     RenderDebugGraph,
@@ -16,7 +17,6 @@ use crate::pcg::obtain::{
 use crate::pcg::place_capabilities::{
     BlockType, PlaceCapabilitiesInterface, PlaceCapabilitiesReader, SymbolicPlaceCapabilities,
 };
-use crate::pcg::CapabilityKind;
 use crate::pcg::{EvalStmtPhase, PCGNodeLike, PcgNode, PcgRef, PcgRefLike};
 use crate::rustc_interface::middle::mir;
 use crate::utils::data_structures::HashSet;
@@ -28,8 +28,7 @@ use std::cmp::Ordering;
 use crate::utils::{Place, SnapshotLocation};
 
 use super::{PcgError, PcgVisitor};
-impl<'a, 'tcx: 'a, Ctxt: DataflowCtxt<'a, 'tcx>> PcgVisitor<'_, 'a, 'tcx, Ctxt>
-{
+impl<'a, 'tcx: 'a, Ctxt: DataflowCtxt<'a, 'tcx>> PcgVisitor<'_, 'a, 'tcx, Ctxt> {
     pub(crate) fn place_obtainer(&mut self) -> PlaceObtainer<'_, 'a, 'tcx, Ctxt> {
         let prev_snapshot_location = self.prev_snapshot_location();
         let pcg_ref = self.pcg.into();

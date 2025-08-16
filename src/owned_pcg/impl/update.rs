@@ -7,7 +7,8 @@
 use crate::{
     owned_pcg::{LocalExpansions, OwnedPcgLocal},
     pcg::{
-        CapabilityKind, place_capabilities::{
+        CapabilityKind,
+        place_capabilities::{
             PlaceCapabilitiesInterface, PlaceCapabilitiesReader, SymbolicPlaceCapabilities,
         },
         triple::{PlaceCondition, Triple},
