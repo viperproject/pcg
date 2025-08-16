@@ -7,8 +7,9 @@
 use crate::{
     borrow_pcg::borrow_pcg_expansion::PlaceExpansion,
     owned_pcg::{ExpandedPlace, RepackCollapse, RepackExpand, join::data::JoinOwnedData},
+    error::PcgError,
     pcg::{
-        CapabilityKind, CapabilityLike, PcgError, ctxt::AnalysisCtxt,
+        CapabilityKind, CapabilityLike, ctxt::AnalysisCtxt,
         place_capabilities::PlaceCapabilitiesInterface,
     },
     pcg_validity_assert, pcg_validity_expect_some,

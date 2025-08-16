@@ -12,7 +12,8 @@ use crate::{
         borrow_pcg_edge::{BorrowPcgEdge, BorrowPcgEdgeRef},
         region_projection::MaybeRemoteRegionProjectionBase,
     },
-    pcg::{EvalStmtPhase, Pcg, PcgEngine, PcgError, PcgNode, PcgSuccessor, successor_blocks},
+    error::PcgError,
+    pcg::{EvalStmtPhase, Pcg, PcgEngine, PcgNode, PcgSuccessor, successor_blocks},
     rustc_interface::{
         data_structures::fx::FxHashSet,
         dataflow::AnalysisEngine,

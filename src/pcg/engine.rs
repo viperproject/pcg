@@ -9,8 +9,9 @@ use std::{cell::RefCell, fs::create_dir_all, rc::Rc};
 use bit_set::BitSet;
 use derive_more::From;
 
+use crate::error::PcgError;
 use super::{
-    DataflowStmtPhase, ErrorState, EvalStmtPhase, PcgBlockDebugVisualizationGraphs, PcgError,
+    DataflowStmtPhase, ErrorState, EvalStmtPhase, PcgBlockDebugVisualizationGraphs,
     domain::PcgDomain, visitor::PcgVisitor,
 };
 use crate::{

@@ -11,8 +11,9 @@ use crate::{
         has_pcs_elem::LabelLifetimeProjectionPredicate,
         region_projection::LifetimeProjection,
     },
+    error::PcgError,
     pcg::{
-        CapabilityKind, PcgError, PcgNode, obtain::{HasSnapshotLocation, PlaceObtainer},
+        CapabilityKind, PcgNode, obtain::{HasSnapshotLocation, PlaceObtainer},
         place_capabilities::{BlockType, PlaceCapabilitiesReader},
     },
     utils::{DataflowCtxt, Place, data_structures::HashSet, display::DisplayWithCompilerCtxt},

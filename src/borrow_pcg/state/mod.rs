@@ -23,7 +23,8 @@ use crate::{
         has_pcs_elem::{LabelLifetimeProjectionPredicate, PlaceLabeller, SetLabel},
         region_projection::LifetimeProjectionLabel,
     },
-    pcg::{PcgError, ctxt::AnalysisCtxt, place_capabilities::PlaceCapabilitiesInterface},
+    error::PcgError,
+    pcg::{ctxt::AnalysisCtxt, place_capabilities::PlaceCapabilitiesInterface},
     pcg_validity_assert,
     utils::place::maybe_remote::MaybeRemotePlace,
 };

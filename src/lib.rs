@@ -22,6 +22,7 @@ may already be stabilized */
 pub mod action;
 pub mod borrow_checker;
 pub mod borrow_pcg;
+pub mod error;
 pub mod r#loop;
 pub mod owned_pcg;
 #[deprecated(note = "Use `owned_pcg` instead")]

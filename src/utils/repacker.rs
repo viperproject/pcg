@@ -32,7 +32,7 @@ use crate::rustc_interface::mir_dataflow;
 
 use crate::{
     borrow_pcg::region_projection::PcgRegion,
-    pcg::{PcgError, PcgUnsupportedError},
+    error::{PcgError, PcgUnsupportedError},
 };
 
 use super::Place;

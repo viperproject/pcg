@@ -7,8 +7,9 @@ use crate::{
     },
     borrows_imgcat_debug,
     owned_pcg::{OwnedPcg, join::data::JoinOwnedData},
+    error::PcgError,
     pcg::{
-        CapabilityKind, PcgError,
+        CapabilityKind,
         ctxt::AnalysisCtxt,
         place_capabilities::{
             PlaceCapabilities, PlaceCapabilitiesReader, SymbolicPlaceCapabilities,

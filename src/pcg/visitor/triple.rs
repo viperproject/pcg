@@ -1,7 +1,8 @@
 use crate::{
     owned_pcg::{LocalExpansions, OwnedPcgLocal},
+    error::{PcgError, PcgUnsupportedError},
     pcg::{
-        CapabilityKind, PcgError, PcgUnsupportedError, obtain::ObtainType,
+        CapabilityKind, obtain::ObtainType,
         place_capabilities::PlaceCapabilitiesInterface,
         triple::{PlaceCondition, Triple},
     },

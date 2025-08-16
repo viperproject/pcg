@@ -19,7 +19,7 @@ use crate::rustc_interface::middle::mir::RawPtrKind;
 use crate::utils::visitor::FallableVisitor;
 use crate::{
     pcg::CapabilityKind,
-    pcg::{PcgError, PcgUnsupportedError},
+    error::{PcgError, PcgUnsupportedError},
     utils::{CompilerCtxt, Place, display::DisplayWithCompilerCtxt},
 };
 

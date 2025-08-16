@@ -12,25 +12,18 @@ use super::{
     region_projection::LifetimeProjectionLabel,
 };
 use crate::{
-    borrow_checker::BorrowCheckerInterface,
-    borrow_pcg::{
+    borrow_checker::BorrowCheckerInterface, borrow_pcg::{
         edge_data::{LabelEdgePlaces, LabelPlacePredicate},
         has_pcs_elem::{
             LabelLifetimeProjectionPredicate, LabelLifetimeProjectionResult, LabelNodeContext,
             LabelPlaceWithContext, PlaceLabeller,
         },
-    },
-    r#loop::PlaceUsageType,
-    owned_pcg::RepackGuide,
-    pcg::{
-        CapabilityKind, MaybeHasLocation, PcgUnsupportedError, SymbolicCapability,
-        obtain::ObtainType,
-        place_capabilities::{BlockType, PlaceCapabilitiesReader},
-    },
-    pcg_validity_assert,
-    utils::{HasBorrowCheckerCtxt, HasCompilerCtxt, json::ToJsonWithCompilerCtxt},
+    }, error::PcgError, r#loop::PlaceUsageType, owned_pcg::RepackGuide, pcg::{
+        obtain::ObtainType, place_capabilities::{BlockType, PlaceCapabilitiesReader}, CapabilityKind, MaybeHasLocation, SymbolicCapability
+    }, pcg_validity_assert, utils::{json::ToJsonWithCompilerCtxt, HasBorrowCheckerCtxt, HasCompilerCtxt}
 };
-use crate::{pcg::PcgError, utils::place::corrected::CorrectedPlace};
+use crate::error::PcgUnsupportedError;
+use crate::{utils::place::corrected::CorrectedPlace};
 use crate::{
     pcg::{PCGNodeLike, PcgNode},
     rustc_interface::middle::{mir::PlaceElem, ty},

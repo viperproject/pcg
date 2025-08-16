@@ -10,12 +10,10 @@ use std::fmt::{Debug, Formatter, Result};
 
 use crate::{
     borrow_pcg::borrow_pcg_expansion::PlaceExpansion,
+    error::PcgUnsupportedError,
     owned_pcg::{RepackCollapse, RepackGuide},
-    pcg::{
-        PcgUnsupportedError,
-        place_capabilities::{
-            PlaceCapabilities, PlaceCapabilitiesInterface, PlaceCapabilitiesReader,
-        },
+    pcg::place_capabilities::{
+        PlaceCapabilities, PlaceCapabilitiesInterface, PlaceCapabilitiesReader,
     },
     rustc_interface::middle::mir::Local,
     utils::{HasCompilerCtxt, data_structures::HashSet},
@@ -25,7 +23,7 @@ use itertools::Itertools;
 use crate::{
     owned_pcg::RepackOp,
     pcg::CapabilityKind,
-    pcg::PcgInternalError,
+    error::PcgInternalError,
     utils::{CompilerCtxt, Place, display::DisplayWithCompilerCtxt},
 };
 

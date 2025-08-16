@@ -2,8 +2,8 @@ use crate::{
     action::PcgAction,
     borrow_pcg::state::{BorrowStateMutRef, BorrowsStateLike},
     owned_pcg::{LocalExpansions, RepackOp, join::data::JoinOwnedData},
+    error::PcgError,
     pcg::{
-        PcgError,
         ctxt::AnalysisCtxt,
         obtain::{ActionApplier, HasSnapshotLocation, PlaceCollapser},
         place_capabilities::SymbolicPlaceCapabilities,

@@ -1,11 +1,24 @@
 use crate::{
-    action::{BorrowPcgAction, PcgAction}, borrow_pcg::action::LabelPlaceReason, capability_gte, owned_pcg::{
-        join::{data::JoinOwnedData, obtain::JoinObtainer}, ExpandedPlace, LocalExpansions, RepackExpand, RepackOp
-    }, pcg::{
-        ctxt::AnalysisCtxt, obtain::{ActionApplier, HasSnapshotLocation, PlaceCollapser}, place_capabilities::{PlaceCapabilitiesInterface, PlaceCapabilitiesReader}, CapabilityKind, CapabilityLike, PcgError, SymbolicCapability
-    }, pcg_validity_assert, utils::{
-        data_structures::HashSet, display::DisplayWithCompilerCtxt, CompilerCtxt, HasBorrowCheckerCtxt, Place
-    }, DebugLines
+    DebugLines,
+    action::{BorrowPcgAction, PcgAction},
+    borrow_pcg::action::LabelPlaceReason,
+    capability_gte,
+    owned_pcg::{
+        ExpandedPlace, LocalExpansions, RepackExpand, RepackOp,
+        join::{data::JoinOwnedData, obtain::JoinObtainer},
+    },
+    error::PcgError,
+    pcg::{
+        CapabilityKind, CapabilityLike, SymbolicCapability,
+        ctxt::AnalysisCtxt,
+        obtain::{ActionApplier, HasSnapshotLocation, PlaceCollapser},
+        place_capabilities::{PlaceCapabilitiesInterface, PlaceCapabilitiesReader},
+    },
+    pcg_validity_assert,
+    utils::{
+        CompilerCtxt, HasBorrowCheckerCtxt, Place, data_structures::HashSet,
+        display::DisplayWithCompilerCtxt,
+    },
 };
 
 enum JoinDifferentExpansionsResult<'tcx> {

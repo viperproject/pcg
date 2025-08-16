@@ -24,8 +24,9 @@ use crate::{
     },
     r#loop::PlaceUsageType,
     owned_pcg::{ExpandedPlace, LocalExpansions, RepackCollapse, RepackOp},
+    error::PcgError,
     pcg::{
-        CapabilityKind, PCGNodeLike, PcgError, PcgMutRef, PcgRefLike,
+        CapabilityKind, PCGNodeLike, PcgMutRef, PcgRefLike,
         ctxt::AnalysisCtxt,
         place_capabilities::{
             BlockType, PlaceCapabilitiesInterface, PlaceCapabilitiesReader,

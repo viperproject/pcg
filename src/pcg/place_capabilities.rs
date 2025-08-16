@@ -8,7 +8,8 @@ use crate::{
         has_pcs_elem::LabelLifetimeProjectionPredicate,
         state::{BorrowStateMutRef, BorrowsStateLike},
     },
-    pcg::{ctxt::AnalysisCtxt, CapabilityKind, CapabilityLike, PcgError, SymbolicCapability},
+    error::PcgError,
+    pcg::{ctxt::AnalysisCtxt, CapabilityKind, CapabilityLike, SymbolicCapability},
     rustc_interface::middle::mir,
     utils::{
         display::{DebugLines, DisplayWithCompilerCtxt}, validity::HasValidityCheck, CompilerCtxt, HasBorrowCheckerCtxt, HasCompilerCtxt, HasPlace, Place

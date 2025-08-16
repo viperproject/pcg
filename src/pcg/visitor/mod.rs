@@ -21,7 +21,8 @@ use crate::utils::{
     SnapshotLocation,
 };
 
-use super::{AnalysisObject, EvalStmtPhase, Pcg, PcgError, PcgNode, PcgUnsupportedError};
+use crate::error::{PcgError, PcgUnsupportedError};
+use super::{AnalysisObject, EvalStmtPhase, Pcg, PcgNode};
 
 mod assign;
 mod function_call;

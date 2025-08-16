@@ -6,7 +6,8 @@ use crate::borrow_pcg::region_projection::{
     RegionProjectionBaseLike,
 };
 use crate::borrow_pcg::visitor::extract_regions;
-use crate::pcg::{LocalNodeLike, MaybeHasLocation, PCGNodeLike, PcgError, PcgNode};
+use crate::error::PcgError;
+use crate::pcg::{LocalNodeLike, MaybeHasLocation, PCGNodeLike, PcgNode};
 use crate::rustc_interface::PlaceTy;
 use crate::rustc_interface::index::IndexVec;
 use crate::rustc_interface::middle::mir;

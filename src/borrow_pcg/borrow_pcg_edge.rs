@@ -21,7 +21,8 @@ use crate::{
     },
     utils::place::maybe_old::MaybeLabelledPlace,
 };
-use crate::{borrow_pcg::edge::abstraction::AbstractionType, pcg::PcgError};
+use crate::error::PcgError;
+use crate::{borrow_pcg::edge::abstraction::AbstractionType};
 use crate::{borrow_pcg::edge::borrow::BorrowEdge, utils::HasPlace};
 use crate::{
     borrow_pcg::has_pcs_elem::{LabelNodeContext, LabelPlaceWithContext},

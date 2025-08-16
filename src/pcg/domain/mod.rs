@@ -13,27 +13,15 @@ use std::{
 use derive_more::From;
 
 use crate::{
-    AnalysisEngine,
-    action::PcgActions,
-    r#loop::{LoopAnalysis, LoopPlaceUsageAnalysis, PlaceUsages},
-    pcg::{
+    action::PcgActions, error::PcgError, r#loop::{LoopAnalysis, LoopPlaceUsageAnalysis, PlaceUsages}, pcg::{
         ctxt::AnalysisCtxt, dot_graphs::PcgDotGraphsForBlock,
         place_capabilities::SymbolicPlaceCapabilities,
-    },
-    pcg_validity_assert,
-    rustc_interface::{
+    }, pcg_validity_assert, rustc_interface::{
         middle::mir::{self, BasicBlock},
-        mir_dataflow::{JoinSemiLattice, fmt::DebugWithContext, move_paths::MoveData},
-    },
-    utils::{
-        CompilerCtxt, DataflowCtxt, HasBorrowCheckerCtxt, PANIC_ON_ERROR, Place,
-        ToGraph,
-        arena::PcgArenaRef,
-        domain_data::{DomainData, DomainDataIndex},
-        eval_stmt_data::EvalStmtData,
-        initialized::DefinitelyInitialized,
-        liveness::PlaceLiveness,
-    },
+        mir_dataflow::{fmt::DebugWithContext, move_paths::MoveData, JoinSemiLattice},
+    }, utils::{
+        arena::PcgArenaRef, domain_data::{DomainData, DomainDataIndex}, eval_stmt_data::EvalStmtData, initialized::DefinitelyInitialized, liveness::PlaceLiveness, CompilerCtxt, DataflowCtxt, HasBorrowCheckerCtxt, Place, ToGraph, PANIC_ON_ERROR
+    }, AnalysisEngine
 };
 
 mod dataflow_stmt_phase;
@@ -515,79 +503,6 @@ impl ErrorState {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PcgError {
-    pub(crate) kind: PCGErrorKind,
-    pub(crate) context: Vec<String>,
-}
-
-// Deprecated: use PcgError instead
-pub type PCGError = PcgError;
-
-impl From<PcgUnsupportedError> for PcgError {
-    fn from(e: PcgUnsupportedError) -> Self {
-        Self::new(PCGErrorKind::Unsupported(e), vec![])
-    }
-}
-
-impl PcgError {
-    pub(crate) fn new(kind: PCGErrorKind, context: Vec<String>) -> Self {
-        if *PANIC_ON_ERROR {
-            panic!("PCG Error: {:?} ({})", kind, context.join(", "));
-        }
-        Self { kind, context }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum PCGErrorKind {
-    Unsupported(PcgUnsupportedError),
-    Internal(PcgInternalError),
-}
-
-impl PcgError {
-    pub(crate) fn internal(msg: String) -> Self {
-        Self {
-            kind: PCGErrorKind::Internal(PcgInternalError::new(msg)),
-            context: vec![],
-        }
-    }
-
-    pub(crate) fn unsupported(err: PcgUnsupportedError) -> Self {
-        Self {
-            kind: PCGErrorKind::Unsupported(err),
-            context: vec![],
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PcgInternalError(String);
-
-impl PcgInternalError {
-    pub(crate) fn new(msg: String) -> Self {
-        Self(msg)
-    }
-}
-
-impl From<PcgInternalError> for PcgError {
-    fn from(e: PcgInternalError) -> Self {
-        PcgError::new(PCGErrorKind::Internal(e), vec![])
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum PcgUnsupportedError {
-    AssignBorrowToNonReferenceType,
-    DerefUnsafePtr,
-    MoveUnsafePtrWithNestedLifetime,
-    ExpansionOfAliasType,
-    CallWithUnsafePtrWithNestedLifetime,
-    IndexingNonIndexableType,
-    InlineAssembly,
-    MaxNodesExceeded,
-}
-
 impl<'a, 'tcx> PcgDomain<'a, 'tcx> {
     pub(crate) fn error(&self) -> Option<&PcgError> {
         match self {
@@ -600,10 +515,7 @@ impl<'a, 'tcx> PcgDomain<'a, 'tcx> {
     }
 
     pub(crate) fn is_error(&self) -> bool {
-        match self {
-            PcgDomain::Error(_) => true,
-            _ => false,
-        }
+        matches!(self, PcgDomain::Error(_))
     }
 
     pub(crate) fn take_analysis(self) -> DataflowState<'a, 'tcx, AnalysisCtxt<'a, 'tcx>> {
